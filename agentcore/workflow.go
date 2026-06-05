@@ -289,9 +289,9 @@ func newWf(ctx context.Context, name, desc string, subs []Agent, mode wfMode, ma
 	// Set sub-agents directly on the workflowAgent so its Run() has access
 	wa.subAgents = make([]*flowAgent, len(fas))
 	for i, s := range fas {
-		wa.subAgents[i] = toFlowAgent(ctx, s)
+		wa.subAgents[i] = toFlowAgent(ctx, s, WithDisallowTransferToParent())
 	}
-	return fa, nil
+	return fa.(*flowAgent), nil
 }
 
 func NewSequential(ctx context.Context, cfg *SequentialConfig) (ResumableAgent, error) { return newWf(ctx, cfg.Name, cfg.Description, cfg.SubAgents, wfModeSequential, 0) }

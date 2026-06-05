@@ -56,13 +56,10 @@ func WithSharedParentSession() RunOption {
 
 // ---- ChatModel-agent-specific options ----
 
-type modelOption interface{ applyModel() }
-type toolOption interface{ applyTool() }
-
-func WithChatModelOptions(opts []modelOption) RunOption {
+func WithChatModelOptions(opts []ModelOption) RunOption {
 	return WrapImplSpecificOptFn(func(o *runOptions) {})
 }
-func WithToolOptions(opts []toolOption) RunOption {
+func WithToolOptions(opts []ToolOption) RunOption {
 	return WrapImplSpecificOptFn(func(o *runOptions) {})
 }
 func WithAgentToolOptions(agentName string, opts []RunOption) RunOption {

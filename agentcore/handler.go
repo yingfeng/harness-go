@@ -5,11 +5,21 @@ import (
 	"github.com/infiniflow/ragflow/agent/agentcore/schema"
 )
 
+// ModelOption configures a model call.
+type ModelOption interface{ applyModel() }
+
+type modelOption = ModelOption
+
+// ToolOption configures a tool call.
+type ToolOption interface{ applyTool() }
+
+type toolOption = ToolOption
+
 // ---- ChatModel interface ----
 
 type ChatModel[M MessageType] interface {
-	Generate(ctx context.Context, messages []M, opts ...modelOption) (M, error)
-	Stream(ctx context.Context, messages []M, opts ...modelOption) (*schema.StreamReader[M], error)
+	Generate(ctx context.Context, messages []M, opts ...ModelOption) (M, error)
+	Stream(ctx context.Context, messages []M, opts ...ModelOption) (*schema.StreamReader[M], error)
 	BindTools(tools []*schema.ToolInfo) error
 }
 
@@ -18,8 +28,8 @@ type ChatModel[M MessageType] interface {
 type Tool interface {
 	Name() string
 	Description() string
-	Invoke(ctx context.Context, argumentsInJSON string, opts ...toolOption) (string, error)
-	Stream(ctx context.Context, argumentsInJSON string, opts ...toolOption) (*schema.StreamReader[string], error)
+	Invoke(ctx context.Context, argumentsInJSON string, opts ...ToolOption) (string, error)
+	Stream(ctx context.Context, argumentsInJSON string, opts ...ToolOption) (*schema.StreamReader[string], error)
 }
 
 // BaseTool provides a simple Tool implementation from a function.
