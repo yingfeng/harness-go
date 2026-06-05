@@ -211,8 +211,6 @@ type (
 	ChatModelAgentContext = agentcore.ChatModelAgentContext
 	// ModelContext wraps model call context.
 	ModelContext = agentcore.ModelContext
-	// TurnLoop implements priority-based scheduling.
-	TurnLoop = agentcore.TurnLoop
 	// CheckPointStore persists execution checkpoints.
 	CheckPointStore = agentcore.CheckPointStore
 	// ChatModelMiddleware allows customizing agent behavior.
@@ -242,8 +240,6 @@ var (
 	NewParallel = agentcore.NewParallel
 	// NewLoop creates a loop workflow agent.
 	NewLoop = agentcore.NewLoop
-	// NewTurnLoop creates a TurnLoop scheduler.
-	NewTurnLoop = agentcore.NewTurnLoop
 	// SetSubAgents configures sub-agents.
 	SetSubAgents = agentcore.SetSubAgents
 	// WithCancel creates a cancel option and cancel function.

@@ -58,15 +58,12 @@ type StreamableToolEndpoint func(ctx context.Context, args string, opts ...toolO
 
 type TypedModelContext[M MessageType] struct {
 	Tools               []*schema.ToolInfo
-	ModelRetryConfig    *RetryConfig[M]
+	ModelRetryConfig    *TypedModelRetryConfig[M]
 	ModelFailoverConfig *FailoverConfig[M]
 	cancelCtx           *cancelContext
 }
 
 type ModelContext = TypedModelContext[*schema.Message]
-
-type RetryConfig[M MessageType] struct{ MaxAttempts int }
-type FailoverConfig[M MessageType] struct{ Models []ChatModel[M] }
 
 // ---- Middleware interface ----
 

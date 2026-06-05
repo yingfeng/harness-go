@@ -3,6 +3,7 @@ package agentcore
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/infiniflow/ragflow/harness/agentcore/schema"
 	"github.com/infiniflow/ragflow/harness/agentcore/internal"
@@ -15,9 +16,11 @@ type ChatModelConfig[M MessageType] struct {
 	Instruction        string
 	MaxIterations      int
 	Middlewares        []TypedChatModelMiddleware[M]
-	RetryConfig        *RetryConfig[M]
+	RetryConfig        *TypedModelRetryConfig[M]
 	FailoverConfig     *FailoverConfig[M]
 	ReturnDirectly     map[string]bool
+	OutputKey          string // Store final output to session under this key
+	GenModelInput      TypedGenModelInput[M] // Custom model input generator
 }
 
 func DefaultChatModelConfig[M MessageType]() *ChatModelConfig[M] {
@@ -35,6 +38,32 @@ type TypedChatModelAgent[M MessageType] struct {
 
 var _ ResumableAgent = &TypedChatModelAgent[*schema.Message]{}
 var _ TypedResumableAgent[*schema.AgenticMessage] = &TypedChatModelAgent[*schema.AgenticMessage]{}
+
+// TypedGenModelInput transforms instruction + messages into model input.
+type TypedGenModelInput[M MessageType] func(ctx context.Context, instruction string, input *TypedAgentInput[M]) ([]M, error)
+
+func defaultGenModelInput(ctx context.Context, instruction string, input *AgentInput) ([]Message, error) {
+	msgs := make([]Message, 0, len(input.Messages)+1)
+	if instruction != "" {
+		processed := resolveTemplate(instruction, ctx)
+		msgs = append(msgs, schema.SystemMessage(processed))
+	}
+	msgs = append(msgs, input.Messages...)
+	return msgs, nil
+}
+
+// resolveTemplate replaces {Key} placeholders with session values.
+func resolveTemplate(tmpl string, ctx context.Context) string {
+	s := getSession(ctx)
+	if s == nil { return tmpl }
+	result := tmpl
+	// Simple {Key} resolution
+	for k, v := range s.Values {
+		repl := fmt.Sprintf("{%s}", k)
+		if s, ok := v.(string); ok { result = strings.ReplaceAll(result, repl, s) }
+	}
+	return result
+}
 
 func NewChatModelAgent[M MessageType](cfg *ChatModelConfig[M]) *TypedChatModelAgent[M] {
 	return &TypedChatModelAgent[M]{
@@ -61,8 +90,11 @@ func (a *TypedChatModelAgent[M]) Resume(ctx context.Context, info *ResumeInfo, o
 }
 
 type chatModelExecCtx[M MessageType] struct {
-	generator *AsyncGenerator[*TypedAgentEvent[M]]
-	cancelCtx *cancelContext
+	generator         *AsyncGenerator[*TypedAgentEvent[M]]
+	cancelCtx         *cancelContext
+	suppressEventSend bool
+	retrySignal       *retrySignal
+	failoverLastModel ChatModel[M]
 }
 
 func (ec *chatModelExecCtx[M]) send(event *TypedAgentEvent[M]) {
@@ -128,16 +160,17 @@ func (a *TypedChatModelAgent[M]) run(ctx context.Context, input *TypedAgentInput
 		}
 
 		// Build model input
-		modelMsgs := buildModelInput(state, rc)
-
-		// Call model (wrapped by middlewares)
-		model := a.config.Model
-		for _, mw := range a.config.Middlewares {
-			if mw == nil { continue }
-			wrapped, err := mw.WrapModel(ctx, model, mc)
-			if err != nil { gen.Send(&TypedAgentEvent[M]{Err: fmt.Errorf("WrapModel: %w", err)}); return }
-			model = wrapped
+		var modelMsgs []M
+		if a.config.GenModelInput != nil {
+			var err error
+			modelMsgs, err = a.config.GenModelInput(ctx, rc.Instruction, &TypedAgentInput[M]{Messages: state.Messages})
+			if err != nil { gen.Send(&TypedAgentEvent[M]{Err: fmt.Errorf("GenModelInput: %w", err)}); return }
+		} else {
+			modelMsgs = buildModelInput(state, rc)
 		}
+
+		// Build model wrapper chain
+		model := BuildModelWrapperChain(a.config.Model, ec, a.config)
 
 		resp, err := model.Generate(ctx, modelMsgs)
 		if err != nil { gen.Send(&TypedAgentEvent[M]{Err: fmt.Errorf("model: %w", err)}); return }
@@ -197,11 +230,34 @@ func (a *TypedChatModelAgent[M]) run(ctx context.Context, input *TypedAgentInput
 		return
 	}
 
+	// Store final output to session if OutputKey is configured
+	if a.config.OutputKey != "" && len(state.Messages) > 0 {
+		if last := state.Messages[len(state.Messages)-1]; !isNilMessage(last) {
+			s := getSession(ctx)
+			if s != nil {
+				s.Values[a.config.OutputKey] = extractTextContent(last)
+			}
+		}
+	}
+
 	for _, mw := range a.config.Middlewares {
 		if mw == nil { continue }
 		var err error
 		ctx, err = mw.AfterAgent(ctx, state)
 		if err != nil { gen.Send(&TypedAgentEvent[M]{Err: fmt.Errorf("AfterAgent: %w", err)}); return }
+	}
+}
+
+func extractTextContent[M MessageType](msg M) string {
+	switch v := any(msg).(type) {
+	case *schema.Message: return v.Content
+	case *schema.AgenticMessage:
+		var texts []string
+		for _, b := range v.ContentBlocks {
+			if b.Type == "text" { texts = append(texts, b.Text) }
+		}
+		return strings.Join(texts, "\n")
+	default: return ""
 	}
 }
 
