@@ -3,64 +3,81 @@ package agentcore
 import "sync"
 
 // AsyncIterator provides blocking iteration over a typed stream.
+// Multiple goroutines reading from the same iterator will receive each item
+// exactly once.
 type AsyncIterator[T any] struct {
-	gen   *AsyncGenerator[T]
-	index int
-	mu    sync.Mutex
+	ch   chan iterationItem[T]
+	done bool
+}
+
+type iterationItem[T any] struct {
+	value T
+	ok    bool
+}
+
+func NewAsyncIterator[T any]() *AsyncIterator[T] {
+	return &AsyncIterator[T]{ch: make(chan iterationItem[T], 64)}
 }
 
 func (it *AsyncIterator[T]) Next() (T, bool) {
-	it.mu.Lock()
-	defer it.mu.Unlock()
-	if it.gen == nil || it.index >= len(it.gen.items) {
+	item, ok := <-it.ch
+	if !ok {
+		it.done = true
 		var zero T
 		return zero, false
 	}
-	item := it.gen.items[it.index]
-	it.index++
-	return item, true
+	return item.value, item.ok
 }
 
 func (it *AsyncIterator[T]) Close() {
-	if it.gen != nil {
-		it.gen.Close()
+	if !it.done {
+		it.done = true
+		close(it.ch)
 	}
 }
 
 // AsyncGenerator produces items for an AsyncIterator.
+// Multiple goroutines can safely Send to the same generator.
 type AsyncGenerator[T any] struct {
-	items  []T
-	mu     sync.Mutex
+	ch     chan iterationItem[T]
 	closed bool
+	mu     sync.Mutex
 }
 
 func NewAsyncIteratorPair[T any]() (*AsyncIterator[T], *AsyncGenerator[T]) {
-	gen := &AsyncGenerator[T]{items: make([]T, 0)}
-	return &AsyncIterator[T]{gen: gen}, gen
+	ch := make(chan iterationItem[T], 64)
+	return &AsyncIterator[T]{ch: ch}, &AsyncGenerator[T]{ch: ch}
 }
 
-func (g *AsyncGenerator[T]) Send(item T) {
+func (g *AsyncGenerator[T]) Send(value T) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if !g.closed {
-		g.items = append(g.items, item)
+		g.ch <- iterationItem[T]{value: value, ok: true}
 	}
 }
 
-func (g *AsyncGenerator[T]) trySend(item T) bool {
+func (g *AsyncGenerator[T]) trySend(value T) bool {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if g.closed {
 		return false
 	}
-	g.items = append(g.items, item)
-	return true
+	select {
+	case g.ch <- iterationItem[T]{value: value, ok: true}:
+		return true
+	default:
+		return false
+	}
 }
 
 func (g *AsyncGenerator[T]) Close() {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	g.closed = true
+	if !g.closed {
+		g.closed = true
+		close(g.ch)
+	}
 }
 
 func (g *AsyncGenerator[T]) IsClosed() bool {
@@ -108,7 +125,14 @@ func copyTypedAgentEvent[M MessageType](event *TypedAgentEvent[M]) *TypedAgentEv
 	return cp
 }
 
-func setAutomaticClose[M MessageType](event *TypedAgentEvent[M]) {}
+func setAutomaticClose[M MessageType](event *TypedAgentEvent[M]) {
+	if event == nil { return }
+	if event.Output != nil && event.Output.MessageOutput != nil {
+		if event.Output.MessageOutput.MessageStream != nil {
+			event.Output.MessageOutput.MessageStream.Close()
+		}
+	}
+}
 func typedSetAutomaticClose[M MessageType](event *TypedAgentEvent[M]) { setAutomaticClose(event) }
 func addTypedEvent[M MessageType](s *runSession, event *TypedAgentEvent[M]) {
 	if s != nil {

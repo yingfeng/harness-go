@@ -22,11 +22,105 @@ type TypedAgentCallbackOutput[M MessageType] struct {
 	Events *AsyncIterator[*TypedAgentEvent[M]]
 }
 
-func initAgentCallbacks(ctx context.Context, name, agentType string, opts ...RunOption) context.Context { return ctx }
-func initAgenticCallbacks(ctx context.Context, name, agentType string, opts ...RunOption) context.Context { return ctx }
-func filterOptions(name string, opts []RunOption) []RunOption        { return opts }
-func filterCancelOption(opts []RunOption) []RunOption                 { return opts }
-func filterCallbackHandlersForNestedAgents(name string, opts []RunOption) []RunOption { return opts }
+// callbackHandler holds registered callback functions.
+type callbackHandler struct {
+	onStart func(ctx context.Context, input *AgentCallbackInput)
+	onEnd   func(ctx context.Context, output *AgentCallbackOutput)
+}
+
+type callbackKey struct{}
+
+func getCallbacks(ctx context.Context) []callbackHandler {
+	if v := ctx.Value(callbackKey{}); v != nil {
+		return v.([]callbackHandler)
+	}
+	return nil
+}
+
+func withCallbacks(ctx context.Context, cbs []callbackHandler) context.Context {
+	if len(cbs) == 0 { return ctx }
+	return context.WithValue(ctx, callbackKey{}, cbs)
+}
+
+func initAgentCallbacks(ctx context.Context, name, agentType string, opts ...RunOption) context.Context {
+	o := getCommonOptions(nil, opts...)
+	if len(o.callbacks) == 0 { return ctx }
+	cbs := make([]callbackHandler, 0, len(o.callbacks))
+	for _, cb := range o.callbacks {
+		switch c := cb.(type) {
+		case callbackHandler:
+			cbs = append(cbs, c)
+		}
+	}
+	return withCallbacks(ctx, cbs)
+}
+
+func initAgenticCallbacks(ctx context.Context, name, agentType string, opts ...RunOption) context.Context {
+	return initAgentCallbacks(ctx, name, agentType, opts...)
+}
+
+func filterOptions(name string, opts []RunOption) []RunOption {
+	// Remove callbacks not matching the given agent name from agentNames list
+	o := getCommonOptions(nil, opts...)
+	if len(o.agentNames) == 0 { return opts }
+
+	var filtered []RunOption
+	for _, opt := range opts {
+		// Filter out AgentNames options that don't match
+		if fn, ok := opt.(runOptFn); ok {
+			tmp := &runOptions{}
+			fn(tmp)
+			if tmp.agentNames != nil {
+				match := false
+				for _, n := range tmp.agentNames {
+					if n == name { match = true; break }
+				}
+				if !match { continue }
+			}
+		}
+		filtered = append(filtered, opt)
+	}
+	return filtered
+}
+
+func filterCancelOption(opts []RunOption) []RunOption {
+	// Remove cancel context options from sub-agent options
+	// to avoid duplicate cancel handling
+	var filtered []RunOption
+	for _, opt := range opts {
+		if fn, ok := opt.(runOptFn); ok {
+			tmp := &runOptions{}
+			fn(tmp)
+			if tmp.cancelCtx != nil { continue }
+		}
+		filtered = append(filtered, opt)
+	}
+	if len(filtered) == len(opts) { return opts }
+	return filtered
+}
+
+func filterCallbackHandlersForNestedAgents(name string, opts []RunOption) []RunOption {
+	// Remove callback handlers that are scoped to specific agents
+	o := getCommonOptions(nil, opts...)
+	if len(o.agentNames) == 0 { return opts }
+
+	var filtered []RunOption
+	for _, opt := range opts {
+		if fn, ok := opt.(runOptFn); ok {
+			tmp := &runOptions{}
+			fn(tmp)
+			if tmp.agentNames != nil {
+				match := false
+				for _, n := range tmp.agentNames {
+					if n == name { match = true; break }
+				}
+				if !match { continue }
+			}
+		}
+		filtered = append(filtered, opt)
+	}
+	return filtered
+}
 
 func getAgentType(a Agent) string {
 	if t, ok := a.(interface{ GetType() string }); ok {

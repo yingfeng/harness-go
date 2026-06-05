@@ -5,12 +5,18 @@ import (
 	"sync"
 )
 
+// laneEvents holds per-lane event history for parallel workflows.
+type laneEvents struct {
+	Events []*agentEventWrap
+}
+
 // runSession holds per-execution mutable state for an agent run.
 type runSession struct {
-	mu       sync.Mutex
-	Values   map[string]any
-	valuesMx *sync.Mutex
-	events   []any
+	mu        sync.Mutex
+	Values    map[string]any
+	valuesMx  *sync.Mutex
+	events    []any
+	LaneEvents *laneEvents
 }
 
 func newRunSession() *runSession {
@@ -86,7 +92,18 @@ func updateRunPathOnly(ctx context.Context, steps ...string) context.Context {
 	return ctx
 }
 
-func joinRunCtxs(ctx context.Context, childCtxs ...context.Context) {}
+func joinRunCtxs(ctx context.Context, childCtxs ...context.Context) {
+	parent := getRunCtx(ctx)
+	if parent == nil { return }
+	for _, cc := range childCtxs {
+		child := getRunCtx(cc)
+		if child == nil { continue }
+		if child.Session == nil { continue }
+		for _, ev := range child.Session.getEvents() {
+			parent.Session.addEvent(ev)
+		}
+	}
+}
 
 func getSession(ctx context.Context) *runSession {
 	if rc := getRunCtx(ctx); rc != nil {

@@ -190,6 +190,56 @@ func (cc *cancelContext) markAgentToolDescendant() {
 	for cur := cc; cur != nil; cur = cur.parent { atomic.StoreInt32(&cur.agentToolDescendant, 1) }
 }
 
+func (cc *cancelContext) deriveAgentToolCancelContext(ctx context.Context) *cancelContext {
+	if cc == nil { return nil }
+	child := newCancelContext()
+	child.root = false
+	child.parent = cc
+
+	// Propagate cancel signal to child
+	go func() {
+		select {
+		case <-cc.cancelChan:
+			if cc.isRecursive() {
+				child.setRecursive(true)
+				child.triggerCancel(cc.getMode())
+				return
+			}
+			select {
+			case <-cc.recursiveChan:
+				child.setRecursive(true)
+				child.triggerCancel(cc.getMode())
+			case <-child.doneChan:
+			case <-ctx.Done():
+			}
+		case <-child.doneChan:
+		case <-ctx.Done():
+		}
+	}()
+
+	// Propagate immediate cancel signal to child
+	go func() {
+		select {
+		case <-cc.immediateChan:
+			if cc.isRecursive() {
+				child.setRecursive(true)
+				child.triggerImmediate()
+				return
+			}
+			select {
+			case <-cc.recursiveChan:
+				child.setRecursive(true)
+				child.triggerImmediate()
+			case <-child.doneChan:
+			case <-ctx.Done():
+			}
+		case <-child.doneChan:
+		case <-ctx.Done():
+		}
+	}()
+
+	return child
+}
 func (cc *cancelContext) buildCancelFunc() AgentCancelFunc {
 	join := func(a, b CancelMode) CancelMode {
 		if a == CancelImmediate || b == CancelImmediate { return CancelImmediate }
@@ -239,13 +289,63 @@ func (cc *cancelContext) buildCancelFunc() AgentCancelFunc {
 		}
 		var needImmediate, needTimeout bool
 		if cc.getMode() == CancelImmediate { needImmediate = true
-		} else if req.Timeout != nil && *req.Timeout > 0 { needTimeout = true }
+		} else if req.Timeout != nil && *req.Timeout > 0 {
+			cc.setDeadlineUnixNano(time.Now().Add(*req.Timeout).UnixNano())
+			needTimeout = true
+		}
 		cc.cancelMu.Unlock()
 		if needImmediate { cc.triggerImmediate() }
-		_ = needTimeout
+		if needTimeout { cc.startTimeout() }
 		return &CancelHandle{waitDone}, true
 	}
 }
+
+func (cc *cancelContext) startTimeout() {
+	cc.timeoutOnce.Do(func() {
+		go func() {
+			for {
+				select {
+				case <-cc.doneChan:
+					return
+				default:
+				}
+				dl := atomic.LoadInt64(&cc.deadlineUnixNano)
+				if dl == 0 { return }
+				wait := time.Duration(dl - time.Now().UnixNano())
+				if wait <= 0 {
+					atomic.StoreInt32(&cc.escalated, 1)
+					atomic.StoreInt32(&cc.timeoutEscalated, 1)
+					cc.triggerImmediate()
+					return
+				}
+				timer := time.NewTimer(wait)
+				select {
+				case <-timer.C:
+					atomic.StoreInt32(&cc.escalated, 1)
+					atomic.StoreInt32(&cc.timeoutEscalated, 1)
+					cc.triggerImmediate()
+					return
+				case <-cc.timeoutNotify:
+					timer.Stop()
+					continue
+				case <-cc.doneChan:
+					timer.Stop()
+					return
+				}
+			}
+		}()
+	})
+}
+
+func (cc *cancelContext) wakeTimeout() {
+	select {
+	case cc.timeoutNotify <- struct{}{}:
+	default:
+	}
+}
+
+func (cc *cancelContext) setDeadlineUnixNano(t int64) { atomic.StoreInt64(&cc.deadlineUnixNano, t) }
+func (cc *cancelContext) agentToolSeen() bool          { return cc != nil && atomic.LoadInt32(&cc.agentToolDescendant) == 1 }
 
 // ---- Context propagation ----
 
@@ -285,7 +385,30 @@ func wrapIterWithCancelCtx[M MessageType](iter *AsyncIterator[*TypedAgentEvent[M
 	return it
 }
 
-// ---- Cancel-monitored model ----
+// ---- Cancel-monitored tool handler ----
+
+type cancelMonitoredToolHandler struct{}
+
+func (h *cancelMonitoredToolHandler) WrapToolInvoke(next InvokableToolEndpoint) InvokableToolEndpoint {
+	return func(ctx context.Context, args string, opts ...toolOption) (string, error) {
+		cc := getCancelContext(ctx)
+		if cc != nil && cc.isImmediate() {
+			return "", ErrStreamCanceled
+		}
+		return next(ctx, args, opts...)
+	}
+}
+
+func (h *cancelMonitoredToolHandler) WrapToolStream(next StreamableToolEndpoint) StreamableToolEndpoint {
+	return func(ctx context.Context, args string, opts ...toolOption) (*schema.StreamReader[string], error) {
+		output, err := next(ctx, args, opts...)
+		if err != nil { return nil, err }
+		cc := getCancelContext(ctx)
+		if cc == nil { return output, nil }
+		wrapped := wrapStreamWithCancel(output, cc)
+		return wrapped, nil
+	}
+}
 
 type cancelMonitoredModel[M MessageType] struct {
 	inner ChatModel[M]

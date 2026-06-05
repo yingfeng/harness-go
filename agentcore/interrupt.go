@@ -93,8 +93,40 @@ func TypedCompositeInterrupt[M MessageType](ctx context.Context, info, state any
 	}}
 }
 
-func AppendAddressSegment(ctx context.Context, t AddressSegmentType, id string) context.Context { return ctx }
-func FromInterruptContexts(ctxs []*InterruptCtx) *InterruptSignal { return &InterruptSignal{} }
+type addrSegKey struct{}
+
+func AppendAddressSegment(ctx context.Context, t AddressSegmentType, id string) context.Context {
+	parent, _ := ctx.Value(addrSegKey{}).([]AddressSegment)
+	seg := make([]AddressSegment, len(parent)+1)
+	copy(seg, parent)
+	seg[len(parent)] = AddressSegment{Type: t, ID: id}
+	return context.WithValue(ctx, addrSegKey{}, seg)
+}
+
+func getAddressSegments(ctx context.Context) []AddressSegment {
+	if v, ok := ctx.Value(addrSegKey{}).([]AddressSegment); ok {
+		return v
+	}
+	return nil
+}
+
+func FromInterruptContexts(ctxs []*InterruptCtx) *InterruptSignal {
+	if len(ctxs) == 0 { return &InterruptSignal{} }
+	root := &InterruptSignal{}
+	buildFromCtxs(ctxs, root)
+	return root
+}
+
+func buildFromCtxs(ctxs []*InterruptCtx, parent *InterruptSignal) {
+	for _, c := range ctxs {
+		sig := &InterruptSignal{
+			ID: c.ID, Address: make(Address, len(c.Address)),
+			Info: c.Info, State: c.State,
+		}
+		copy(sig.Address, c.Address)
+		parent.Children = append(parent.Children, sig)
+	}
+}
 
 // ---- Checkpoint store ----
 
@@ -159,11 +191,34 @@ func signalToMaps(is *InterruptSignal) (map[string]Address, map[string]Interrupt
 }
 
 func getNextResumeAgent(ctx context.Context, info *ResumeInfo) (string, error) {
-	return "", errors.New("no child agents leading to interrupted agent found")
+	segs := getAddressSegments(ctx)
+	if len(segs) == 0 {
+		return "", errors.New("no address segments for resume")
+	}
+	// Find the deepest agent segment
+	for i := len(segs) - 1; i >= 0; i-- {
+		if segs[i].Type == AddressSegmentAgent {
+			return segs[i].ID, nil
+		}
+	}
+	return "", errors.New("no agent address segment found for resume")
 }
 
 func getNextResumeAgents(ctx context.Context, info *ResumeInfo) (map[string]bool, error) {
-	return nil, errors.New("no child agents leading to interrupted agent found")
+	segs := getAddressSegments(ctx)
+	if len(segs) == 0 {
+		return nil, errors.New("no address segments for resume")
+	}
+	result := make(map[string]bool)
+	for _, s := range segs {
+		if s.Type == AddressSegmentAgent {
+			result[s.ID] = true
+		}
+	}
+	if len(result) == 0 {
+		return nil, errors.New("no agent address segments found for resume")
+	}
+	return result, nil
 }
 
 func buildResumeInfo(ctx context.Context, nextID string, info *ResumeInfo) (context.Context, *ResumeInfo) {

@@ -167,8 +167,8 @@ type (
 	LLM              = prebuilt.LLM
 )
 
-// AgentCore types (selectively re-exported to avoid conflicts with prebuilt).
-// For full agentcore API, import github.com/infiniflow/ragflow/agent/agentcore directly.
+// AgentCore types (selectively re-exported).
+// Generic types like ChatModel[M] and RunnerConfig[M] must be imported directly.
 type (
 	// Agent is the core agent interface (Message type).
 	Agent = agentcore.Agent
@@ -180,8 +180,107 @@ type (
 	AgentEvent = agentcore.AgentEvent
 	// AgentAction represents actions an agent can emit.
 	AgentAction = agentcore.AgentAction
+	// AgentInput is the input to an agent.
+	AgentInput = agentcore.AgentInput
+	// AgentOutput is the output from an agent event.
+	AgentOutput = agentcore.AgentOutput
+	// RunOption configures agent execution.
+	RunOption = agentcore.RunOption
+	// InterruptInfo holds interrupt metadata.
+	InterruptInfo = agentcore.InterruptInfo
+	// InterruptCtx provides structured interrupt context.
+	InterruptCtx = agentcore.InterruptCtx
+	// InterruptSignal is the internal interrupt signal.
+	InterruptSignal = agentcore.InterruptSignal
+	// CancelMode defines when an agent should be canceled.
+	CancelMode = agentcore.CancelMode
+	// CancelError indicates an agent was canceled.
+	CancelError = agentcore.CancelError
+	// CancelHandle allows waiting for cancel completion.
+	CancelHandle = agentcore.CancelHandle
+	// AgentCancelFunc cancels a running agent.
+	AgentCancelFunc = agentcore.AgentCancelFunc
 	// BaseTool provides a simple Tool implementation.
 	BaseTool = agentcore.BaseTool
+	// ToolContext provides tool metadata.
+	ToolContext = agentcore.ToolContext
+	// ChatModelAgentState holds agent state for middlewares.
+	ChatModelAgentState = agentcore.ChatModelAgentState
+	// ChatModelAgentContext is passed to BeforeAgent middlewares.
+	ChatModelAgentContext = agentcore.ChatModelAgentContext
+	// ModelContext wraps model call context.
+	ModelContext = agentcore.ModelContext
+	// TurnLoop implements priority-based scheduling.
+	TurnLoop = agentcore.TurnLoop
+	// CheckPointStore persists execution checkpoints.
+	CheckPointStore = agentcore.CheckPointStore
+	// ChatModelMiddleware allows customizing agent behavior.
+	ChatModelMiddleware = agentcore.ChatModelMiddleware
+	// Workflow types
+	SequentialConfig = agentcore.SequentialConfig
+	ParallelConfig   = agentcore.ParallelConfig
+	LoopConfig       = agentcore.LoopConfig
+)
+
+// Cancel constants.
+const (
+	CancelImmediate      = agentcore.CancelImmediate
+	CancelAfterChatModel = agentcore.CancelAfterChatModel
+	CancelAfterToolCalls = agentcore.CancelAfterToolCalls
+)
+
+// AgentCore functions.
+var (
+	// NewRunner creates an agent Runner (Message type).
+	NewRunner = agentcore.NewRunner
+	// NewAgentTool wraps an Agent as a Tool.
+	NewAgentTool = agentcore.NewAgentTool
+	// NewSequential creates a sequential workflow agent.
+	NewSequential = agentcore.NewSequential
+	// NewParallel creates a parallel workflow agent.
+	NewParallel = agentcore.NewParallel
+	// NewLoop creates a loop workflow agent.
+	NewLoop = agentcore.NewLoop
+	// NewTurnLoop creates a TurnLoop scheduler.
+	NewTurnLoop = agentcore.NewTurnLoop
+	// SetSubAgents configures sub-agents.
+	SetSubAgents = agentcore.SetSubAgents
+	// WithCancel creates a cancel option and cancel function.
+	WithCancel = agentcore.WithCancel
+
+	// Run option constructors
+	WithSessionValues       = agentcore.WithSessionValues
+	WithCheckPointID        = agentcore.WithCheckPointID
+	WithSkipTransferMessages = agentcore.WithSkipTransferMessages
+	WithCallbacks            = agentcore.WithCallbacks
+	WithAgentNames           = agentcore.WithAgentNames
+	WithSharedParentSession  = agentcore.WithSharedParentSession
+	WithChatModelOptions     = agentcore.WithChatModelOptions
+	WithToolOptions          = agentcore.WithToolOptions
+	WithAgentToolOptions     = agentcore.WithAgentToolOptions
+	WithHistoryModifier      = agentcore.WithHistoryModifier
+	WithCancelMode           = agentcore.WithCancelMode
+	WithCancelTimeout        = agentcore.WithCancelTimeout
+	WithRecursiveCancel      = agentcore.WithRecursiveCancel
+
+	// Event helpers
+	StatefulInterrupt   = agentcore.StatefulInterrupt
+	CompositeInterrupt  = agentcore.CompositeInterrupt
+	SendEvent           = agentcore.SendEvent
+	SetRunLocalValue    = agentcore.SetRunLocalValue
+	GetRunLocalValue    = agentcore.GetRunLocalValue
+	DeleteRunLocalValue = agentcore.DeleteRunLocalValue
+
+	// Transfer and middleware
+	AgentWithOptions           = agentcore.AgentWithOptions
+	AgentWithDeterministicTransfer = agentcore.AgentWithDeterministicTransfer
+	SetLanguage                = agentcore.SetLanguage
+
+	// Errors
+	ErrCancelTimeout  = agentcore.ErrCancelTimeout
+	ErrExecutionEnded = agentcore.ErrExecutionEnded
+	ErrStreamCanceled = agentcore.ErrStreamCanceled
+
 )
 
 // Prebuilt component functions.
