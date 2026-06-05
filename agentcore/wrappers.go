@@ -4,7 +4,7 @@ import (
 	"context"
 	"io"
 
-	"github.com/infiniflow/ragflow/agent/agentcore/schema"
+	"github.com/infiniflow/ragflow/harness/agentcore/schema"
 )
 
 // EventSenderModelWrapper sends model output events through the agent's event stream.

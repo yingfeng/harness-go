@@ -3,7 +3,7 @@ package workflow
 import (
 	"fmt"
 
-	"github.com/infiniflow/ragflow/agent/agentcore"
+	"github.com/infiniflow/ragflow/harness/agentcore"
 )
 
 // PrintEvent prints an AgentEvent in a human-readable format.

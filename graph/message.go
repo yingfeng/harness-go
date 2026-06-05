@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/infiniflow/ragflow/agent/channels"
-	"github.com/infiniflow/ragflow/agent/types"
+	"github.com/infiniflow/ragflow/harness/channels"
+	"github.com/infiniflow/ragflow/harness/types"
 )
 
 // Message represents a message in the conversation.

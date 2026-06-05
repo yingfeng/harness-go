@@ -1,4 +1,4 @@
-module github.com/infiniflow/ragflow/agent
+module github.com/infiniflow/ragflow/harness
 
 go 1.24.0
 

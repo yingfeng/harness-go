@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/infiniflow/ragflow/agent/types"
+	"github.com/infiniflow/ragflow/harness/types"
 )
 
 // StreamEventType represents the type of stream event.

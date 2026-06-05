@@ -7,8 +7,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/infiniflow/ragflow/agent/agentcore"
-	"github.com/infiniflow/ragflow/agent/agentcore/schema"
+	"github.com/infiniflow/ragflow/harness/agentcore"
+	"github.com/infiniflow/ragflow/harness/agentcore/schema"
 )
 
 // MockModel returns a placeholder ChatModel that simulates LLM responses.

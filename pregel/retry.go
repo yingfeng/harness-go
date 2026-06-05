@@ -7,7 +7,7 @@ import (
 	"math/rand"
 	"time"
 
-	"github.com/infiniflow/ragflow/agent/types"
+	"github.com/infiniflow/ragflow/harness/types"
 )
 
 // RetryExecutor handles node execution with sophisticated retry logic.

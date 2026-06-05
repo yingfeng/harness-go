@@ -1,7 +1,7 @@
 package channels
 
 import (
-	"github.com/infiniflow/ragflow/agent/errors"
+	"github.com/infiniflow/ragflow/harness/errors"
 )
 
 // UntrackedValue stores a value but does not track it for checkpointing.

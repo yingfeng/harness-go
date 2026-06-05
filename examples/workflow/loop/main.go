@@ -10,10 +10,10 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/infiniflow/ragflow/agent/agentcore"
-	"github.com/infiniflow/ragflow/agent/agentcore/schema"
-	"github.com/infiniflow/ragflow/agent/examples/workflow"
-	wfsub "github.com/infiniflow/ragflow/agent/examples/workflow/loop/subagents"
+	"github.com/infiniflow/ragflow/harness/agentcore"
+	"github.com/infiniflow/ragflow/harness/agentcore/schema"
+	"github.com/infiniflow/ragflow/harness/examples/workflow"
+	wfsub "github.com/infiniflow/ragflow/harness/examples/workflow/loop/subagents"
 )
 
 func main() {

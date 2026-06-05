@@ -7,10 +7,10 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/infiniflow/ragflow/agent/channels"
-	"github.com/infiniflow/ragflow/agent/constants"
-	"github.com/infiniflow/ragflow/agent/errors"
-	"github.com/infiniflow/ragflow/agent/types"
+	"github.com/infiniflow/ragflow/harness/channels"
+	"github.com/infiniflow/ragflow/harness/constants"
+	"github.com/infiniflow/ragflow/harness/errors"
+	"github.com/infiniflow/ragflow/harness/types"
 )
 
 // pregelEngine implements the Pregel execution model.

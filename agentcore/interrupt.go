@@ -7,7 +7,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/infiniflow/ragflow/agent/agentcore/schema"
+	"github.com/infiniflow/ragflow/harness/agentcore/schema"
 )
 
 // ---- Resume types ----

@@ -1,6 +1,6 @@
-# Contributing to LangGraph Go
+# Contributing to Agent Harness Go
 
-Thank you for your interest in contributing to LangGraph Go! This document provides guidelines for contributing to the project.
+Thank you for your interest in contributing to Agent Harness Go! This document provides guidelines for contributing to the project.
 
 ## Code of Conduct
 
@@ -48,8 +48,8 @@ Enhancement suggestions are tracked as GitHub issues. When creating an enhanceme
 
 ```bash
 # Clone your fork
-git clone https://github.com/yourusername/langgraph-go.git
-cd langgraph-go
+git clone https://github.com/yourusername/harness-go.git
+cd harness-go
 
 # Install dependencies
 go mod download
@@ -61,7 +61,7 @@ go test ./...
 ### Project Structure
 
 ```
-langgraph-go/
+harness-go/
 ├── channels/      # Channel implementations
 ├── checkpoint/    # Checkpoint savers
 ├── constants/     # Constants
@@ -180,7 +180,7 @@ Please be patient during the review process. We aim to respond to pull requests 
 
 ## License
 
-By contributing to LangGraph Go, you agree that your contributions will be licensed under the MIT License.
+By contributing to Agent Harness Go, you agree that your contributions will be licensed under the MIT License.
 
 ## Questions?
 
@@ -190,4 +190,4 @@ If you have questions or need help, please:
 - Check existing documentation
 - Review existing code for examples
 
-Thank you for contributing to LangGraph Go!
+Thank you for contributing to Agent Harness Go!

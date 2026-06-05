@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/infiniflow/ragflow/agent/agentcore/schema"
+	"github.com/infiniflow/ragflow/harness/agentcore/schema"
 )
 
 // retryableChatModel wraps a ChatModel with retry logic.

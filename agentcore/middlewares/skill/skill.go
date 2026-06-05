@@ -4,7 +4,7 @@ package skill
 
 import (
 	"context"
-	"github.com/infiniflow/ragflow/agent/agentcore"
+	"github.com/infiniflow/ragflow/harness/agentcore"
 )
 
 type ExecMode int

@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/infiniflow/ragflow/agent/agentcore"
+	"github.com/infiniflow/ragflow/harness/agentcore"
 )
 
 type TaskManager struct{ tasks []*Task }

@@ -8,7 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/infiniflow/ragflow/agent/agentcore/schema"
+	"github.com/infiniflow/ragflow/harness/agentcore/schema"
 )
 
 // ---- CancelMode ----

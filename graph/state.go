@@ -6,8 +6,8 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/infiniflow/ragflow/agent/channels"
-	"github.com/infiniflow/ragflow/agent/types"
+	"github.com/infiniflow/ragflow/harness/channels"
+	"github.com/infiniflow/ragflow/harness/types"
 )
 
 // Annotation holds metadata for a state field.
@@ -85,7 +85,7 @@ func processField(field reflect.StructField) (*fieldInfo, error) {
 	}
 
 	// Parse struct tags for annotations
-	tag := field.Tag.Get("langgraph")
+	tag := field.Tag.Get("harness")
 	if tag != "" {
 		annotation, err := parseAnnotation(tag)
 		if err != nil {
@@ -110,7 +110,7 @@ func processField(field reflect.StructField) (*fieldInfo, error) {
 	return info, nil
 }
 
-// parseAnnotation parses a langgraph struct tag into an Annotation.
+// parseAnnotation parses a harness struct tag into an Annotation.
 // Format: "reducer=add" or "reducer=custom,meta=value"
 func parseAnnotation(tag string) (*Annotation, error) {
 	annotation := &Annotation{

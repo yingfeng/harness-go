@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/infiniflow/ragflow/agent/constants"
-	"github.com/infiniflow/ragflow/agent/types"
+	"github.com/infiniflow/ragflow/harness/constants"
+	"github.com/infiniflow/ragflow/harness/types"
 )
 
 // CompiledStateGraph represents a compiled state graph with full subgraph support.

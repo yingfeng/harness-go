@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/infiniflow/ragflow/agent/channels"
+	"github.com/infiniflow/ragflow/harness/channels"
 )
 
 // OptimizedEngineConfig configures the optimized Pregel engine.

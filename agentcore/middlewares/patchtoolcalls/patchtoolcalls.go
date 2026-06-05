@@ -5,8 +5,8 @@ package patchtoolcalls
 
 import (
 	"context"
-	"github.com/infiniflow/ragflow/agent/agentcore"
-	"github.com/infiniflow/ragflow/agent/agentcore/schema"
+	"github.com/infiniflow/ragflow/harness/agentcore"
+	"github.com/infiniflow/ragflow/harness/agentcore/schema"
 )
 
 type middleware[M agentcore.MessageType] struct {

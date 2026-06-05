@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/infiniflow/ragflow/agent/constants"
+	"github.com/infiniflow/ragflow/harness/constants"
 )
 
 func TestDrawMermaid(t *testing.T) {

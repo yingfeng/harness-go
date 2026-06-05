@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/infiniflow/ragflow/agent"
-	"github.com/infiniflow/ragflow/agent/channels"
+	"github.com/infiniflow/ragflow/harness"
+	"github.com/infiniflow/ragflow/harness/channels"
 )
 
 func main() {
@@ -26,7 +26,7 @@ func main() {
 }
 
 func lastValueDemo() {
-	ch := langgraph.NewLastValue("")
+	ch := harness.NewLastValue("")
 	ch.SetKey("last_message")
 
 	// Update with single value
@@ -52,7 +52,7 @@ func lastValueDemo() {
 }
 
 func topicDemo() {
-	ch := langgraph.NewTopic("", false) // Don't accumulate
+	ch := harness.NewTopic("", false) // Don't accumulate
 	ch.SetKey("messages")
 
 	// Update with values
@@ -92,7 +92,7 @@ func binopDemo() {
 	fmt.Printf("BinaryOperator sum: %v\n", val)
 
 	// Test with list append
-	listCh := langgraph.NewBinaryOperatorAggregate([]interface{}{}, langgraph.ListAppend)
+	listCh := harness.NewBinaryOperatorAggregate([]interface{}{}, harness.ListAppend)
 	listCh.SetKey("items")
 	listCh.Update([]interface{}{[]interface{}{"a", "b"}})
 	listCh.Update([]interface{}{[]interface{}{"c", "d"}})
@@ -102,7 +102,7 @@ func binopDemo() {
 }
 
 func ephemeralDemo() {
-	ch := langgraph.NewEphemeralValue("", true)
+	ch := harness.NewEphemeralValue("", true)
 	ch.SetKey("temp")
 
 	// Set value

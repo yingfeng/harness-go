@@ -1,4 +1,4 @@
-// Package errors provides error types for LangGraph Go.
+// Package errors provides error types for Agent Harness Go.
 package errors
 
 import (
@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// ErrorCode represents specific error codes for LangGraph.
+// ErrorCode represents specific error codes for Agent Harness.
 type ErrorCode string
 
 const (

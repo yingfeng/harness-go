@@ -208,5 +208,5 @@ python3 test_official_sdk.py   # ⭐ 官方 SDK 测试用例
 
 ---
 
-**Go Server 代码**: github.com/infiniflow/ragflow/agent  
+**Go Server 代码**: github.com/infiniflow/ragflow/harness  
 **Python SDK**: https://github.com/langchain-ai/langgraph

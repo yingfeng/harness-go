@@ -1,6 +1,6 @@
 package agentcore
 
-import "github.com/infiniflow/ragflow/agent/agentcore/schema"
+import "github.com/infiniflow/ragflow/harness/agentcore/schema"
 
 // TypedChatModelAgentState is the exported state type for ChatModelAgent middlewares.
 type TypedChatModelAgentState[M MessageType] struct {

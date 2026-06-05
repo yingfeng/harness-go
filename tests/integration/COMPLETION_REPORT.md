@@ -310,7 +310,7 @@ runs = client.runs.list(thread_id)
 ---
 
 **相关资源**:
-- Go Server 源码: `github.com/infiniflow/ragflow/agent`
+- Go Server 源码: `github.com/infiniflow/ragflow/harness`
 - Python SDK 源码: `https://github.com/langchain-ai/langgraph`
 - 测试文件: `/tests/integration/`
 - 详细文档: `tests/integration/COMPATIBILITY.md`

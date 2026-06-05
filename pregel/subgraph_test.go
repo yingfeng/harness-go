@@ -6,10 +6,10 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/infiniflow/ragflow/agent/channels"
-	"github.com/infiniflow/ragflow/agent/checkpoint"
-	"github.com/infiniflow/ragflow/agent/constants"
-	"github.com/infiniflow/ragflow/agent/types"
+	"github.com/infiniflow/ragflow/harness/channels"
+	"github.com/infiniflow/ragflow/harness/checkpoint"
+	"github.com/infiniflow/ragflow/harness/constants"
+	"github.com/infiniflow/ragflow/harness/types"
 )
 
 func TestSubgraphManagerCreation(t *testing.T) {

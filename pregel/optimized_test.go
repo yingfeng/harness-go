@@ -5,8 +5,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/infiniflow/ragflow/agent/channels"
-	"github.com/infiniflow/ragflow/agent/types"
+	"github.com/infiniflow/ragflow/harness/channels"
+	"github.com/infiniflow/ragflow/harness/types"
 )
 
 func TestPriorityTaskQueue(t *testing.T) {

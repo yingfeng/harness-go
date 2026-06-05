@@ -1,4 +1,4 @@
-// Example server implementation for LangGraph Go.
+// Example server implementation for Agent Harness Go.
 package main
 
 import (
@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/infiniflow/ragflow/agent/constants"
-	"github.com/infiniflow/ragflow/agent/graph"
-	"github.com/infiniflow/ragflow/agent/server"
+	"github.com/infiniflow/ragflow/harness/constants"
+	"github.com/infiniflow/ragflow/harness/graph"
+	"github.com/infiniflow/ragflow/harness/server"
 )
 
 // SimpleState is a simple state for the example
@@ -78,7 +78,7 @@ func main() {
 	log.Printf("Assistant request: %+v", assistantReq)
 
 	// Start the server
-	log.Println("Starting LangGraph server on http://localhost:8123")
+	log.Println("Starting Agent Harness server on http://localhost:8123")
 	log.Println("API endpoints:")
 	log.Println("  POST /assistants - Create assistant")
 	log.Println("  GET  /assistants - List assistants")

@@ -4,7 +4,7 @@ import (
 	"context"
 	"io"
 
-	"github.com/infiniflow/ragflow/agent/agentcore/schema"
+	"github.com/infiniflow/ragflow/harness/agentcore/schema"
 )
 
 // MessageType is the sealed type constraint for agent message types.

@@ -4,7 +4,7 @@ package channels
 import (
 	"fmt"
 
-	"github.com/infiniflow/ragflow/agent/errors"
+	"github.com/infiniflow/ragflow/harness/errors"
 )
 
 // Missing is a sentinel value to indicate a missing value.

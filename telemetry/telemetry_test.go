@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/infiniflow/ragflow/agent/runnable"
-	"github.com/infiniflow/ragflow/agent/types"
+	"github.com/infiniflow/ragflow/harness/runnable"
+	"github.com/infiniflow/ragflow/harness/types"
 	"go.opentelemetry.io/otel/trace"
 )
 

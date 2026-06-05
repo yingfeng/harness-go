@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/infiniflow/ragflow/agent/agentcore/schema"
+	"github.com/infiniflow/ragflow/harness/agentcore/schema"
 )
 
 // TypedRunner is the primary entry point for agent execution.

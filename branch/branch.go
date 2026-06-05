@@ -7,8 +7,8 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/infiniflow/ragflow/agent/errors"
-	"github.com/infiniflow/ragflow/agent/types"
+	"github.com/infiniflow/ragflow/harness/errors"
+	"github.com/infiniflow/ragflow/harness/types"
 )
 
 // BranchSpec represents a conditional branch specification.

@@ -7,7 +7,7 @@
 ## 测试环境
 
 - **测试日期**: 2026-02-03
-- **Go Server 版本**: LangGraph Go Server (包名: github.com/infiniflow/ragflow/agent)
+- **Go Server 版本**: LangGraph Go Server (包名: github.com/infiniflow/ragflow/harness)
 - **Python SDK 版本**: langgraph/libs/sdk-py
 - **测试服务器**: http://localhost:8123
 - **测试文件**: `/Users/yingfeng/codebase/graph/langgraph-go/tests/integration/test_official_sdk.py`

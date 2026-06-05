@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/infiniflow/ragflow/agent/constants"
+	"github.com/infiniflow/ragflow/harness/constants"
 )
 
 // State type for testing

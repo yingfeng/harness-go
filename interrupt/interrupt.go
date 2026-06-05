@@ -5,8 +5,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/infiniflow/ragflow/agent/errors"
-	"github.com/infiniflow/ragflow/agent/types"
+	"github.com/infiniflow/ragflow/harness/errors"
+	"github.com/infiniflow/ragflow/harness/types"
 )
 
 // contextKey is the key for interrupt context in context.Context.

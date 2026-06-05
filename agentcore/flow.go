@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/infiniflow/ragflow/agent/agentcore/schema"
+	"github.com/infiniflow/ragflow/harness/agentcore/schema"
 )
 
 // HistoryEntry represents a message in conversation history.

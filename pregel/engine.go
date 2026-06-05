@@ -10,11 +10,11 @@ import (
 	"sync"
 
 	"github.com/google/uuid"
-	"github.com/infiniflow/ragflow/agent/checkpoint"
-	"github.com/infiniflow/ragflow/agent/channels"
-	"github.com/infiniflow/ragflow/agent/errors"
-	"github.com/infiniflow/ragflow/agent/graph"
-	"github.com/infiniflow/ragflow/agent/types"
+	"github.com/infiniflow/ragflow/harness/checkpoint"
+	"github.com/infiniflow/ragflow/harness/channels"
+	"github.com/infiniflow/ragflow/harness/errors"
+	"github.com/infiniflow/ragflow/harness/graph"
+	"github.com/infiniflow/ragflow/harness/types"
 )
 
 // Engine implements the Pregel execution model.

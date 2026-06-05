@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/infiniflow/ragflow/agent/channels"
-	"github.com/infiniflow/ragflow/agent/types"
+	"github.com/infiniflow/ragflow/harness/channels"
+	"github.com/infiniflow/ragflow/harness/types"
 )
 
 // ChannelWrite represents a write operation to channels.

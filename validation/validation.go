@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/infiniflow/ragflow/agent/constants"
-	"github.com/infiniflow/ragflow/agent/errors"
+	"github.com/infiniflow/ragflow/harness/constants"
+	"github.com/infiniflow/ragflow/harness/errors"
 )
 
 // Validator validates graph structure.

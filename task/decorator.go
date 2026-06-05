@@ -1,4 +1,4 @@
-// Package task provides function decorators for LangGraph tasks.
+// Package task provides function decorators for Agent Harness tasks.
 package task
 
 import (
@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/infiniflow/ragflow/agent/graph"
-	"github.com/infiniflow/ragflow/agent/types"
+	"github.com/infiniflow/ragflow/harness/graph"
+	"github.com/infiniflow/ragflow/harness/types"
 )
 
 // TaskDecorator wraps a function with retry, cache, and other policies.

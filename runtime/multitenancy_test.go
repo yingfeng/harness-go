@@ -5,7 +5,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/infiniflow/ragflow/agent/managed"
+	"github.com/infiniflow/ragflow/harness/managed"
 )
 
 // TestRuntimeMultiTenantContext tests multi-tenant runtime contexts.

@@ -3,7 +3,7 @@ package channels
 import (
 	"fmt"
 
-	"github.com/infiniflow/ragflow/agent/errors"
+	"github.com/infiniflow/ragflow/harness/errors"
 )
 
 // LastValue stores the last value received, can receive at most one value per step.

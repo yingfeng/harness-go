@@ -3,7 +3,7 @@ package channels
 import (
 	"testing"
 
-	"github.com/infiniflow/ragflow/agent/errors"
+	"github.com/infiniflow/ragflow/harness/errors"
 )
 
 func TestLastValue(t *testing.T) {

@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/infiniflow/ragflow/agent/types"
+	"github.com/infiniflow/ragflow/harness/types"
 )
 
 // Cache is the interface for caching node outputs.

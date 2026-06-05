@@ -10,7 +10,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/infiniflow/ragflow/agent/types"
+	"github.com/infiniflow/ragflow/harness/types"
 )
 
 // RemoteRunnable executes nodes remotely via HTTP.

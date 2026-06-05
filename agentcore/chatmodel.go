@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/infiniflow/ragflow/agent/agentcore/schema"
-	"github.com/infiniflow/ragflow/agent/agentcore/internal"
+	"github.com/infiniflow/ragflow/harness/agentcore/schema"
+	"github.com/infiniflow/ragflow/harness/agentcore/internal"
 )
 
 // ChatModelConfig holds configuration for TypedChatModelAgent.

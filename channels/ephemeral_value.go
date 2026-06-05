@@ -1,7 +1,7 @@
 package channels
 
 import (
-	"github.com/infiniflow/ragflow/agent/errors"
+	"github.com/infiniflow/ragflow/harness/errors"
 )
 
 // EphemeralValue stores a value that is cleared after being read once.

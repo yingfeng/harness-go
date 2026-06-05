@@ -3,7 +3,7 @@ package channels
 import (
 	"reflect"
 
-	"github.com/infiniflow/ragflow/agent/types"
+	"github.com/infiniflow/ragflow/harness/types"
 )
 
 // ReducerChannel wraps a channel with a reducer function.

@@ -6,7 +6,7 @@ import (
 	"io"
 	"sync"
 
-	"github.com/infiniflow/ragflow/agent/stream"
+	"github.com/infiniflow/ragflow/harness/stream"
 )
 
 // StreamMessagesHandler handles streaming of messages from LLM nodes.

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/infiniflow/ragflow/agent/errors"
+	"github.com/infiniflow/ragflow/harness/errors"
 )
 
 // NamedBarrierValue waits until all specified named values are received before making the value available.

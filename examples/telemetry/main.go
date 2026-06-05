@@ -1,4 +1,4 @@
-// Package main demonstrates OpenTelemetry integration with LangGraph.
+// Package main demonstrates OpenTelemetry integration with Agent Harness.
 package main
 
 import (
@@ -7,15 +7,15 @@ import (
 	"log"
 	"time"
 
-	"github.com/infiniflow/ragflow/agent/pregel"
-	"github.com/infiniflow/ragflow/agent/telemetry"
-	"github.com/infiniflow/ragflow/agent/runnable"
-	"github.com/infiniflow/ragflow/agent/types"
+	"github.com/infiniflow/ragflow/harness/pregel"
+	"github.com/infiniflow/ragflow/harness/telemetry"
+	"github.com/infiniflow/ragflow/harness/runnable"
+	"github.com/infiniflow/ragflow/harness/types"
 )
 
 func main() {
 	// Initialize OpenTelemetry for development with console exporter
-	shutdown, err := telemetry.InitForDevelopment("langgraph-example")
+	shutdown, err := telemetry.InitForDevelopment("harness-example")
 	if err != nil {
 		log.Fatalf("Failed to initialize OpenTelemetry: %v", err)
 	}
@@ -28,7 +28,7 @@ func main() {
 	}
 	tracer := telemetry.NewRunnableTracer(provider)
 
-	// Create a simple LangGraph workflow
+	// Create a simple Agent Harness workflow
 	ctx := context.Background()
 
 	// Create instrumented nodes

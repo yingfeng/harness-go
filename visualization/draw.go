@@ -1,4 +1,4 @@
-// Package visualization provides graph visualization utilities for LangGraph Go.
+// Package visualization provides graph visualization utilities for Agent Harness Go.
 // It supports multiple output formats including Mermaid, Graphviz DOT, and ASCII art.
 package visualization
 
@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/infiniflow/ragflow/agent/constants"
+	"github.com/infiniflow/ragflow/harness/constants"
 )
 
 // DrawFormat represents the output format for graph visualization.

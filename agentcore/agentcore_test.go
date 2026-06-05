@@ -6,7 +6,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/infiniflow/ragflow/agent/agentcore/schema"
+	"github.com/infiniflow/ragflow/harness/agentcore/schema"
 )
 
 // ---- Mock ChatModel ----

@@ -2,8 +2,8 @@
 package deep
 
 import (
-	"github.com/infiniflow/ragflow/agent/agentcore"
-	"github.com/infiniflow/ragflow/agent/agentcore/schema"
+	"github.com/infiniflow/ragflow/harness/agentcore"
+	"github.com/infiniflow/ragflow/harness/agentcore/schema"
 )
 
 type Config struct {

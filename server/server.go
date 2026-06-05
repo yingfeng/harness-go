@@ -1,4 +1,4 @@
-// Package server provides a LangGraph API server compatible with langgraph-sdk.
+// Package server provides a Agent Harness API server compatible with agent-harness-sdk.
 package server
 
 import (
@@ -12,12 +12,12 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/infiniflow/ragflow/agent/checkpoint"
-	"github.com/infiniflow/ragflow/agent/graph"
-	"github.com/infiniflow/ragflow/agent/types"
+	"github.com/infiniflow/ragflow/harness/checkpoint"
+	"github.com/infiniflow/ragflow/harness/graph"
+	"github.com/infiniflow/ragflow/harness/types"
 )
 
-// Server implements the LangGraph API server compatible with langgraph-sdk.
+// Server implements the Agent Harness API server compatible with agent-harness-sdk.
 type Server struct {
 	mu          sync.RWMutex
 	router      *http.ServeMux
@@ -30,7 +30,7 @@ type Server struct {
 	config      *ServerConfig
 }
 
-// ServerConfig configures the LangGraph server.
+// ServerConfig configures the Agent Harness server.
 type ServerConfig struct {
 	Host string
 	Port int
@@ -95,7 +95,7 @@ type Run struct {
 	StreamMode   []string               `json:"stream_mode,omitempty"`
 }
 
-// NewServer creates a new LangGraph API server.
+// NewServer creates a new Agent Harness API server.
 func NewServer(config *ServerConfig) *Server {
 	if config == nil {
 		config = &ServerConfig{
@@ -202,7 +202,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // Start starts the server.
 func (s *Server) Start() error {
 	addr := fmt.Sprintf("%s:%d", s.config.Host, s.config.Port)
-	log.Printf("LangGraph server starting on %s", addr)
+	log.Printf("Agent Harness server starting on %s", addr)
 	return http.ListenAndServe(addr, s)
 }
 

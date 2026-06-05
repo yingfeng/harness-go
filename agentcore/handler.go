@@ -2,7 +2,7 @@ package agentcore
 
 import (
 	"context"
-	"github.com/infiniflow/ragflow/agent/agentcore/schema"
+	"github.com/infiniflow/ragflow/harness/agentcore/schema"
 )
 
 // ModelOption configures a model call.

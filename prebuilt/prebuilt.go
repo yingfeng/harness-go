@@ -1,11 +1,11 @@
-// Package prebuilt provides pre-built components for common LangGraph patterns.
+// Package prebuilt provides pre-built components for common Agent Harness patterns.
 package prebuilt
 
 import (
 	"context"
 	"fmt"
 
-	"github.com/infiniflow/ragflow/agent/runnable"
+	"github.com/infiniflow/ragflow/harness/runnable"
 )
 
 // ReactAgentConfig holds configuration for a ReAct agent.

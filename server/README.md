@@ -1,6 +1,6 @@
-# LangGraph Go Server
+# Agent Harness Go Server
 
-A LangGraph API server implementation for Go that is compatible with the Python `langgraph-sdk`.
+A Agent Harness API server implementation for Go that is compatible with the Python `agent-harness-sdk`.
 
 ## Features
 
@@ -14,7 +14,7 @@ A LangGraph API server implementation for Go that is compatible with the Python 
 ## Installation
 
 ```bash
-go get github.com/infiniflow/ragflow/agent/server
+go get github.com/infiniflow/ragflow/harness/server
 ```
 
 ## Quick Start
@@ -26,9 +26,9 @@ import (
     "context"
     "log"
 
-    "github.com/infiniflow/ragflow/agent/constants"
-    "github.com/infiniflow/ragflow/agent/graph"
-    "github.com/infiniflow/ragflow/agent/server"
+    "github.com/infiniflow/ragflow/harness/constants"
+    "github.com/infiniflow/ragflow/harness/graph"
+    "github.com/infiniflow/ragflow/harness/server"
 )
 
 // Define your state
@@ -108,10 +108,10 @@ func main() {
 
 ## Using with Python SDK
 
-Once the server is running, you can use the Python `langgraph-sdk` to interact with it:
+Once the server is running, you can use the Python `agent-harness-sdk` to interact with it:
 
 ```python
-from langgraph_sdk import get_client
+from agent_harness_sdk import get_client
 
 # Connect to the Go server
 client = get_client(url="http://localhost:8123")
@@ -182,7 +182,7 @@ srv := server.NewServer(&server.ServerConfig{
 
 ## Architecture
 
-The server is designed to be compatible with the LangGraph Python SDK:
+The server is designed to be compatible with the Agent Harness Python SDK:
 
 1. **REST API**: Follows the same endpoint structure as the Python server
 2. **JSON Schema**: Uses compatible request/response formats

@@ -1,24 +1,26 @@
-# LangGraph Go
+# Agent Harness Go
 
-[![Go Reference](https://pkg.go.dev/badge/github.com/infiniflow/ragflow/agent.svg)](https://pkg.go.dev/github.com/infiniflow/ragflow/agent)
-[![Go Report Card](https://goreportcard.com/badge/github.com/infiniflow/ragflow/agent)](https://goreportcard.com/report/github.com/infiniflow/ragflow/agent)
+[![Go Reference](https://pkg.go.dev/badge/github.com/infiniflow/ragflow/harness.svg)](https://pkg.go.dev/github.com/infiniflow/ragflow/harness)
+[![Go Report Card](https://goreportcard.com/badge/github.com/infiniflow/ragflow/harness)](https://goreportcard.com/report/github.com/infiniflow/ragflow/harness)
 
-LangGraph Go is a Go port of [LangGraph](https://github.com/langchain-ai/langgraph), a library for building stateful, multi-agent applications with LLMs. It provides a graph-based execution model that supports cycles, branching, persistence, and human-in-the-loop workflows.
+Agent Harness is a Go framework for building stateful, multi-agent applications with LLMs. It provides a graph-based execution model that supports cycles, branching, persistence, and human-in-the-loop workflows.
 
 ## Features
 
+- **Agent Harness**: A complete agent development kit with ChatModelAgent, middleware system, and tool execution
 - **Stateful Computation**: Nodes communicate by reading and writing to shared state channels
 - **Cyclic Graphs**: Support for loops and recursion with configurable limits
-- **Checkpointing**: Persistent state storage with in-memory and SQLite backends
+- **Checkpointing**: Persistent state storage with in-memory, SQLite, and PostgreSQL backends
 - **Human-in-the-Loop**: Interrupt flows for human approval or input
 - **Streaming**: Real-time output streaming during graph execution
 - **Type-Safe**: Strong typing with Go generics support
 - **OpenTelemetry Integration**: Distributed tracing and metrics for observability
+- **Middleware Ecosystem**: Summarization, reduction, filesystem, skill, and more
 
 ## Installation
 
 ```bash
-go get github.com/infiniflow/ragflow/agent
+go get github.com/infiniflow/ragflow/harness
 ```
 
 ## Quick Start
@@ -31,7 +33,7 @@ import (
     "fmt"
     "log"
 
-    "github.com/infiniflow/ragflow/agent"
+    "github.com/infiniflow/ragflow/harness"
 )
 
 // Define your state
@@ -44,7 +46,7 @@ func main() {
     ctx := context.Background()
 
     // Create a graph builder
-    builder := langgraph.NewStateGraph(State{})
+    builder := harness.NewStateGraph(State{})
 
     // Add nodes
     builder.AddNode("agent", func(ctx context.Context, state interface{}) (interface{}, error) {
@@ -55,8 +57,8 @@ func main() {
     })
 
     // Add edges
-    builder.AddEdge(langgraph.Start, "agent")
-    builder.AddEdge("agent", langgraph.End)
+    builder.AddEdge(harness.Start, "agent")
+    builder.AddEdge("agent", harness.End)
 
     // Compile the graph
     graph, err := builder.Compile()
@@ -84,7 +86,7 @@ func main() {
 The `StateGraph` is the main class for building graphs. Nodes in the graph communicate by reading and writing to a shared state object.
 
 ```go
-builder := langgraph.NewStateGraph(State{})
+builder := harness.NewStateGraph(State{})
 ```
 
 ### Nodes
@@ -124,7 +126,7 @@ Channels define how state is stored and updated. Different channel types support
 - **EphemeralValue**: Clears after being read once
 
 ```go
-builder.AddChannel("messages", langgraph.NewTopic(string, true))
+builder.AddChannel("messages", harness.NewTopic(string, true))
 ```
 
 ### Checkpoints
@@ -133,13 +135,13 @@ Checkpoints enable persistence and resumption of graph execution.
 
 ```go
 // In-memory checkpointer
-saver := langgraph.NewMemorySaver()
+saver := harness.NewMemorySaver()
 
 // SQLite checkpointer
-saver, err := langgraph.NewSqliteSaver("checkpoints.db")
+saver, err := harness.NewSqliteSaver("checkpoints.db")
 
 // Compile with checkpointer
-graph, err := builder.Compile(langgraph.WithCheckpointer(saver))
+graph, err := builder.Compile(harness.WithCheckpointer(saver))
 ```
 
 ## Examples
@@ -162,13 +164,13 @@ builder.AddConditionalEdges("router", func(ctx context.Context, state interface{
 ### Retry Policy
 
 ```go
-retryPolicy := langgraph.RetryPolicy{
+retryPolicy := harness.RetryPolicy{
     MaxAttempts:     3,
     InitialInterval: 500 * time.Millisecond,
     BackoffFactor:   2.0,
 }
 
-builder.AddNodeWithOptions("risky_node", nodeFunc, langgraph.NodeOptions{
+builder.AddNodeWithOptions("risky_node", nodeFunc, harness.NodeOptions{
     RetryPolicy: &retryPolicy,
 })
 ```
@@ -177,12 +179,12 @@ builder.AddNodeWithOptions("risky_node", nodeFunc, langgraph.NodeOptions{
 
 ```go
 // Enable interrupts for specific nodes
-graph, err := builder.Compile(langgraph.WithInterrupts("human_review"))
+graph, err := builder.Compile(harness.WithInterrupts("human_review"))
 
 // In your node, use interrupt
 func humanReviewNode(ctx context.Context, state interface{}) (interface{}, error) {
     // This will pause execution and return to the client
-    result, err := langgraph.Interrupt("Please review and approve")
+    result, err := harness.InterruptFunc("Please review and approve")
     if err != nil {
         return nil, err
     }
@@ -191,15 +193,73 @@ func humanReviewNode(ctx context.Context, state interface{}) (interface{}, error
 }
 
 // Resume with a command
-result, err := graph.Invoke(ctx, langgraph.NewCommand().WithResume(approval), config)
+result, err := graph.Invoke(ctx, harness.NewCommand().WithResume(approval), config)
+```
+
+## Agent Harness (agentcore)
+
+The `agentcore` package provides a complete Agent Development Kit (ADK):
+
+### ChatModelAgent (ReAct Loop)
+
+```go
+import "github.com/infiniflow/ragflow/harness/agentcore"
+
+model := // your LLM model implementing agentcore.ChatModel[*schema.Message]
+agent := agentcore.NewChatModelAgent[*schema.Message](&agentcore.ChatModelConfig[*schema.Message]{
+    Model:     model,
+    Tools:     []agentcore.Tool{myTool},
+    MaxIterations: 10,
+}).WithName("my_agent")
+
+runner := agentcore.NewTypedRunner(agentcore.RunnerConfig[*schema.Message]{
+    Agent: agent,
+})
+
+iter := runner.Query(ctx, "Hello!")
+for { ev, ok := iter.Next(); if !ok { break }; /* handle ev */ }
+```
+
+### Middleware System
+
+```go
+agent := agentcore.NewChatModelAgent[*schema.Message](&agentcore.ChatModelConfig[*schema.Message]{
+    Model: model,
+    Middlewares: []agentcore.ChatModelMiddleware{
+        summarization.New(model, &summarization.Config{MaxTokens: 4096}),
+        reduction.New(&reduction.Config{MaxToolOutputLen: 2000}),
+        myCustomMiddleware,
+    },
+})
+```
+
+### Workflow Agents
+
+```go
+// Sequential workflow
+wf, _ := agentcore.NewSequential(ctx, &agentcore.SequentialConfig{
+    Name: "pipeline", SubAgents: []agentcore.Agent{agentA, agentB},
+})
+
+// Parallel workflow
+wf, _ := agentcore.NewParallel(ctx, &agentcore.ParallelConfig{
+    Name: "collectors", SubAgents: []agentcore.Agent{agentC, agentD, agentE},
+})
+
+// Loop workflow
+wf, _ := agentcore.NewLoop(ctx, &agentcore.LoopConfig{
+    Name: "reflection", SubAgents: []agentcore.Agent{mainAgent, critiqueAgent},
+    MaxIterations: 5,
+})
 ```
 
 ## Project Structure
 
 ```
-langgraph-go/
+harness/
+├── agentcore/     # Agent Development Kit (ChatModelAgent, middleware, workflow)
 ├── channels/      # Channel implementations for state management
-├── checkpoint/    # Checkpoint savers (memory, sqlite)
+├── checkpoint/    # Checkpoint savers (memory, sqlite, postgres)
 ├── constants/     # Constants and reserved keys
 ├── errors/        # Error types
 ├── examples/      # Example applications
@@ -212,7 +272,7 @@ langgraph-go/
 
 ## Architecture
 
-LangGraph Go follows the [Pregel](https://research.google.com/pubs/pub37252.html) execution model:
+This project follows the [Pregel](https://research.google.com/pubs/pub37252.html) execution model:
 
 1. **Build Phase**: Define nodes, edges, and state channels
 2. **Compile Phase**: Validate and prepare the graph for execution
@@ -225,12 +285,12 @@ LangGraph Go follows the [Pregel](https://research.google.com/pubs/pub37252.html
 
 ## Observability with OpenTelemetry
 
-LangGraph Go provides comprehensive OpenTelemetry support for distributed tracing and metrics collection.
+This project provides comprehensive OpenTelemetry support for distributed tracing and metrics collection.
 
 ### Basic Setup
 
 ```go
-import "github.com/infiniflow/ragflow/agent/telemetry"
+import "github.com/infiniflow/ragflow/harness/telemetry"
 
 // Initialize for development
 shutdown, err := telemetry.InitForDevelopment("my-app")
@@ -238,125 +298,9 @@ if err != nil {
     log.Fatal(err)
 }
 defer shutdown(context.Background())
-
-// Initialize for production
-shutdown, err := telemetry.InitForProduction(
-    "my-app",
-    "1.0.0",
-    "production",
-    "otel-collector:4317",
-)
-defer shutdown(context.Background())
-```
-
-### Instrumenting Runnables
-
-```go
-// Create telemetry provider
-provider, err := telemetry.NewDefaultTelemetryProvider()
-if err != nil {
-    log.Fatal(err)
-}
-
-// Create tracer
-tracer := telemetry.NewRunnableTracer(provider)
-
-// Instrument a runnable
-myRunnable := runnable.NewInjectableRunnable("my-node", func(ctx context.Context, input interface{}) (interface{}, error) {
-    return process(input), nil
-})
-
-tracedRunnable := tracer.TraceRunnable(myRunnable)
-
-// Execute with automatic tracing
-result, err := tracedRunnable.Invoke(ctx, input)
-```
-
-### Instrumenting Node Functions
-
-```go
-// Wrap node function with instrumentation
-nodeFunc := func(ctx context.Context, input interface{}) (interface{}, error) {
-    time.Sleep(50 * time.Millisecond)
-    return input, nil
-}
-
-tracedNode := tracer.TraceNode("process", nodeFunc)
-result, err := tracedNode(ctx, "input")
-```
-
-### Manual Spans
-
-```go
-// Run code within a span
-err := telemetry.RunInSpan(ctx, "custom-operation", func(ctx context.Context) error {
-    // Your code here
-    return nil
-})
-
-// Or with result
-result, err := telemetry.RunInSpanWithResult(ctx, "operation", func(ctx context.Context) (string, error) {
-    return "success", nil
-})
-```
-
-### Recording Metrics
-
-```go
-metrics := provider.Metrics
-
-// Record node execution
-metrics.RecordNodeExecution(ctx, "node-name", "input-type", "output-type", 100*time.Millisecond, nil)
-
-// Record cache operations
-metrics.RecordCacheHit(ctx, "cache-key")
-metrics.RecordCacheMiss(ctx, "cache-key")
-
-// Record messages and tokens
-metrics.RecordMessagesProcessed(ctx, 5)
-metrics.RecordTokensProcessed(ctx, 128)
-```
-
-### Configuration
-
-OpenTelemetry can be configured via environment variables:
-
-- `OTEL_SERVICE_NAME`: Service name
-- `OTEL_EXPORTER_CONSOLE`: Set to "true" for console output
-- `OTEL_EXPORTER_OTLP_ENDPOINT`: OTLP collector endpoint
-
-Or programmatically:
-
-```go
-cfg := &telemetry.Config{
-    ServiceName:        "my-service",
-    ServiceVersion:     "1.0.0",
-    Environment:        "production",
-    EnableTracing:      true,
-    EnableMetrics:      true,
-    SampleRate:         0.1, // 10% sampling
-    OTLPEndpoint:       "otel-collector:4317",
-    UseConsoleExporter: false,
-    ResourceAttributes: map[string]string{
-        "team":  "langgraph",
-        "owner": "platform",
-    },
-}
-
-shutdown, err := telemetry.Init(cfg)
-defer shutdown(context.Background())
 ```
 
 For more details, see the [telemetry README](telemetry/README.md) and [examples](examples/telemetry/).
-
-## Differences from Python LangGraph
-
-While this Go implementation aims to be functionally equivalent to the Python version, there are some differences due to language constraints:
-
-- **Type System**: Go uses interface{} for dynamic typing instead of Python's Any
-- **Generics**: Limited use of Go generics where type safety is important
-- **Reflection**: More reliance on reflection for struct-to-map conversions
-- **Channels**: Similar semantics but different implementation details
 
 ## Contributing
 
@@ -365,7 +309,3 @@ Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for gui
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Acknowledgments
-
-This is a Go port of the original [LangGraph](https://github.com/langchain-ai/langgraph) library by LangChain AI.

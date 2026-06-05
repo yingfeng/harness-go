@@ -1,7 +1,8 @@
-// Package langgraph is the main package for LangGraph Go.
+// Package harness is the main package for Agent Harness Go.
 //
-// LangGraph is a library for building stateful, multi-agent applications with LLMs.
-// It provides a graph-based execution model that supports:
+// Agent Harness is a framework for building stateful, multi-agent
+// applications with LLMs. It provides a graph-based execution model
+// that supports:
 //
 //   - Stateful computation with channels and reducers
 //   - Multi-agent workflows with subgraphs
@@ -13,8 +14,8 @@
 //
 //	import (
 //	    "context"
-//	    "github.com/infiniflow/ragflow/agent"
-//	    "github.com/infiniflow/ragflow/agent/channels"
+//	    "github.com/infiniflow/ragflow/harness"
+//	    "github.com/infiniflow/ragflow/harness/channels"
 //	)
 //
 //	// Define state schema
@@ -24,7 +25,7 @@
 //	}
 //
 //	// Create graph
-//	builder := langgraph.NewStateGraph(State{})
+//	builder := harness.NewStateGraph(State{})
 //
 //	// Add nodes
 //	builder.AddNode("agent", func(ctx context.Context, state interface{}) (interface{}, error) {
@@ -50,19 +51,19 @@
 //	})
 //
 // For more examples and documentation, visit:
-// https://github.com/infiniflow/ragflow/agent
-package langgraph
+// https://github.com/infiniflow/ragflow/harness
+package harness
 
 import (
-	"github.com/infiniflow/ragflow/agent/agentcore"
-	"github.com/infiniflow/ragflow/agent/channels"
-	"github.com/infiniflow/ragflow/agent/checkpoint"
-	"github.com/infiniflow/ragflow/agent/constants"
-	"github.com/infiniflow/ragflow/agent/errors"
-	"github.com/infiniflow/ragflow/agent/graph"
-	"github.com/infiniflow/ragflow/agent/interrupt"
-	"github.com/infiniflow/ragflow/agent/prebuilt"
-	"github.com/infiniflow/ragflow/agent/types"
+	"github.com/infiniflow/ragflow/harness/agentcore"
+	"github.com/infiniflow/ragflow/harness/channels"
+	"github.com/infiniflow/ragflow/harness/checkpoint"
+	"github.com/infiniflow/ragflow/harness/constants"
+	"github.com/infiniflow/ragflow/harness/errors"
+	"github.com/infiniflow/ragflow/harness/graph"
+	"github.com/infiniflow/ragflow/harness/interrupt"
+	"github.com/infiniflow/ragflow/harness/prebuilt"
+	"github.com/infiniflow/ragflow/harness/types"
 )
 
 // Re-export main types for convenience.

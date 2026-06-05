@@ -15,7 +15,7 @@ import (
 
 const (
 	// InstrumentationName is the name of the instrumentation.
-	InstrumentationName = "github.com/infiniflow/ragflow/agent"
+	InstrumentationName = "github.com/infiniflow/ragflow/harness"
 	// InstrumentationVersion is the version of the instrumentation.
 	InstrumentationVersion = "1.0.0"
 )

@@ -1,4 +1,4 @@
-// Package server provides tests for the LangGraph API server.
+// Package server provides tests for the Agent Harness API server.
 package server
 
 import (
@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/infiniflow/ragflow/agent/constants"
-	"github.com/infiniflow/ragflow/agent/graph"
+	"github.com/infiniflow/ragflow/harness/constants"
+	"github.com/infiniflow/ragflow/harness/graph"
 )
 
 // SimpleState is a simple state for testing

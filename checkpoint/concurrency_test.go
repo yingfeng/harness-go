@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/infiniflow/ragflow/agent/types"
+	"github.com/infiniflow/ragflow/harness/types"
 )
 
 func TestNewCheckpointTuple(t *testing.T) {

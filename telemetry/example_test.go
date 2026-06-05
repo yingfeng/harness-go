@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/infiniflow/ragflow/agent/runnable"
-	"github.com/infiniflow/ragflow/agent/types"
+	"github.com/infiniflow/ragflow/harness/runnable"
+	"github.com/infiniflow/ragflow/harness/types"
 )
 
 // Example_init demonstrates basic initialization of OpenTelemetry.
@@ -29,7 +29,7 @@ func Example_init() {
 func Example_initForProduction() {
 	// Initialize for production with OTLP exporter
 	shutdown, err := InitForProduction(
-		"my-langgraph-app",
+		"my-agent-harness-app",
 		"1.0.0",
 		"production",
 		"otel-collector:4317",
@@ -45,7 +45,7 @@ func Example_initForProduction() {
 // Example_initForDevelopment demonstrates development configuration.
 func Example_initForDevelopment() {
 	// Initialize for development with console exporter
-	shutdown, err := InitForDevelopment("my-langgraph-dev")
+	shutdown, err := InitForDevelopment("my-agent-harness-dev")
 	if err != nil {
 		log.Fatalf("Failed to initialize OpenTelemetry: %v", err)
 	}
@@ -331,7 +331,7 @@ func Example_customConfig() {
 		OTLPEndpoint:       "otel:4317",
 		UseConsoleExporter: false,
 		ResourceAttributes: map[string]string{
-			"team":         "langgraph",
+			"team":         "agent-harness",
 			"owner":        "platform",
 			"custom.field": "value",
 		},

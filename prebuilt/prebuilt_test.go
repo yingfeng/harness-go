@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/infiniflow/ragflow/agent/runnable"
+	"github.com/infiniflow/ragflow/harness/runnable"
 )
 
 func TestToolNode(t *testing.T) {

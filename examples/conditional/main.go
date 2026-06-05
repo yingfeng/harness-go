@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/infiniflow/ragflow/agent"
+	"github.com/infiniflow/ragflow/harness"
 )
 
 // State defines the graph state.
@@ -19,7 +19,7 @@ func main() {
 	ctx := context.Background()
 
 	// Create graph builder
-	builder := langgraph.NewStateGraph(State{})
+	builder := harness.NewStateGraph(State{})
 
 	// Add start node
 	builder.AddNode("start", func(ctx context.Context, state interface{}) (interface{}, error) {
@@ -60,7 +60,7 @@ func main() {
 	})
 
 	// Add edges
-	if err := builder.AddEdge(langgraph.Start, "start"); err != nil {
+	if err := builder.AddEdge(harness.Start, "start"); err != nil {
 		log.Fatal(err)
 	}
 	if err := builder.AddEdge("start", "decision"); err != nil {
@@ -87,7 +87,7 @@ func main() {
 	if err := builder.AddEdge("low_value", "end"); err != nil {
 		log.Fatal(err)
 	}
-	if err := builder.AddEdge("end", langgraph.End); err != nil {
+	if err := builder.AddEdge("end", harness.End); err != nil {
 		log.Fatal(err)
 	}
 

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/infiniflow/ragflow/agent/channels"
+	"github.com/infiniflow/ragflow/harness/channels"
 )
 
 // ChannelRead represents a read operation from channels.

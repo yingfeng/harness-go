@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/infiniflow/ragflow/agent/types"
+	"github.com/infiniflow/ragflow/harness/types"
 )
 
 // MultiPolicyRetryExecutor handles node execution with multiple retry policies.

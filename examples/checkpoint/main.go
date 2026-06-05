@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/infiniflow/ragflow/agent"
+	"github.com/infiniflow/ragflow/harness"
 )
 
 // State defines the graph state.
@@ -19,7 +19,7 @@ func main() {
 	ctx := context.Background()
 
 	// Create graph builder
-	builder := langgraph.NewStateGraph(State{})
+	builder := harness.NewStateGraph(State{})
 
 	// Add step node
 	builder.AddNode("step", func(ctx context.Context, state interface{}) (interface{}, error) {
@@ -31,24 +31,24 @@ func main() {
 	})
 
 	// Add edges
-	if err := builder.AddEdge(langgraph.Start, "step"); err != nil {
+	if err := builder.AddEdge(harness.Start, "step"); err != nil {
 		log.Fatal(err)
 	}
-	if err := builder.AddEdge("step", langgraph.End); err != nil {
+	if err := builder.AddEdge("step", harness.End); err != nil {
 		log.Fatal(err)
 	}
 
 	// Create in-memory checkpointer
-	checkpointer := langgraph.NewMemorySaver()
+	checkpointer := harness.NewMemorySaver()
 
 	// Compile graph with checkpointer
-	graph, err := builder.Compile(langgraph.WithCheckpointer(checkpointer))
+	graph, err := builder.Compile(harness.WithCheckpointer(checkpointer))
 	if err != nil {
 		log.Fatalf("Failed to compile graph: %v", err)
 	}
 
 	// Create a thread config
-	config := langgraph.NewRunnableConfig()
+	config := harness.NewRunnableConfig()
 	config.Configurable = map[string]interface{}{
 		"thread_id": "example-thread-1",
 	}

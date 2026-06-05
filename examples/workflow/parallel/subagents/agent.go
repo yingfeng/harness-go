@@ -2,9 +2,9 @@
 package subagents
 
 import (
-	"github.com/infiniflow/ragflow/agent/agentcore"
-	"github.com/infiniflow/ragflow/agent/agentcore/schema"
-	"github.com/infiniflow/ragflow/agent/examples/workflow"
+	"github.com/infiniflow/ragflow/harness/agentcore"
+	"github.com/infiniflow/ragflow/harness/agentcore/schema"
+	"github.com/infiniflow/ragflow/harness/examples/workflow"
 )
 
 // NewStockDataCollectionAgent returns a stock market data collector agent.
