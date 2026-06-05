@@ -10,6 +10,7 @@ import (
 // AgentToolOptions configures an AgentTool.
 type AgentToolOptions struct {
 	FullChatHistoryAsInput bool
+	EmitInternalEvents     bool // Forward inner agent's events to parent stream
 }
 
 // AgentToolOption configures the AgentTool.
@@ -18,6 +19,20 @@ type AgentToolOption func(*AgentToolOptions)
 // WithFullChatHistoryAsInput uses the full chat history as input to the inner agent.
 func WithFullChatHistoryAsInput() AgentToolOption {
 	return func(o *AgentToolOptions) { o.FullChatHistoryAsInput = true }
+}
+
+// WithEmitInternalEvents enables forwarding internal events from the wrapped agent
+// to the parent agent's event stream. This allows real-time streaming of nested
+// agent output to the end user via Runner.
+//
+// Action Scoping:
+//   - Interrupted actions are propagated via CompositeInterrupt for proper interrupt/resume
+//   - Exit, TransferToAgent, BreakLoop actions are scoped to the agent tool boundary (ignored outside)
+//
+// Note: These forwarded events are NOT recorded in the parent agent's runSession.
+// They are only emitted to the end-user and have no effect on the parent agent's state or checkpoint.
+func WithEmitInternalEvents() AgentToolOption {
+	return func(o *AgentToolOptions) { o.EmitInternalEvents = true }
 }
 
 // NewAgentTool wraps an Agent as a Tool for use by other agents.
@@ -59,12 +74,23 @@ func (t *agentTool) Invoke(ctx context.Context, args string, opts ...ToolOption)
 	messages := []Message{schema.UserMessage(args)}
 
 	iter := runner.Run(runCtx, messages)
+
+	// If EmitInternalEvents is set, get the parent's exec ctx to forward events
+	var parentEC *chatModelExecCtx
+	if t.opts.EmitInternalEvents { parentEC = getChatModelExecCtx(runCtx) }
+
 	var result string
 	var interrupted bool
 	for {
 		ev, ok := iter.Next()
 		if !ok { break }
 		if ev.Err != nil { return "", fmt.Errorf("agent tool '%s': %w", t.name, ev.Err) }
+
+		// EmitInternalEvents: forward events to parent stream
+		if parentEC != nil && t.opts.EmitInternalEvents {
+			parentEC.send(ev)
+		}
+
 		if ev.Action != nil && ev.Action.Interrupted != nil {
 			interrupted = true
 			result += fmt.Sprintf("[interrupted: %v]", ev.Action.Interrupted.Data)

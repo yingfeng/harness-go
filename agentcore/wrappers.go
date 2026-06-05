@@ -11,10 +11,10 @@ import (
 
 type eventSenderModelWrapper[M MessageType] struct {
 	inner   ChatModel[M]
-	execCtx *chatModelExecCtx[M]
+	execCtx *chatModelExecCtx
 }
 
-func wrapModelWithEventSender[M MessageType](inner ChatModel[M], ec *chatModelExecCtx[M]) ChatModel[M] {
+func wrapModelWithEventSender[M MessageType](inner ChatModel[M], ec *chatModelExecCtx) ChatModel[M] {
 	return &eventSenderModelWrapper[M]{inner: inner, execCtx: ec}
 }
 
@@ -80,7 +80,7 @@ func (w *callbackModelWrapper[M]) BindTools(tools []*schema.ToolInfo) error { re
 //	base → failover → retry → eventSender → user wrappers → callback
 //
 // The chain is built from innermost (closest to model) to outermost.
-func BuildModelWrapperChain[M MessageType](base ChatModel[M], ec *chatModelExecCtx[M], cfg *ChatModelConfig[M]) ChatModel[M] {
+func BuildModelWrapperChain[M MessageType](base ChatModel[M], ec *chatModelExecCtx, cfg *ChatModelConfig[M]) ChatModel[M] {
 	model := base
 
 	// 1. Event sender (innermost — first to see raw model output)

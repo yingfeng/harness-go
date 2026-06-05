@@ -487,10 +487,10 @@ func (s *Server) handleCountAssistants(w http.ResponseWriter, r *http.Request) {
 		count++
 	}
 
-	// Python SDK expects direct integer, not a JSON object
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(count)
+	// Return as object for consistency with other count endpoints
+	s.writeJSON(w, http.StatusOK, map[string]int{
+		"count": count,
+	})
 }
 
 // handleThreadsAPI handles all thread-related API calls

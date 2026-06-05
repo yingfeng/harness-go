@@ -57,11 +57,13 @@ type ToolCallInfo struct {
 }
 
 // ToolResult represents the result of a tool execution.
+// Used by both standard tools and enhanced tools.
 type ToolResult struct {
-	ToolCallID string `json:"tool_call_id"`
-	Name       string `json:"name"`
-	Content    string `json:"content"`
-	Error      string `json:"error,omitempty"`
+	ToolCallID string         `json:"tool_call_id"`
+	Name       string         `json:"name"`
+	Content    string         `json:"content"`
+	Error      string         `json:"error,omitempty"`
+	Extra      map[string]any `json:"extra,omitempty"`
 }
 
 // ContentBlock represents a structured content element within an AgenticMessage.
@@ -84,6 +86,33 @@ type ToolInfo struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
 	InputSchema any    `json:"input_schema,omitempty"`
+}
+
+// ToolArgument represents structured arguments passed to an enhanced tool invocation.
+type ToolArgument struct {
+	// Name is the name of the tool being invoked.
+	Name string `json:"name"`
+
+	// Arguments is the raw JSON string of arguments.
+	Arguments string `json:"arguments"`
+
+	// CallID is the unique identifier for this tool call.
+	CallID string `json:"call_id,omitempty"`
+}
+
+// ---- Gob registration helpers for checkpoint/resume ----
+
+var registeredTypes = make(map[string]func() any)
+
+func RegisterType(name string, factory func() any) {
+	registeredTypes[name] = factory
+}
+
+// RegisterName registers a concrete type for gob serialization under the given name.
+// This must be called in init() for custom types stored via SetRunLocalValue,
+// so they survive interrupt/resume checkpoint cycles.
+func RegisterName[T any](name string) {
+	RegisterType(name, func() any { var t T; return &t })
 }
 
 // StreamReader is a generic buffered stream reader.
@@ -223,12 +252,4 @@ func UserAgenticMessage(content string) *AgenticMessage {
 		Role: AgenticRoleUser, Content: content,
 		ContentBlocks: []ContentBlock{{Type: "text", Text: content}},
 	}
-}
-
-// ---- Gob registration ----
-
-var registeredTypes = make(map[string]func() any)
-
-func RegisterType(name string, factory func() any) {
-	registeredTypes[name] = factory
 }

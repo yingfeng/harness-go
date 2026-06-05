@@ -1,6 +1,12 @@
 package agentcore
 
-import "context"
+import (
+	"context"
+	"encoding/gob"
+	"fmt"
+	"io"
+	"reflect"
+)
 
 // AgentCallbackInput is the input to the agent callback OnStart.
 type AgentCallbackInput struct {
@@ -132,6 +138,9 @@ func getAgentType(a Agent) string {
 // ---- Run-local value helpers ----
 
 func SetRunLocalValue(ctx context.Context, key string, val any) error {
+	// P2: Gob encodability check - catch unregistered types early at Set time
+	if err := checkGobEncodability(key, val); err != nil { return err }
+
 	rc := getRunCtx(ctx)
 	if rc == nil || rc.Session == nil {
 		return errNotInAgentExec
@@ -181,3 +190,28 @@ type AgentExecError struct{ Message string }
 func (e *AgentExecError) Error() string { return e.Message }
 
 var errNotInAgentExec = &AgentExecError{Message: "must be called within ChatModelAgent Run/Resume"}
+
+// checkGobEncodability probes whether the value can be gob-encoded as part of
+// a map[string]any, which is exactly how session values are serialized during
+// checkpoint. This catches unregistered types early at Set time, rather than
+// letting them fail at checkpoint/resume time with a confusing error.
+func checkGobEncodability(key string, value any) error {
+	probe := map[string]any{key: value}
+	if err := gob.NewEncoder(io.Discard).Encode(probe); err != nil {
+		typeName := reflect.TypeOf(value).String()
+		return &AgentExecError{Message: fmt.Sprintf(
+			"SetRunLocalValue: the value (type %s) for key %q is not gob-serializable, "+
+				"which means it will fail when the agent checkpoint is saved or resumed.\n\n"+
+				"To fix this, register the type in an init() function in your package:\n\n"+
+				"  func init() {\n"+
+				"      schema.RegisterName[%s](\"a_unique_name_for_this_type\")\n"+
+				"  }\n\n"+
+				"This is required because agent state (including values set via SetRunLocalValue) is "+
+				"persisted using gob encoding for interrupt/resume support. All concrete types stored "+
+				"in interface-typed fields (like map[string]any) must be registered with gob.\n\n"+
+				"If this value does not need to survive interrupt/resume, store it on the context instead, "+
+				"for example via context.WithValue, so you don't need gob registration.\n\n"+
+				"Underlying error: %v", typeName, key, typeName, err)}
+	}
+	return nil
+}

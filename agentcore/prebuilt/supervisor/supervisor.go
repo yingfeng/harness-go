@@ -1,46 +1,93 @@
-// Package supervisor provides the Supervisor multi-agent pattern.
-// A central supervisor agent delegates tasks to specialized sub-agents
-// and coordinates their execution.
+// Package supervisor provides a Supervisor agent pattern for langgraph-go.
+// The Supervisor uses an LLM to route user requests to specialized sub-agents,
+// each with their own tools and expertise.
 package supervisor
 
 import (
 	"context"
+	"fmt"
+	"strings"
+
 	"github.com/infiniflow/ragflow/harness/agentcore"
 	"github.com/infiniflow/ragflow/harness/agentcore/schema"
 )
 
+// Config configures the Supervisor agent.
 type Config struct {
-	Name, Description string
-	Model             agentcore.ChatModel[*schema.Message]
-	SubAgents         []agentcore.Agent
-	MaxIterations     int
+	Name        string
+	Description string
+	Model       agentcore.ChatModel[*schema.Message]
+	Agents      []AgentSpec  // Available sub-agents
+	OutputKey   string       // Store final answer to session under this key
 }
 
-func NewTyped(cfg *Config) *agentcore.TypedChatModelAgent[*schema.Message] {
-	if cfg.MaxIterations <= 0 { cfg.MaxIterations = 20 }
-	if cfg.Name == "" { cfg.Name = "supervisor" }
-	a := agentcore.NewChatModelAgent(&agentcore.ChatModelConfig[*schema.Message]{
-		Model: cfg.Model, Tools: buildTransferTools(cfg.SubAgents),
-		Instruction: buildPrompt(cfg.SubAgents), MaxIterations: cfg.MaxIterations,
-	})
-	return a.WithName(cfg.Name).WithDescription(cfg.Description)
+// AgentSpec defines a sub-agent available to the supervisor.
+type AgentSpec struct {
+	Name        string
+	Description string
+	Agent       agentcore.Agent
 }
 
-func New(cfg *Config) agentcore.Agent { return NewTyped(cfg) }
-
-func buildTransferTools(subs []agentcore.Agent) []agentcore.Tool {
-	tools := make([]agentcore.Tool, 0, len(subs))
-	for _, s := range subs {
-		s := s
-		tools = append(tools, agentcore.NewBaseTool("transfer_to_"+s.Name(nil), "Transfer to agent: "+s.Description(nil),
-			func(ctx context.Context, args string) (string, error) { return "Transferred to " + s.Name(nil), nil }))
+func DefaultConfig() *Config {
+	return &Config{
+		Name: "supervisor",
+		Description: "A supervisor agent that routes tasks to specialized sub-agents",
 	}
-	return tools
 }
 
-func buildPrompt(subs []agentcore.Agent) string {
-	p := "You are a supervisor coordinating multiple specialized agents.\n\nAvailable agents:\n"
-	for _, s := range subs { p += "- " + s.Name(nil) + ": " + s.Description(nil) + "\n" }
-	p += "\nAnalyze the user's request, decide which agent to delegate to, and coordinate their work."
-	return p
+// New creates a new Supervisor as a flow agent with transfer capability.
+func New(ctx context.Context, cfg *Config) (agentcore.ResumableAgent, error) {
+	if cfg == nil { cfg = DefaultConfig() }
+	if cfg.Model == nil { return nil, fmt.Errorf("supervisor requires a Model") }
+
+	// Build agent descriptions for the prompt
+	agentDescs := buildAgentDescriptions(cfg.Agents)
+
+	instruction := fmt.Sprintf(systemPrompt, agentDescs)
+
+	// The supervisor itself is a ChatModelAgent that only transfers to sub-agents
+	sup := agentcore.NewChatModelAgent(&agentcore.ChatModelConfig[*schema.Message]{
+		Model:       cfg.Model,
+		Instruction: instruction,
+	})
+
+	supAgent := sup.WithName(cfg.Name).WithDescription(cfg.Description)
+
+	// Set sub-agents for transfer
+	var subs []agentcore.Agent
+	for _, as := range cfg.Agents { subs = append(subs, as.Agent) }
+	flow, err := agentcore.SetSubAgents(ctx, supAgent, subs)
+	if err != nil { return nil, fmt.Errorf("set sub-agents: %w", err) }
+
+	return flow, nil
+}
+
+func buildAgentDescriptions(agents []AgentSpec) string {
+	if len(agents) == 0 { return "" }
+	var sb strings.Builder
+	for _, a := range agents {
+		sb.WriteString(fmt.Sprintf("- %s: %s\n", a.Name, a.Description))
+	}
+	return sb.String()
+}
+
+const systemPrompt = `You are a supervisor agent. Your job is to understand the user's request and route it to the most appropriate specialist agent.
+
+Available agents:
+%s
+
+Instructions:
+1. Analyze the user's request carefully
+2. Choose the best agent from the list above
+3. Use the transfer_to_agent tool to delegate the task to that agent
+4. If no agent is suitable, respond directly with your best attempt to help
+
+You should always try to route to a specialist agent when one matches the request domain.`
+
+// ---- Convenience constructor with common patterns ----
+
+// NewWithRouter creates a supervisor using a pure routing approach:
+// the LLM chooses which agent handles the request, then transfers to it.
+func NewWithRouter(ctx context.Context, model agentcore.ChatModel[*schema.Message], agents []AgentSpec) (agentcore.ResumableAgent, error) {
+	return New(ctx, &Config{Model: model, Agents: agents})
 }
