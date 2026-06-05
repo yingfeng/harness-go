@@ -54,6 +54,7 @@
 package langgraph
 
 import (
+	"github.com/infiniflow/ragflow/agent/agentcore"
 	"github.com/infiniflow/ragflow/agent/channels"
 	"github.com/infiniflow/ragflow/agent/checkpoint"
 	"github.com/infiniflow/ragflow/agent/constants"
@@ -164,6 +165,23 @@ type (
 	Tool             = prebuilt.Tool
 	ToolCall         = prebuilt.ToolCall
 	LLM              = prebuilt.LLM
+)
+
+// AgentCore types (selectively re-exported to avoid conflicts with prebuilt).
+// For full agentcore API, import github.com/infiniflow/ragflow/agent/agentcore directly.
+type (
+	// Agent is the core agent interface (Message type).
+	Agent = agentcore.Agent
+	// ResumableAgent supports interrupt/resume.
+	ResumableAgent = agentcore.ResumableAgent
+	// Runner executes agents.
+	Runner = agentcore.Runner
+	// AgentEvent represents an event during agent execution.
+	AgentEvent = agentcore.AgentEvent
+	// AgentAction represents actions an agent can emit.
+	AgentAction = agentcore.AgentAction
+	// BaseTool provides a simple Tool implementation.
+	BaseTool = agentcore.BaseTool
 )
 
 // Prebuilt component functions.
