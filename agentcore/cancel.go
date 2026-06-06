@@ -462,3 +462,13 @@ func wrapStreamWithCancel[T any](s *schema.StreamReader[T], cc *cancelContext) *
 	}()
 	return r
 }
+
+// ---- Graph interrupt integration ----
+
+// SetGraphInterruptFunc registers a callback that fires on graph interrupt signal.
+func (cc *cancelContext) SetGraphInterruptFunc(fn func(...any)) {
+	if cc == nil { return }
+	cc.mu.Lock()
+	defer cc.mu.Unlock()
+	cc.interruptFuncs = append(cc.interruptFuncs, fn)
+}

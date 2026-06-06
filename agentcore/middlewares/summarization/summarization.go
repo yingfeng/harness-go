@@ -223,3 +223,14 @@ func defaultTokenCounter[M agentcore.MessageType](ctx context.Context, msgs []M)
 	}
 	return total, nil
 }
+
+// isSummaryMessage checks if the message content contains the summary tag.
+func isSummaryMessage[M agentcore.MessageType](msg M) bool {
+	switch v := any(msg).(type) {
+	case *schema.Message:
+		return strings.Contains(v.Content, SummaryTag)
+	case *schema.AgenticMessage:
+		return strings.Contains(v.Content, SummaryTag)
+	}
+	return false
+}

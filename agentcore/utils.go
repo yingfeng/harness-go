@@ -135,8 +135,15 @@ func setAutomaticClose[M MessageType](event *TypedAgentEvent[M]) {
 }
 func typedSetAutomaticClose[M MessageType](event *TypedAgentEvent[M]) { setAutomaticClose(event) }
 func addTypedEvent[M MessageType](s *runSession, event *TypedAgentEvent[M]) {
-	if s != nil {
-		s.addEvent(event)
+	if s == nil { return }
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.TypedEvents == nil {
+		events := make([]*TypedAgentEvent[M], 0)
+		s.TypedEvents = &events
+	}
+	if te, ok := s.TypedEvents.(*[]*TypedAgentEvent[M]); ok {
+		*te = append(*te, event)
 	}
 }
 

@@ -209,6 +209,17 @@ func concatMessageStream[M MessageType](stream *schema.StreamReader[M]) (M, erro
 	}
 }
 
+// typedModelOption is a model option with a function.
+type typedModelOption[M MessageType] struct {
+	f func(o *modelOptions[M])
+}
+func (o *typedModelOption[M]) applyModel() {}
+
+// modelOptions holds all model call options.
+type modelOptions[M MessageType] struct {
+	RetryConfig *TypedModelRetryConfig[M]
+}
+
 func init() {
 	schema.RegisterType("agentcore_run_step", func() any { return &RunStep{} })
 	schema.RegisterType("agentcore_event", func() any { return &TypedAgentEvent[*schema.Message]{} })

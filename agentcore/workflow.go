@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"sync"
+
+	"github.com/infiniflow/ragflow/harness/agentcore/schema"
 )
 
 type wfMode int
@@ -299,4 +301,11 @@ func NewParallel(ctx context.Context, cfg *ParallelConfig) (ResumableAgent, erro
 func NewLoop(ctx context.Context, cfg *LoopConfig) (ResumableAgent, error) {
 	if cfg.MaxIterations <= 0 { cfg.MaxIterations = 10 }
 	return newWf(ctx, cfg.Name, cfg.Description, cfg.SubAgents, wfModeLoop, cfg.MaxIterations)
+}
+
+func init() {
+	schema.RegisterType("_harness_wf_interrupt_info", func() any { return &WorkflowInterruptInfo{} })
+	schema.RegisterType("_harness_wf_state", func() any { return &wfState{} })
+	schema.RegisterType("_harness_wf_parallel_state", func() any { return &wfParallelState{} })
+	schema.RegisterType("_harness_wf_loop_state", func() any { return &wfLoopState{} })
 }

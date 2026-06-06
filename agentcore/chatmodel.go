@@ -490,6 +490,47 @@ func extractToolCalls[M MessageType](resp M) []schema.ToolCall {
 	return nil
 }
 
+// streamWithCancel wraps a streaming model call with cancel detection.
+func streamWithCancel[M MessageType](s *schema.StreamReader[M], cc *cancelContext) *schema.StreamReader[M] {
+	if cc == nil { return s }
+	select {
+	case <-cc.immediateChan:
+		s.Close()
+		r := schema.NewStreamReader[M]()
+		var zero M
+		r.Send(zero, ErrStreamCanceled)
+		r.Close()
+		return r
+	default:
+	}
+	r := schema.NewStreamReader[M]()
+	go func() {
+		defer r.Close()
+		defer s.Close()
+		ch := make(chan struct{ Data M; Err error }, 64)
+		go func() {
+			defer close(ch)
+			for {
+				d, e := s.Recv()
+				ch <- struct{ Data M; Err error }{d, e}
+				if e != nil { return }
+			}
+		}()
+		for {
+			select {
+			case <-cc.immediateChan:
+				var z M
+				r.Send(z, ErrStreamCanceled)
+				return
+			case v := <-ch:
+				if v.Err != nil { return }
+				r.Send(v.Data, nil)
+			}
+		}
+	}()
+	return r
+}
+
 // getChatModelExecCtx retrieves the chat model execution context from context.
 func getChatModelExecCtx(ctx context.Context) *chatModelExecCtx {
 	rc := getRunCtx(ctx)

@@ -369,3 +369,8 @@ func (rs *retrySignal) consume() streamRetryVerdict {
 	}
 }
 
+// WithRetry attaches retry configuration to an option.
+func WithRetry[M MessageType](cfg *TypedModelRetryConfig[M]) ModelOption {
+	return &typedModelOption[M]{f: func(o *modelOptions[M]) { o.RetryConfig = cfg }}
+}
+
