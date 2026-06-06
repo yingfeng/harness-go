@@ -171,7 +171,11 @@ func (cc *cancelContext) triggerCancel(m CancelMode) {
 func (cc *cancelContext) triggerImmediate() {
 	atomic.StoreInt32(&cc.escalated, 1)
 	cc.setMode(CancelImmediate)
-	if atomic.CompareAndSwapInt32(&cc.state, stRunning, stCancelling) { close(cc.cancelChan) }
+	// If state is still Running, transition to Cancelling and close channels.
+	// If already Cancelling (set by buildCancelFunc), just send the interrupt signal.
+	if atomic.CompareAndSwapInt32(&cc.state, stRunning, stCancelling) {
+		close(cc.cancelChan)
+	}
 	cc.sendInterrupt()
 }
 func (cc *cancelContext) sendInterrupt() bool {
@@ -196,7 +200,7 @@ func (cc *cancelContext) deriveAgentToolCancelContext(ctx context.Context) *canc
 	child.root = false
 	child.parent = cc
 
-	// Propagate cancel signal to child
+	// Propagate cancel signal to child (goroutine exits cleanly when any case fires)
 	go func() {
 		select {
 		case <-cc.cancelChan:
@@ -217,7 +221,7 @@ func (cc *cancelContext) deriveAgentToolCancelContext(ctx context.Context) *canc
 		}
 	}()
 
-	// Propagate immediate cancel signal to child
+	// Propagate immediate cancel signal to child (goroutine exits cleanly when any case fires)
 	go func() {
 		select {
 		case <-cc.immediateChan:
@@ -291,6 +295,7 @@ func (cc *cancelContext) buildCancelFunc() AgentCancelFunc {
 		if cc.getMode() == CancelImmediate { needImmediate = true
 		} else if req.Timeout != nil && *req.Timeout > 0 {
 			cc.setDeadlineUnixNano(time.Now().Add(*req.Timeout).UnixNano())
+			cc.wakeTimeout()
 			needTimeout = true
 		}
 		cc.cancelMu.Unlock()

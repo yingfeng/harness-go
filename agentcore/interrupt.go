@@ -175,6 +175,10 @@ func saveCheckpoint(store CheckPointStore, ctx context.Context, key string, enab
 	return store.Set(ctx, key, buf.Bytes())
 }
 
+// signalToMaps recursively walks the InterruptSignal tree (is.Children) to build
+// flat ID-to-Address and ID-to-State maps for checkpoint serialization.
+// Children are populated by buildFromCtxs (called from FromInterruptContexts) or
+// by CompositeInterrupt/TypedCompositeInterrupt constructors.
 func signalToMaps(is *InterruptSignal) (map[string]Address, map[string]InterruptState) {
 	a, s := make(map[string]Address), make(map[string]InterruptState)
 	if is == nil { return a, s }

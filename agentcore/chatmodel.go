@@ -290,6 +290,13 @@ func (a *TypedChatModelAgent[M]) buildReActRunFunc() typedRunFunc[M] {
 		if p.interruptState != nil { state = p.interruptState
 		} else { state = NewChatModelAgentState(p.input.Messages, a.exeCtx.toolInfos, maxIter) }
 
+		// Deep copy input messages to prevent middleware side-effects
+		if len(state.Messages) > 0 {
+			copied := make([]M, len(state.Messages))
+			for i, m := range state.Messages { copied[i] = copyMessage(m) }
+			state.Messages = copied
+		}
+
 		// Apply history modifier for resume
 		if p.historyModifier != nil && len(state.Messages) > 0 {
 			switch any(state.Messages[0]).(type) {
