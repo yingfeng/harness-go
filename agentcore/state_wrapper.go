@@ -61,20 +61,16 @@ func copyMessage[M MessageType](msg M) M {
 	return msg
 }
 
-func (w *typedStateModelWrapper[M]) Generate(ctx context.Context, msgs []M, opts ...ModelOption) (M, error) {
-	// 1. Cancel check before model call
+// preprocessInput performs cancel check, deep copy, and message ID injection.
+// Returns nil if cancelled (caller should return ErrStreamCanceled immediately).
+func (w *typedStateModelWrapper[M]) preprocessInput(msgs []M) []M {
 	if w.cancelCtx != nil && w.cancelCtx.isImmediate() {
-		var zero M
-		return zero, ErrStreamCanceled
+		return nil
 	}
-
-	// 2. Deep copy input messages (prevent middleware chain side-effects)
 	copied := make([]M, len(msgs))
 	for i, m := range msgs {
 		copied[i] = copyMessage(m)
 	}
-
-	// 3. Inject message IDs
 	for _, m := range copied {
 		switch v := any(m).(type) {
 		case *schema.Message:
@@ -84,19 +80,24 @@ func (w *typedStateModelWrapper[M]) Generate(ctx context.Context, msgs []M, opts
 			v.Extra = EnsureMessageID(v.Extra)
 		}
 	}
+	return copied
+}
 
-	// 4. Call inner model
+func (w *typedStateModelWrapper[M]) Generate(ctx context.Context, msgs []M, opts ...ModelOption) (M, error) {
+	copied := w.preprocessInput(msgs)
+	if copied == nil {
+		var zero M
+		return zero, ErrStreamCanceled
+	}
 	resp, err := w.inner.Generate(ctx, copied, opts...)
 	if err != nil {
 		return resp, err
 	}
-
-	// 5. Deep copy response before returning
 	return copyMessage(resp), nil
 }
 
 func (w *typedStateModelWrapper[M]) Stream(ctx context.Context, msgs []M, opts ...ModelOption) (*schema.StreamReader[M], error) {
-	// 1. Cancel check
+	// Cancel check before allocating any resources (returns error-embedded StreamReader)
 	if w.cancelCtx != nil && w.cancelCtx.isImmediate() {
 		r := schema.NewStreamReader[M]()
 		var zero M
@@ -105,36 +106,21 @@ func (w *typedStateModelWrapper[M]) Stream(ctx context.Context, msgs []M, opts .
 		return r, nil
 	}
 
-	// 2. Deep copy input messages
-	copied := make([]M, len(msgs))
-	for i, m := range msgs {
-		copied[i] = copyMessage(m)
+	copied := w.preprocessInput(msgs)
+	if copied == nil {
+		return nil, ErrStreamCanceled
 	}
 
-	// 3. Inject message IDs
-	for _, m := range copied {
-		switch v := any(m).(type) {
-		case *schema.Message:
-			if v.Extra == nil {
-				v.Extra = make(map[string]any)
-			}
-			v.Extra = EnsureMessageID(v.Extra)
-		}
-	}
-
-	// 4. Stream from inner
 	s, err := w.inner.Stream(ctx, copied, opts...)
 	if err != nil {
 		return nil, err
 	}
 
-	// 5. Wrap stream with cancel check and deep-copy
 	r := schema.NewStreamReader[M]()
 	go func() {
 		defer r.Close()
 		defer s.Close()
 		for {
-			// Cancel check on each chunk
 			if w.cancelCtx != nil && w.cancelCtx.isImmediate() {
 				var zero M
 				r.Send(zero, ErrStreamCanceled)

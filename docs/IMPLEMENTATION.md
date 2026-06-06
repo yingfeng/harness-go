@@ -1110,4 +1110,4 @@ Go 版本的 LangGraph 已经实现了 **~97%** 的核心功能:
 
 *基于源代码级深入分析生成*
 *Python 版本: langgraph 0.3.x*
-*Go 版本: langgraph-go current (100%完成)*
+*Go 版本: harness-go current (100%完成)*

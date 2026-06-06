@@ -1,6 +1,9 @@
 package agentcore
 
-import "sync"
+import (
+	"context"
+	"sync"
+)
 
 // AsyncIterator provides blocking iteration over a typed stream.
 // Multiple goroutines reading from the same iterator will receive each item
@@ -84,6 +87,24 @@ func (g *AsyncGenerator[T]) IsClosed() bool {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	return g.closed
+}
+
+// SendCtx sends a value, respecting context cancellation to prevent goroutine leaks
+// when the consumer stops reading from the iterator.
+func (g *AsyncGenerator[T]) SendCtx(ctx context.Context, value T) bool {
+	g.mu.Lock()
+	if g.closed {
+		g.mu.Unlock()
+		return false
+	}
+	g.mu.Unlock()
+
+	select {
+	case g.ch <- iterationItem[T]{value: value, ok: true}:
+		return true
+	case <-ctx.Done():
+		return false
+	}
 }
 
 // ===== Copy helpers =====

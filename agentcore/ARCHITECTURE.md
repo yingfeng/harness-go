@@ -2,12 +2,12 @@
 
 ## Overview
 
-AgentCore is the production-grade Agent Development Kit (ADK) layer of the LangGraph-Go framework.
+AgentCore is the production-grade Agent Development Kit (ADK) layer of the Harness-Go framework.
 It wraps a StateGraph/Pregel execution engine with high-level Agent abstractions (ChatModelAgent,
 Runner, Middleware, Tools) for building complex LLM-powered agents.
 
 The code lives under `agentcore/` and is imported as `github.com/infiniflow/ragflow/harness/agentcore`.
-Public types are re-exported from the top-level `harness` package in `/home/infominer/codebase/langgraph-go/langgraph.go`.
+Public types are re-exported from the top-level `harness` package in `/home/infominer/codebase/harness-go/harness.go`.
 
 ---
 

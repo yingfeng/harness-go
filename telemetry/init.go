@@ -53,7 +53,7 @@ type Config struct {
 
 // DefaultConfig returns the default configuration.
 func DefaultConfig() *Config {
-	serviceName := "langgraph-go"
+	serviceName := "harness-go"
 	if name := os.Getenv("OTEL_SERVICE_NAME"); name != "" {
 		serviceName = name
 	}
@@ -244,7 +244,7 @@ func InitForDevelopment(serviceName string) (func(context.Context) error, error)
 // It uses a no-op exporter to avoid side effects in tests.
 func InitForTesting() (func(context.Context) error, error) {
 	cfg := &Config{
-		ServiceName:       "langgraph-go-test",
+		ServiceName:       "harness-go-test",
 		ServiceVersion:    "test",
 		Environment:       "test",
 		EnableTracing:     false, // Disable tracing in tests

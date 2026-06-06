@@ -206,7 +206,7 @@ defer shutdown(context.Background())
 
 ### Environment Variables
 
-- `OTEL_SERVICE_NAME`: Service name (default: "langgraph-go")
+- `OTEL_SERVICE_NAME`: Service name (default: "harness-go")
 - `OTEL_EXPORTER_CONSOLE`: Set to "true" to use console exporter
 - `OTEL_EXPORTER_OTLP_ENDPOINT`: OTLP collector endpoint (default: "localhost:4317")
 

@@ -1,4 +1,4 @@
-// Package graph provides graph building capabilities for LangGraph Go.
+// Package graph provides graph building capabilities for Harness-Go.
 package graph
 
 import (

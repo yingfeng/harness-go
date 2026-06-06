@@ -1,4 +1,4 @@
-// Package supervisor provides a Supervisor agent pattern for langgraph-go.
+// Package supervisor provides a Supervisor agent pattern for harness-go.
 // The Supervisor uses an LLM to route user requests to specialized sub-agents,
 // each with their own tools and expertise.
 package supervisor

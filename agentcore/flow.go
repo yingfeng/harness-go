@@ -273,7 +273,11 @@ func wrapIterEnd(ctx context.Context, iter *AsyncIterator[*AgentEvent]) *AsyncIt
 	it, gen := NewAsyncIteratorPair[*AgentEvent]()
 	go func() {
 		defer gen.Close()
-		for { ev, ok := iter.Next(); if !ok { break }; gen.Send(ev) }
+		for {
+			ev, ok := iter.Next()
+			if !ok { break }
+			if !gen.SendCtx(ctx, ev) { return }
+		}
 	}()
 	return it
 }
