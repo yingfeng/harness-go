@@ -9,7 +9,7 @@ import (
 )
 
 func TestBeforeModelRewrite_InsertsPlaceholders(t *testing.T) {
-	mw := New[*schema.Message]()
+	mw := New[*schema.Message](nil)
 	msgs := []*schema.Message{
 		schema.UserMessage("Hello"),
 		{
@@ -40,7 +40,7 @@ func TestBeforeModelRewrite_InsertsPlaceholders(t *testing.T) {
 }
 
 func TestBeforeModelRewrite_CompleteToolCall(t *testing.T) {
-	mw := New[*schema.Message]()
+	mw := New[*schema.Message](nil)
 	msgs := []*schema.Message{
 		schema.UserMessage("Hello"),
 		{
@@ -69,7 +69,7 @@ func TestBeforeModelRewrite_CompleteToolCall(t *testing.T) {
 }
 
 func TestBeforeModelRewrite_NoToolCalls(t *testing.T) {
-	mw := New[*schema.Message]()
+	mw := New[*schema.Message](nil)
 	msgs := []*schema.Message{
 		schema.UserMessage("No tools here"),
 		{Role: schema.RoleAssistant, Content: "Just a response"},
@@ -83,7 +83,7 @@ func TestBeforeModelRewrite_NoToolCalls(t *testing.T) {
 }
 
 func TestBeforeModelRewrite_MultipleMissingCalls(t *testing.T) {
-	mw := New[*schema.Message]()
+	mw := New[*schema.Message](nil)
 	msgs := []*schema.Message{
 		schema.UserMessage("Hello"),
 		{
@@ -116,7 +116,7 @@ func TestBeforeModelRewrite_MultipleMissingCalls(t *testing.T) {
 }
 
 func TestBeforeModelRewrite_EmptyState(t *testing.T) {
-	mw := New[*schema.Message]()
+	mw := New[*schema.Message](nil)
 	state := agentcore.NewChatModelAgentState[*schema.Message](nil, nil, 10)
 	_, newState, err := mw.BeforeModelRewrite(context.Background(), state, nil)
 	if err != nil { t.Fatalf("BeforeModelRewrite: %v", err) }

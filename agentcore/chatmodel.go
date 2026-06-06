@@ -23,6 +23,7 @@ type ChatModelConfig[M MessageType] struct {
 	ReturnDirectly     map[string]bool
 	OutputKey          string
 	GenModelInput      TypedGenModelInput[M]
+	StateModifier      StateModifier[M]
 	ToolsConfig        *ToolsNodeConfig
 	EmitInternalEvents bool
 }
@@ -62,6 +63,9 @@ var _ ResumableAgent = &TypedChatModelAgent[*schema.Message]{}
 var _ TypedResumableAgent[*schema.AgenticMessage] = &TypedChatModelAgent[*schema.AgenticMessage]{}
 
 type TypedGenModelInput[M MessageType] func(ctx context.Context, instruction string, input *TypedAgentInput[M]) ([]M, error)
+
+// StateModifier allows transforming the agent state before model invocation.
+type StateModifier[M MessageType] func(ctx context.Context, state *TypedChatModelAgentState[M]) (*TypedChatModelAgentState[M], error)
 
 func defaultGenModelInput(ctx context.Context, instruction string, input *AgentInput) ([]Message, error) {
 	msgs := make([]Message, 0, len(input.Messages)+1)
@@ -237,6 +241,12 @@ func (a *TypedChatModelAgent[M]) buildNoToolsRunFunc() typedRunFunc[M] {
 			}
 		}
 
+		if a.config.StateModifier != nil {
+			var err error
+			state, err = a.config.StateModifier(ctx, state)
+			if err != nil { p.generator.Send(&TypedAgentEvent[M]{Err: fmt.Errorf("StateModifier: %w", err)}); return }
+		}
+
 		modelMsgs := buildModelInputFromState[M](p.input.Messages, rc.Instruction)
 		resp, err := model.Generate(ctx, modelMsgs)
 		if err != nil { p.generator.Send(&TypedAgentEvent[M]{Err: err}); return }
@@ -324,6 +334,12 @@ func (a *TypedChatModelAgent[M]) buildReActRunFunc() typedRunFunc[M] {
 			}
 
 			var modelMsgs []M
+		if a.config.StateModifier != nil {
+			var err error
+			state, err = a.config.StateModifier(ctx, state)
+			if err != nil { p.generator.Send(&TypedAgentEvent[M]{Err: fmt.Errorf("StateModifier: %w", err)}); return }
+		}
+
 		if a.config.GenModelInput != nil {
 			var err error
 			modelMsgs, err = a.config.GenModelInput(ctx, rc.Instruction, &TypedAgentInput[M]{Messages: state.Messages})
@@ -544,3 +560,11 @@ func getChatModelExecCtx(ctx context.Context) *chatModelExecCtx {
 func getTypedChatModelExecCtx[M MessageType](ctx context.Context) *chatModelExecCtx {
 	return getChatModelExecCtx(ctx)
 }
+
+// CheckpointDataVersion is the version of checkpoint data format for forward compatibility.
+type CheckpointDataVersion int
+
+const CheckpointDataV1 CheckpointDataVersion = 1
+
+// preprocessCheckpointData performs forward-compatible migration on resume data.
+func preprocessCheckpointData(data any) any { return data }

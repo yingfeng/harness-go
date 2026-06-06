@@ -5,12 +5,20 @@ package agentsmd
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 	"sync"
 
 	"github.com/infiniflow/ragflow/harness/agentcore"
 	"github.com/infiniflow/ragflow/harness/agentcore/schema"
 )
+
+var importRegex = regexp.MustCompile(`^@([a-zA-Z0-9_.~/][a-zA-Z0-9_.~/\-]*)`)
+
+var allowedImportExts = map[string]bool{
+	".md": true, ".txt": true, ".mdx": true,
+	".yaml": true, ".yml": true, ".json": true, ".toml": true,
+}
 
 // FileSystemBackend reads markdown files.
 type FileSystemBackend interface {
@@ -140,9 +148,14 @@ func (m *middleware[M]) processContent(content string, depth int, visited map[st
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
 
-		// Handle @import
-		if strings.HasPrefix(trimmed, "@") && m.cfg.Backend != nil {
-			importPath := strings.TrimSpace(trimmed[1:])
+		// Handle @import with regex matching and extension whitelist
+		if matches := importRegex.FindStringSubmatch(trimmed); len(matches) > 1 && m.cfg.Backend != nil {
+			importPath := matches[1]
+			ext := ""
+			for i := len(importPath) - 1; i >= 0; i-- {
+				if importPath[i] == '.' { ext = importPath[i:]; break }
+			}
+			if ext != "" && !allowedImportExts[ext] { continue }
 			if m.cfg.Backend.Exists(importPath) {
 				imported, err := m.loadFile(importPath, visited, totalBytes)
 				if err != nil {

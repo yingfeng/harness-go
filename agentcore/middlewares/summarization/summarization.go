@@ -234,3 +234,27 @@ func isSummaryMessage[M agentcore.MessageType](msg M) bool {
 	}
 	return false
 }
+
+// FinalizerBuilder builds a Finalize function for summarization.
+type FinalizerBuilder struct {
+	Lang       string
+	KeepLatest int // Number of recent messages to preserve (default: 10)
+}
+
+// Build creates a Finalize function that preserves the most recent messages.
+func (b *FinalizerBuilder) Build() func(ctx context.Context, original, summary []*schema.Message) ([]*schema.Message, error) {
+	keep := b.KeepLatest
+	if keep <= 0 {
+		keep = DefaultKeepMessages
+	}
+	return func(ctx context.Context, original, summary []*schema.Message) ([]*schema.Message, error) {
+		// Keep the summary and the last N messages from original
+		if len(original) <= keep {
+			return summary, nil
+		}
+		result := make([]*schema.Message, 0, len(summary)+keep)
+		result = append(result, summary...)
+		result = append(result, original[len(original)-keep:]...)
+		return result, nil
+	}
+}

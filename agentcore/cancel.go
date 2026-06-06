@@ -465,10 +465,45 @@ func wrapStreamWithCancel[T any](s *schema.StreamReader[T], cc *cancelContext) *
 
 // ---- Graph interrupt integration ----
 
-// SetGraphInterruptFunc registers a callback that fires on graph interrupt signal.
+// InterruptSignalInfo carries information from a graph interrupt.
+type InterruptSignalInfo struct {
+	Signal    *InterruptSignal
+	OrigError error
+}
+
+// CancelFromGraphInfo carries the cancel config from graph-level interrupt.
+type CancelFromGraphInfo struct {
+	Mode      CancelMode
+	Timeout   time.Duration
+	Recursive bool
+}
+
+// SetGraphInterruptFunc registers a callback invoked on graph interrupt signal.
 func (cc *cancelContext) SetGraphInterruptFunc(fn func(...any)) {
 	if cc == nil { return }
 	cc.mu.Lock()
 	defer cc.mu.Unlock()
 	cc.interruptFuncs = append(cc.interruptFuncs, fn)
+}
+
+// InterruptFromGraph coordinates a graph interrupt with the cancel state machine.
+func (cc *cancelContext) InterruptFromGraph(ctx context.Context, info *CancelFromGraphInfo) bool {
+	if cc == nil || info == nil { return false }
+	cc.cancelMu.Lock()
+	defer cc.cancelMu.Unlock()
+	st := atomic.LoadInt32(&cc.state)
+	if st != stRunning { return false }
+	if !atomic.CompareAndSwapInt32(&cc.state, stRunning, stCancelling) {
+		return false
+	}
+	cc.setMode(info.Mode)
+	cc.setRecursive(info.Recursive)
+	close(cc.cancelChan)
+	if info.Mode == CancelImmediate {
+		cc.triggerImmediate()
+	} else if info.Timeout > 0 {
+		cc.setDeadlineUnixNano(time.Now().Add(info.Timeout).UnixNano())
+		cc.startTimeout()
+	}
+	return true
 }
