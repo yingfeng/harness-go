@@ -43,6 +43,23 @@ func getCallbacks(ctx context.Context) []callbackHandler {
 	return nil
 }
 
+// propagateCallbacks copies callbacks from parent context to nested run options.
+func propagateCallbacks(ctx context.Context, opts []RunOption) []RunOption {
+	cbs := getCallbacks(ctx)
+	if len(cbs) == 0 {
+		return opts
+	}
+	cbOpts := make([]RunOption, 0, len(cbs))
+	for _, cb := range cbs {
+		handler := cb
+		wrapped := callbackHandler{onStart: handler.onStart, onEnd: handler.onEnd}
+		cbOpts = append(cbOpts, WrapImplSpecificOptFn(func(o *runOptions) {
+			o.callbacks = append(o.callbacks, wrapped)
+		}))
+	}
+	return append(cbOpts, opts...)
+}
+
 func withCallbacks(ctx context.Context, cbs []callbackHandler) context.Context {
 	if len(cbs) == 0 { return ctx }
 	return context.WithValue(ctx, callbackKey{}, cbs)

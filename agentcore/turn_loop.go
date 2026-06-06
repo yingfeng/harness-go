@@ -958,6 +958,7 @@ type stopConfig struct {
 	skipCheckpoint  bool
 	stopCause       string
 	idleFor         time.Duration
+	timeout         *time.Duration
 }
 
 // StopOption is an option for Stop().
@@ -996,6 +997,12 @@ func WithGracefulTimeout(gracePeriod time.Duration) StopOption {
 			WithCancelTimeout(gracePeriod),
 		}
 	}
+}
+
+// WithStopTimeout sets a timeout for graceful stop.
+// If the stop is not completed within the timeout, the agent is force-stopped.
+func WithStopTimeout(d time.Duration) StopOption {
+	return func(cfg *stopConfig) { cfg.timeout = &d }
 }
 
 // WithSkipCheckpoint tells the TurnLoop not to persist a checkpoint for this Stop call.
@@ -1261,6 +1268,17 @@ func (l *TurnLoop[T]) Stop(opts ...StopOption) {
 	}
 	if decision.commit {
 		l.finishStopCommit()
+	}
+
+	// If a stop timeout is configured, force-stop after the timeout
+	if cfg.timeout != nil && *cfg.timeout > 0 {
+		go func() {
+			select {
+			case <-time.After(*cfg.timeout):
+				l.commitStop()
+			case <-l.done:
+			}
+		}()
 	}
 }
 
@@ -1794,5 +1812,4 @@ func WithImmediateStop() StopOption { return WithImmediate() }
 // WithGracefulStop is a deprecated alias for WithGraceful.
 func WithGracefulStop() StopOption { return WithGraceful() }
 
-// WithStopTimeout is a deprecated alias for WithGracefulTimeout.
-func WithStopTimeout(d time.Duration) StopOption { return WithGracefulTimeout(d) }
+// WithStopTimeout sets a timeout for graceful stop.

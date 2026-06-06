@@ -101,6 +101,17 @@ check: fmt vet test
 all: deps clean build test examples
 	@echo "All done!"
 
+## Production targets (ADK/CI)
+.PHONY: bench-vet lint-all
+
+bench-vet: ## Run benchmarks for agentcore
+	go test ./agentcore -bench=. -benchtime=100x -run=^$
+
+lint-all: ## Run all checks (vet + test)
+	go vet ./...
+	go test ./... -count=1 -timeout 180s
+	@echo "All checks passed"
+
 ## Help
 help:
 	@echo "Usage: make [target]"

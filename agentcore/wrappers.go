@@ -159,8 +159,10 @@ func (w *callbackModelWrapper[M]) BindTools(tools []*schema.ToolInfo) error { re
 func BuildModelWrapperChain[M MessageType](base ChatModel[M], ec *chatModelExecCtx, cfg *ChatModelConfig[M]) ChatModel[M] {
 	model := base
 
-	// 1. Event sender (innermost — first to see raw model output)
-	model = wrapModelWithEventSender(model, ec)
+	// 1. Event sender (skip if user middlewares provide their own to avoid duplicates)
+	if !HasUserEventSenderModelWrapper(cfg.Middlewares) {
+		model = wrapModelWithEventSender(model, ec)
+	}
 
 	// 2. Retry (wraps event sender so retries replay the entire inner chain)
 	if cfg.RetryConfig != nil {

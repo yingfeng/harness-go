@@ -207,6 +207,9 @@ func (a *flowAgent) runLoop(ctx, subCtx context.Context, rc *runContext, ai *Asy
 		if lastAction.TransferToAgent != nil { dest = lastAction.TransferToAgent.DestAgentName }
 	}
 	if dest != "" {
+		if cc := getCancelContext(subCtx); cc != nil && cc.shouldCancel() {
+			return
+		}
 		next := a.getAgent(subCtx, dest)
 		if next == nil {
 			gen.Send(&AgentEvent{Err: fmt.Errorf("transfer: agent '%s' not found from '%s'", dest, a.Name(subCtx))})
