@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/infiniflow/ragflow/harness/checkpoint"
 	"github.com/infiniflow/ragflow/harness/channels"
+	"github.com/infiniflow/ragflow/harness/constants"
 	"github.com/infiniflow/ragflow/harness/errors"
 	"github.com/infiniflow/ragflow/harness/graph"
 	"github.com/infiniflow/ragflow/harness/types"
@@ -19,7 +20,7 @@ import (
 
 // Engine implements the Pregel execution model.
 type Engine struct {
-	graph               interface{} // StateGraph
+	graph               *graph.StateGraph
 	checkpointer        graph.Checkpointer
 	interrupts          map[string]bool
 	recursionLimit      int
@@ -43,10 +44,10 @@ type deferredCheckpoint struct {
 	Checkpoint  map[string]interface{}
 }
 
-// NewEngine creates a new Pregel engine.
-func NewEngine(graph interface{}, opts ...EngineOption) *Engine {
+// NewEngine creates a new Pregel engine with the given StateGraph.
+func NewEngine(g *graph.StateGraph, opts ...EngineOption) *Engine {
 	eng := &Engine{
-		graph:           graph,
+		graph:           g,
 		interrupts:      make(map[string]bool),
 		recursionLimit:  25,
 		debug:           false,
@@ -882,60 +883,110 @@ func BuildTaskPath(components ...interface{}) []string {
 	return path
 }
 
-// Helper methods that need to be implemented by the StateGraph
+// Helper methods that access the StateGraph
 func (e *Engine) getGraphChannels() map[string]channels.Channel {
-	// This will be implemented when we have the actual StateGraph interface
-	return make(map[string]channels.Channel)
+	return e.graph.GetChannels()
 }
 
 func (e *Engine) getEntryPoint() string {
-	// This will be implemented when we have the actual StateGraph interface
-	return ""
+	return e.graph.GetEntryPoint()
 }
 
-func (e *Engine) getNode(name string) interface{} {
-	// This will be implemented when we have the actual StateGraph interface
-	return nil
+func (e *Engine) getNode(name string) *graph.Node {
+	n, _ := e.graph.GetNode(name)
+	return n
 }
 
 func (e *Engine) getNextNodes(node string, state interface{}) map[string]bool {
-	// This will be implemented when we have the actual StateGraph interface
-	return make(map[string]bool)
+	nextNodes := make(map[string]bool)
+
+	// Check conditional edges
+	for _, condEdge := range e.graph.GetConditionalEdges() {
+		if condEdge.From == node {
+			conditionResult, err := condEdge.Condition(nil, state)
+			if err != nil {
+				continue
+			}
+			conditionKey := fmt.Sprintf("%v", conditionResult)
+			targetNode, ok := condEdge.Mapping[conditionKey]
+			if !ok {
+				continue
+			}
+			if targetNode == constants.End {
+				return nextNodes // Return empty to signal end
+			}
+			nextNodes[targetNode] = true
+		}
+	}
+
+	// Check regular edges if no conditional edge was found
+	if len(nextNodes) == 0 {
+		for _, edge := range e.graph.GetEdges() {
+			if edge.From == node {
+				if edge.To == constants.End {
+					return nextNodes
+				}
+				nextNodes[edge.To] = true
+			}
+		}
+	}
+
+	// Check branches
+	for _, branch := range e.graph.GetBranches() {
+		if branch.From == node {
+			branchResult, err := branch.Condition(nil, state)
+			if err != nil {
+				continue
+			}
+			targets := branch.Then(branchResult)
+			for _, target := range targets {
+				if target == constants.End {
+					continue
+				}
+				nextNodes[target] = true
+			}
+		}
+	}
+
+	return nextNodes
 }
 
-func (e *Engine) getTriggers(node interface{}) []string {
-	// This will be implemented when we have the actual StateGraph interface
-	return []string{}
+func (e *Engine) getTriggers(node *graph.Node) []string {
+	if node == nil {
+		return []string{}
+	}
+	return node.Triggers
 }
 
-func (e *Engine) createTask(node interface{}, state interface{}, channels []string, triggers []string) *Task {
-	// This will be implemented when we have the actual StateGraph interface
-	return &Task{
+func (e *Engine) createTask(node *graph.Node, state interface{}, channels []string, triggers []string) *Task {
+	task := &Task{
 		ID:       uuid.New().String(),
-		Name:     "",
+		Name:     node.Name,
 		Channels: channels,
 		Triggers: make(map[string]struct{}),
 	}
+	if node.Function != nil {
+		task.Func = node.Function
+	}
+	for _, trigger := range triggers {
+		task.Triggers[trigger] = struct{}{}
+	}
+	return task
 }
 
 // createTaskInfo creates a task info object for inspection/planning (for_execution=false mode).
 // This is similar to Python's prepare_next_tasks with for_execution=False.
-func (e *Engine) createTaskInfo(node interface{}, state interface{}, channels []string, triggers []string) *Task {
-	// Create a task info without the actual function binding
-	// This is used for planning/inspection without actual execution
+func (e *Engine) createTaskInfo(node *graph.Node, state interface{}, channels []string, triggers []string) *Task {
 	task := &Task{
 		ID:       uuid.New().String(),
-		Name:     "", // Will be populated from node
+		Name:     node.Name,
 		Channels: channels,
 		Triggers: make(map[string]struct{}),
-		Func:     nil, // No function binding for info-only tasks
+		Func:     nil,
 	}
-	
-	// Populate triggers
 	for _, trigger := range triggers {
 		task.Triggers[trigger] = struct{}{}
 	}
-	
 	return task
 }
 
@@ -1114,4 +1165,18 @@ func (e *Engine) saveDeferredCheckpoints(ctx context.Context) error {
 	// Clear deferred checkpoints after attempting to save
 	e.deferredCheckpoints = nil
 	return lastErr
+}
+
+// RunSync executes the graph synchronously and returns the final state.
+// This is a convenience wrapper around Run() for callers that want a blocking API.
+func (e *Engine) RunSync(ctx context.Context, input interface{}) (interface{}, error) {
+	outputCh, errCh := e.Run(ctx, input, types.StreamModeValues)
+	select {
+	case result := <-outputCh:
+		return result, nil
+	case err := <-errCh:
+		return nil, err
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
 }

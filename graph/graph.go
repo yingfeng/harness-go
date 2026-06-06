@@ -4,7 +4,9 @@ package graph
 import (
 	"context"
 	"fmt"
+	"reflect"
 
+	"github.com/google/uuid"
 	"github.com/infiniflow/ragflow/harness/channels"
 	"github.com/infiniflow/ragflow/harness/constants"
 	"github.com/infiniflow/ragflow/harness/errors"
@@ -291,6 +293,21 @@ func (g *StateGraph) GetChannels() map[string]channels.Channel {
 	return g.channels
 }
 
+// GetEntryPoint returns the entry point node name.
+func (g *StateGraph) GetEntryPoint() string {
+	return g.entryPoint
+}
+
+// GetConditionalEdges returns all conditional edges.
+func (g *StateGraph) GetConditionalEdges() []*ConditionalEdge {
+	return g.conditionalEdges
+}
+
+// GetBranches returns all branches.
+func (g *StateGraph) GetBranches() []*Branch {
+	return g.branches
+}
+
 // Validate validates the graph structure.
 func (g *StateGraph) Validate() error {
 	if g.entryPoint == "" {
@@ -474,50 +491,341 @@ func (cg *CompiledGraph) Invoke(ctx context.Context, input interface{}, config .
 
 // Stream executes the graph and returns a stream of updates.
 func (cg *CompiledGraph) Stream(ctx context.Context, input interface{}, mode types.StreamMode, config ...*types.RunnableConfig) (<-chan interface{}, <-chan error) {
-	outputCh := make(chan interface{})
+	outputCh := make(chan interface{}, 1) // Buffer to reduce blocking
 	errCh := make(chan error, 1)
-	
+
 	rc := &types.RunnableConfig{}
 	if len(config) > 0 && config[0] != nil {
 		rc = config[0]
 	}
-	
+
 	go func() {
 		defer close(outputCh)
 		defer close(errCh)
-		
-		// Implementation would stream results
-		// For now, just run and emit final result
+
 		result, err := cg.run(ctx, input, rc, mode)
 		if err != nil {
-			errCh <- err
+			select {
+			case errCh <- err:
+			case <-ctx.Done():
+			}
 			return
 		}
-		
-		outputCh <- result
+
+		select {
+		case outputCh <- result:
+		case <-ctx.Done():
+		}
 	}()
-	
+
 	return outputCh, errCh
 }
 
-// run executes the graph.
+// run executes the graph using the Pregel model.
 func (cg *CompiledGraph) run(ctx context.Context, input interface{}, config *types.RunnableConfig, streamMode types.StreamMode) (interface{}, error) {
-	// This is a placeholder implementation
-	// The full implementation would use the pregel execution engine
-	
-	engine := &pregelEngine{
-		graph:          cg.graph,
-		checkpointer:   cg.checkpointer,
-		interrupts:     cg.interrupts,
-		recursionLimit: cg.recursionLimit,
-		debug:          cg.debug,
-		config:         config,
+	g := cg.graph
+
+	// Initialize channels from graph state schema
+	channelRegistry := channels.NewRegistry()
+	for name, ch := range g.GetChannels() {
+		channelRegistry.Register(name, ch.Copy())
 	}
-	
-	return engine.run(ctx, input)
+
+	// Apply input to channels
+	if err := applyInput(channelRegistry, input); err != nil {
+		return nil, fmt.Errorf("failed to apply input: %w", err)
+	}
+
+	// Load checkpoint if available
+	if cg.checkpointer != nil {
+		threadID := getThreadID(config)
+		cp, err := cg.checkpointer.Get(ctx, map[string]interface{}{
+			"thread_id": threadID,
+		})
+		if err == nil && cp != nil {
+			if err := channelRegistry.RestoreFromCheckpoint(cp); err != nil {
+				return nil, fmt.Errorf("failed to restore from checkpoint: %w", err)
+			}
+		}
+	}
+
+	// Execute Pregel loop
+	step := 0
+	completedTasks := make(map[string]bool)
+	lastCompletedNode := ""
+	lastState := input
+
+	for {
+		if step >= cg.recursionLimit {
+			return nil, &errors.GraphRecursionError{Limit: cg.recursionLimit}
+		}
+
+		tasks, err := getNextTasks(channelRegistry, completedTasks, lastCompletedNode, lastState, g)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get next tasks: %w", err)
+		}
+		if len(tasks) == 0 {
+			break
+		}
+
+		// Check for interrupts
+		interrupted := shouldInterrupt(tasks, cg.interrupts)
+		if interrupted {
+			if cg.checkpointer != nil {
+				cp := channelRegistry.CreateCheckpoint()
+				_ = cg.checkpointer.Put(ctx, map[string]interface{}{
+					"thread_id": getThreadID(config),
+				}, cp)
+			}
+			return nil, &errors.GraphInterrupt{}
+		}
+
+		// Execute tasks
+		results, err := executeTasks(ctx, tasks, g)
+		if err != nil {
+			return nil, fmt.Errorf("failed to execute tasks: %w", err)
+		}
+
+		// Mark tasks as completed
+		for _, result := range results {
+			if result.err == nil {
+				completedTasks[result.nodeName] = true
+				lastCompletedNode = result.nodeName
+				lastState = mergeStates(lastState, result.output)
+			}
+		}
+
+		// Apply writes to channels
+		if err := applyWrites(channelRegistry, results); err != nil {
+			return nil, fmt.Errorf("failed to apply writes: %w", err)
+		}
+
+		// Save checkpoint
+		if cg.checkpointer != nil {
+			cp := channelRegistry.CreateCheckpoint()
+			_ = cg.checkpointer.Put(ctx, map[string]interface{}{
+				"thread_id": getThreadID(config),
+				"step":      step,
+			}, cp)
+		}
+		step++
+	}
+
+	finalState, err := buildOutput(channelRegistry, lastState)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build output: %w", err)
+	}
+	return finalState, nil
 }
 
 // GetGraph returns the underlying StateGraph.
 func (cg *CompiledGraph) GetGraph() *StateGraph {
 	return cg.graph
+}
+
+// ---- Pregel execution helpers ----
+
+type runTask struct {
+	id       string
+	nodeName string
+	input    interface{}
+}
+
+type runTaskResult struct {
+	taskID   string
+	nodeName string
+	output   interface{}
+	err      error
+}
+
+func getThreadID(config *types.RunnableConfig) string {
+	if config != nil && config.Configurable != nil {
+		if tid, ok := config.Configurable["thread_id"].(string); ok {
+			return tid
+		}
+	}
+	return uuid.New().String()
+}
+
+func applyInput(registry *channels.Registry, input interface{}) error {
+	inputMap, err := toMap(input)
+	if err != nil {
+		return err
+	}
+	writes := make(map[string][]interface{})
+	for key, value := range inputMap {
+		if _, ok := registry.Get(key); ok {
+			writes[key] = []interface{}{value}
+		}
+	}
+	if len(writes) > 0 {
+		return registry.UpdateChannels(writes)
+	}
+	return nil
+}
+
+func getNextTasks(registry *channels.Registry, completedTasks map[string]bool, lastCompletedNode string, currentState interface{}, g *StateGraph) ([]*runTask, error) {
+	tasks := make([]*runTask, 0)
+	if len(completedTasks) == 0 && g.entryPoint != "" {
+		node, ok := g.GetNode(g.entryPoint)
+		if !ok {
+			return nil, &errors.NodeNotFoundError{NodeName: g.entryPoint}
+		}
+		tasks = append(tasks, &runTask{id: uuid.New().String(), nodeName: node.Name, input: currentState})
+		return tasks, nil
+	}
+	if lastCompletedNode != "" {
+		nextNodes := make(map[string]bool)
+		for _, condEdge := range g.conditionalEdges {
+			if condEdge.From == lastCompletedNode {
+				conditionResult, err := condEdge.Condition(nil, currentState)
+				if err != nil {
+					return nil, fmt.Errorf("condition evaluation failed for node %s: %w", lastCompletedNode, err)
+				}
+				conditionKey := fmt.Sprintf("%v", conditionResult)
+				targetNode, ok := condEdge.Mapping[conditionKey]
+				if !ok {
+					return nil, fmt.Errorf("no mapping for condition result %s from node %s", conditionKey, lastCompletedNode)
+				}
+				if targetNode == constants.End {
+					return tasks, nil
+				}
+				if !completedTasks[targetNode] {
+					nextNodes[targetNode] = true
+				}
+			}
+		}
+		if len(nextNodes) == 0 {
+			for _, edge := range g.edges {
+				if edge.From == lastCompletedNode {
+					if edge.To == constants.End {
+						return tasks, nil
+					}
+					if !completedTasks[edge.To] {
+						nextNodes[edge.To] = true
+					}
+				}
+			}
+		}
+		for nodeName := range nextNodes {
+			node, ok := g.GetNode(nodeName)
+			if ok {
+				tasks = append(tasks, &runTask{id: uuid.New().String(), nodeName: node.Name, input: currentState})
+			}
+		}
+	}
+	return tasks, nil
+}
+
+func shouldInterrupt(tasks []*runTask, interrupts map[string]bool) bool {
+	if len(interrupts) == 0 {
+		return false
+	}
+	interruptAll := interrupts[types.All]
+	for _, t := range tasks {
+		if interruptAll || interrupts[t.nodeName] {
+			return true
+		}
+	}
+	return false
+}
+
+func executeTasks(ctx context.Context, tasks []*runTask, g *StateGraph) ([]*runTaskResult, error) {
+	results := make([]*runTaskResult, 0, len(tasks))
+	for _, t := range tasks {
+		node, ok := g.GetNode(t.nodeName)
+		if !ok {
+			return nil, &errors.NodeNotFoundError{NodeName: t.nodeName}
+		}
+		output, err := node.Function(ctx, t.input)
+		results = append(results, &runTaskResult{taskID: t.id, nodeName: t.nodeName, output: output, err: err})
+	}
+	return results, nil
+}
+
+func applyWrites(registry *channels.Registry, results []*runTaskResult) error {
+	writes := make(map[string][]interface{})
+	for _, result := range results {
+		if result.err != nil {
+			continue
+		}
+		outputMap, err := toMap(result.output)
+		if err != nil {
+			return fmt.Errorf("failed to convert output to map: %w", err)
+		}
+		for key, value := range outputMap {
+			if _, ok := registry.Get(key); ok {
+				writes[key] = append(writes[key], value)
+			}
+		}
+	}
+	if len(writes) > 0 {
+		return registry.UpdateChannels(writes)
+	}
+	return nil
+}
+
+func buildOutput(registry *channels.Registry, lastState interface{}) (interface{}, error) {
+	values, err := registry.GetValues()
+	if err != nil {
+		return lastState, nil
+	}
+	if len(values) > 0 {
+		return values, nil
+	}
+	return lastState, nil
+}
+
+func mergeStates(existing, new interface{}) interface{} {
+	if existing == nil {
+		return new
+	}
+	if new == nil {
+		return existing
+	}
+	existingMap, ok1 := existing.(map[string]interface{})
+	newMap, ok2 := new.(map[string]interface{})
+	if ok1 && ok2 {
+		result := make(map[string]interface{})
+		for k, v := range existingMap {
+			result[k] = v
+		}
+		for k, v := range newMap {
+			result[k] = v
+		}
+		return result
+	}
+	return new
+}
+
+func toMap(v interface{}) (map[string]interface{}, error) {
+	if v == nil {
+		return nil, fmt.Errorf("nil value")
+	}
+	if m, ok := v.(map[string]interface{}); ok {
+		return m, nil
+	}
+	rv := reflect.ValueOf(v)
+	if rv.Kind() == reflect.Ptr {
+		rv = rv.Elem()
+	}
+	if rv.Kind() != reflect.Struct && rv.Kind() != reflect.Map {
+		return map[string]interface{}{"__root__": v}, nil
+	}
+	result := make(map[string]interface{})
+	if rv.Kind() == reflect.Map {
+		for _, key := range rv.MapKeys() {
+			result[fmt.Sprintf("%v", key.Interface())] = rv.MapIndex(key).Interface()
+		}
+		return result, nil
+	}
+	rt := rv.Type()
+	for i := 0; i < rv.NumField(); i++ {
+		field := rt.Field(i)
+		if field.PkgPath != "" {
+			continue
+		}
+		result[field.Name] = rv.Field(i).Interface()
+	}
+	return result, nil
 }

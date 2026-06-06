@@ -114,7 +114,7 @@ func exampleWithPregel() {
 	defer shutdown(context.Background())
 
 	// Create Pregel engine with telemetry
-	_ = pregel.NewEngine(
+	_ = pregel.NewEngine(nil,
 		pregel.WithDebug(true),
 		pregel.WithRecursionLimit(10),
 	)
