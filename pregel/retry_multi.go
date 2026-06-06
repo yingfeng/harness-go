@@ -1,4 +1,3 @@
-// Package pregel provides multi-policy retry support for Pregel execution.
 package pregel
 
 import (
@@ -11,6 +10,7 @@ import (
 
 // MultiPolicyRetryExecutor handles node execution with multiple retry policies.
 // The first matching policy is used for each retry attempt.
+// Internally delegates per-policy execution to RetryExecutor.
 type MultiPolicyRetryExecutor struct {
 	policies []types.RetryPolicy
 }
@@ -23,13 +23,14 @@ func NewMultiPolicyRetryExecutor(policies ...types.RetryPolicy) *MultiPolicyRetr
 }
 
 // Execute executes a function with multi-policy retry logic.
+// For each attempt, it finds the first matching policy and delegates retry
+// behavior to RetryExecutor with that policy's configuration.
 func (e *MultiPolicyRetryExecutor) Execute(
 	ctx context.Context,
 	name string,
 	fn func(context.Context) (interface{}, error),
 ) (interface{}, error) {
 	if len(e.policies) == 0 {
-		// No policies, execute directly
 		return fn(ctx)
 	}
 
@@ -38,7 +39,6 @@ func (e *MultiPolicyRetryExecutor) Execute(
 	attempt := 0
 
 	for {
-		// Execute the function
 		output, err := fn(ctx)
 		if err == nil {
 			return output, nil
@@ -48,28 +48,28 @@ func (e *MultiPolicyRetryExecutor) Execute(
 		lastOutput = output
 		attempt++
 
-		// Find matching policy for this error
 		policy := e.findMatchingPolicy(err)
 		if policy == nil {
-			// No matching policy, fail immediately
 			return nil, fmt.Errorf("node %s failed with non-retryable error: %w", name, err)
 		}
 
-		// Check if we've exhausted attempts for this policy
 		if attempt >= policy.MaxAttempts {
 			break
 		}
 
-		// Calculate backoff
-		backoff := e.calculateBackoff(attempt, policy)
+		// Delegate to RetryExecutor for backoff and remaining attempts
+		remaining := policy.MaxAttempts - attempt
+		limitedPolicy := *policy
+		limitedPolicy.MaxAttempts = remaining + 1 // RetryExecutor counts from 1
 
-		// Wait before retry
-		select {
-		case <-ctx.Done():
-			return nil, fmt.Errorf("node %s cancelled during retry: %w", name, ctx.Err())
-		case <-time.After(backoff):
-			// Continue to next attempt
+		executor := NewRetryExecutor(&limitedPolicy)
+		result, err := executor.Execute(ctx, name, fn)
+		if err == nil {
+			return result, nil
 		}
+		// RetryExecutor exhausted - fall through
+		lastErr = err
+		attempt += remaining
 	}
 
 	return nil, &RetryExhaustedError{
@@ -85,7 +85,6 @@ func (e *MultiPolicyRetryExecutor) findMatchingPolicy(err error) *types.RetryPol
 	for i := range e.policies {
 		policy := &e.policies[i]
 		if policy.RetryOn == nil {
-			// No predicate means always retry
 			return policy
 		}
 		if policy.RetryOn(err) {
@@ -95,53 +94,20 @@ func (e *MultiPolicyRetryExecutor) findMatchingPolicy(err error) *types.RetryPol
 	return nil
 }
 
-// calculateBackoff calculates the backoff duration for the given attempt.
-func (e *MultiPolicyRetryExecutor) calculateBackoff(attempt int, policy *types.RetryPolicy) time.Duration {
-	// Calculate exponential backoff
-	backoff := time.Duration(float64(policy.InitialInterval) *
-		pow(policy.BackoffFactor, attempt-1))
-
-	// Cap at max interval
-	if backoff > policy.MaxInterval {
-		backoff = policy.MaxInterval
-	}
-
-	// Add jitter if enabled
-	if policy.Jitter {
-		jitter := float64(backoff) * 0.5 * randomFloat()
-		backoff = time.Duration(float64(backoff) - jitter)
-	}
-
-	return backoff
-}
-
-// randomFloat returns a random float between 0 and 1.
-func randomFloat() float64 {
-	// Simple pseudo-random number generator
-	// In production, use crypto/rand or math/rand with proper seeding
-	return float64(time.Now().UnixNano()%10000) / 10000.0
-}
-
 // MultiRetryConfig provides configuration for multi-policy retry behavior.
 type MultiRetryConfig struct {
-	// Policies is the list of retry policies to apply.
-	Policies []types.RetryPolicy
-	// OnRetry is called after each failed attempt.
-	OnRetry func(attempt int, policyIndex int, err error)
-	// OnSuccess is called on successful completion.
+	Policies  []types.RetryPolicy
+	OnRetry   func(attempt int, policyIndex int, err error)
 	OnSuccess func(attempt int)
-	// OnPolicyMatch is called when a policy matches an error.
 	OnPolicyMatch func(attempt int, policyIndex int)
 }
 
 // NewMultiRetryConfig creates a new multi-retry config with defaults.
 func NewMultiRetryConfig(policies ...types.RetryPolicy) *MultiRetryConfig {
 	if len(policies) == 0 {
-		// Default policy
 		defaultPolicy := types.DefaultRetryPolicy()
 		policies = []types.RetryPolicy{defaultPolicy}
 	}
-
 	return &MultiRetryConfig{
 		Policies: policies,
 	}
@@ -171,15 +137,12 @@ func (c *MultiRetryConfig) CreateExecutor() *MultiPolicyRetryExecutor {
 }
 
 // Common policy presets for multi-policy retry.
+// Each preset pairs error-matching predicates with RetryExecutor-compatible policies.
 var RetryPolicyPresets = struct {
-	// NetworkErrors retries on network-related errors with aggressive backoff.
-	NetworkErrors types.RetryPolicy
-	// TemporaryErrors retries on temporary errors with moderate backoff.
+	NetworkErrors   types.RetryPolicy
 	TemporaryErrors types.RetryPolicy
-	// ResourceErrors retries on resource exhaustion errors with long backoff.
-	ResourceErrors types.RetryPolicy
-	// TimeoutErrors retries on timeout errors with moderate backoff.
-	TimeoutErrors types.RetryPolicy
+	ResourceErrors  types.RetryPolicy
+	TimeoutErrors   types.RetryPolicy
 }{
 	NetworkErrors: types.RetryPolicy{
 		MaxAttempts:     5,
@@ -204,22 +167,10 @@ var RetryPolicyPresets = struct {
 		BackoffFactor:   1.5,
 		Jitter:          true,
 		RetryOn: func(err error) bool {
-			if err == nil {
-				return false
-			}
+			if err == nil { return false }
 			errMsg := err.Error()
-			resourceKeywords := []string{
-				"resource exhausted",
-				"too many requests",
-				"rate limit",
-				"quota exceeded",
-				"429",
-				"503",
-			}
-			for _, kw := range resourceKeywords {
-				if contains(errMsg, kw) {
-					return true
-				}
+			for _, kw := range []string{"resource exhausted", "too many requests", "rate limit", "quota exceeded", "429", "503"} {
+				if contains(errMsg, kw) { return true }
 			}
 			return false
 		},
@@ -231,21 +182,10 @@ var RetryPolicyPresets = struct {
 		BackoffFactor:   2.0,
 		Jitter:          false,
 		RetryOn: func(err error) bool {
-			if err == nil {
-				return false
-			}
+			if err == nil { return false }
 			errMsg := err.Error()
-			timeoutKeywords := []string{
-				"timeout",
-				"deadline exceeded",
-				"context deadline",
-				"408",
-				"504",
-			}
-			for _, kw := range timeoutKeywords {
-				if contains(errMsg, kw) {
-					return true
-				}
+			for _, kw := range []string{"timeout", "deadline exceeded", "context deadline", "408", "504"} {
+				if contains(errMsg, kw) { return true }
 			}
 			return false
 		},
