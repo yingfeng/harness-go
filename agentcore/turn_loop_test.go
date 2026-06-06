@@ -444,8 +444,7 @@ func TestTurnLoop_PushAfterStop(t *testing.T) {
 	tl := simpleTurnLoop(nil)
 	tl.Push("a"); tl.Push("b")
 	tl.Stop()
-	sent := tl.Push("c")
-	_ = sent
+	tl.Push("c")
 	tl.Run(context.Background())
 	tl.Wait()
 }
@@ -1060,9 +1059,9 @@ func TestNewTurnLoop_PushBeforeRun(t *testing.T) {
 		PrepareAgent: prepareTestAgent,
 	})
 
-	ok := loop.Push("msg1")
+	ok, _ := loop.Push("msg1")
 	if !ok { t.Error("Push returned false") }
-	ok = loop.Push("msg2")
+	ok, _ = loop.Push("msg2")
 	if !ok { t.Error("Push returned false") }
 
 	loop.Run(context.Background())
@@ -1453,9 +1452,9 @@ func TestTurnLoop_StopBeforeRun_PushThenStop(t *testing.T) {
 		},
 	})
 
-	ok := loop.Push("item1")
+	ok, _ := loop.Push("item1")
 	if !ok { t.Error("Push returned false") }
-	ok = loop.Push("item2")
+	ok, _ = loop.Push("item2")
 	if !ok { t.Error("Push returned false") }
 
 	loop.Stop()

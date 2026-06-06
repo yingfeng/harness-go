@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/infiniflow/ragflow/harness/agentcore/schema"
 )
@@ -165,4 +167,98 @@ func (m *testMiddleware) WrapModel(ctx context.Context, c ChatModel[*schema.Mess
 func (m *testMiddleware) WrapToolInvoke(ctx context.Context, ep InvokableToolEndpoint, tc *ToolContext) (InvokableToolEndpoint, error) {
 	if m.wrapToolInvoke != nil { return m.wrapToolInvoke(ctx, ep, tc) }
 	return ep, nil
+}
+
+// ---- cancelTestChatModel: delayable model that responds to ctx.Done() ----
+
+type cancelTestChatModel struct {
+	delayNs     int64
+	response    *schema.Message
+	startedChan chan struct{}
+	doneChan    chan struct{}
+}
+
+func newCancelTestChatModel(resp *schema.Message) *cancelTestChatModel {
+	return &cancelTestChatModel{
+		response:    resp,
+		startedChan: make(chan struct{}, 1),
+		doneChan:    make(chan struct{}, 1),
+	}
+}
+
+func (m *cancelTestChatModel) getDelay() time.Duration {
+	return time.Duration(atomic.LoadInt64(&m.delayNs))
+}
+func (m *cancelTestChatModel) setDelay(d time.Duration) {
+	atomic.StoreInt64(&m.delayNs, int64(d))
+}
+func (m *cancelTestChatModel) Generate(ctx context.Context, msgs []Message, opts ...modelOption) (Message, error) {
+	select {
+	case m.startedChan <- struct{}{}:
+	default:
+	}
+	select {
+	case <-time.After(m.getDelay()):
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	select {
+	case m.doneChan <- struct{}{}:
+	default:
+	}
+	return m.response, nil
+}
+func (m *cancelTestChatModel) Stream(ctx context.Context, msgs []Message, opts ...modelOption) (*schema.StreamReader[Message], error) {
+	select {
+	case m.startedChan <- struct{}{}:
+	default:
+	}
+	select {
+	case <-time.After(m.getDelay()):
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	select {
+	case m.doneChan <- struct{}{}:
+	default:
+	}
+	return schema.StreamReaderFromArray([]Message{m.response}), nil
+}
+func (m *cancelTestChatModel) BindTools(tools []*schema.ToolInfo) error { return nil }
+
+// ---- slowTool: tool with configurable delay ----
+
+type slowTool struct {
+	name        string
+	delay       time.Duration
+	result      string
+	callCount   int32
+	startedChan chan struct{}
+}
+
+func newSlowTool(name string, delay time.Duration, result string) *slowTool {
+	return &slowTool{
+		name:        name,
+		delay:       delay,
+		result:      result,
+		startedChan: make(chan struct{}, 10),
+	}
+}
+func (t *slowTool) Name() string                                                         { return t.name }
+func (t *slowTool) Description() string                                                   { return "slow tool: " + t.name }
+func (t *slowTool) Invoke(ctx context.Context, args string, opts ...ToolOption) (string, error) {
+	atomic.AddInt32(&t.callCount, 1)
+	select {
+	case t.startedChan <- struct{}{}:
+	default:
+	}
+	select {
+	case <-time.After(t.delay):
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
+	return t.result, nil
+}
+func (t *slowTool) Stream(ctx context.Context, args string, opts ...ToolOption) (*schema.StreamReader[string], error) {
+	return schema.StreamReaderFromArray([]string{t.result}), nil
 }

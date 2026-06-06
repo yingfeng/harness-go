@@ -5,7 +5,6 @@ import (
 	"errors"
 	"runtime"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -43,25 +42,6 @@ func newCancelTestStore() *cancelTestStore { return &cancelTestStore{m: make(map
 func (s *cancelTestStore) Set(_ context.Context, key string, value []byte) error { s.mu.Lock(); defer s.mu.Unlock(); s.m[key] = value; return nil }
 func (s *cancelTestStore) Get(_ context.Context, key string) ([]byte, bool, error) { s.mu.Lock(); defer s.mu.Unlock(); v, ok := s.m[key]; return v, ok, nil }
 
-type cancelTestChatModel struct {
-	delayNs     int64
-	response    *schema.Message
-	startedChan chan struct{}
-	doneChan    chan struct{}
-}
-func (m *cancelTestChatModel) getDelay() time.Duration { return time.Duration(atomic.LoadInt64(&m.delayNs)) }
-func (m *cancelTestChatModel) setDelay(d time.Duration) { atomic.StoreInt64(&m.delayNs, int64(d)) }
-func (m *cancelTestChatModel) Generate(ctx context.Context, input []Message, opts ...modelOption) (Message, error) {
-	select { case m.startedChan <- struct{}{}: default: }
-	select { case <-time.After(m.getDelay()): case <-ctx.Done(): return nil, ctx.Err() }
-	select { case m.doneChan <- struct{}{}: default: }
-	return m.response, nil
-}
-func (m *cancelTestChatModel) Stream(ctx context.Context, input []Message, opts ...modelOption) (*schema.StreamReader[Message], error) {
-	m.startedChan <- struct{}{}; time.Sleep(m.getDelay()); m.doneChan <- struct{}{}
-	return schema.StreamReaderFromArray([]Message{m.response}), nil
-}
-func (m *cancelTestChatModel) BindTools(tools []*schema.ToolInfo) error { return nil }
 
 // ======================== CancelContext State Machine ========================
 
