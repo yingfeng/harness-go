@@ -14,6 +14,10 @@ type runOptions struct {
 	agentNames           []string
 	callbacks            []any
 	afterToolCallsHook   func(ctx context.Context) error
+	chatModelOptions     []ModelOption
+	toolOptions          []ToolOption
+	agentToolOptions     map[string][]RunOption
+	historyModifier      func(context.Context, []Message) []Message
 }
 
 type runOptFn func(*runOptions)
@@ -58,16 +62,19 @@ func WithSharedParentSession() RunOption {
 // ---- ChatModel-agent-specific options ----
 
 func WithChatModelOptions(opts []ModelOption) RunOption {
-	return WrapImplSpecificOptFn(func(o *runOptions) {})
+	return WrapImplSpecificOptFn(func(o *runOptions) { o.chatModelOptions = opts })
 }
 func WithToolOptions(opts []ToolOption) RunOption {
-	return WrapImplSpecificOptFn(func(o *runOptions) {})
+	return WrapImplSpecificOptFn(func(o *runOptions) { o.toolOptions = opts })
 }
 func WithAgentToolOptions(agentName string, opts []RunOption) RunOption {
-	return WrapImplSpecificOptFn(func(o *runOptions) {})
+	return WrapImplSpecificOptFn(func(o *runOptions) {
+		if o.agentToolOptions == nil { o.agentToolOptions = make(map[string][]RunOption) }
+		o.agentToolOptions[agentName] = opts
+	})
 }
 func WithHistoryModifier(fn func(context.Context, []Message) []Message) RunOption {
-	return WrapImplSpecificOptFn(func(o *runOptions) {})
+	return WrapImplSpecificOptFn(func(o *runOptions) { o.historyModifier = fn })
 }
 
 // WithAfterToolCallsHook registers a per-run hook that fires synchronously after

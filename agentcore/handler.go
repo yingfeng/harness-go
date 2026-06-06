@@ -121,6 +121,13 @@ type TypedChatModelMiddleware[M MessageType] interface {
 
 type ChatModelMiddleware = TypedChatModelMiddleware[*schema.Message]
 
+// Alias names for Eino ADK compatibility.
+// These allow middlewares to use the same naming convention as Eino's ADK.
+type (
+	BeforeModelRewriteState[M MessageType] = TypedChatModelAgentState[M]
+	AfterModelRewriteState[M MessageType]  = TypedChatModelAgentState[M]
+)
+
 // BaseMiddleware provides no-op defaults for TypedChatModelMiddleware.
 // Embed in custom middlewares to only override needed methods.
 type BaseMiddleware[M MessageType] struct{}

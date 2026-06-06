@@ -4,6 +4,7 @@ package filesystem
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -115,16 +116,33 @@ func (m *middleware[M]) newReadTool() func(ctx context.Context, args string) (st
 
 func (m *middleware[M]) newWriteTool() func(ctx context.Context, args string) (string, error) {
 	return func(ctx context.Context, args string) (string, error) {
+		// Try JSON first
+		var jsonArgs struct {
+			Path    string `json:"path"`
+			Content string `json:"content"`
+		}
+		if err := json.Unmarshal([]byte(args), &jsonArgs); err == nil && jsonArgs.Path != "" {
+			return "", m.cfg.Backend.Write(jsonArgs.Path, jsonArgs.Content)
+		}
+		// Fall back to | separator
 		parts := strings.SplitN(args, "|", 2)
-		if len(parts) < 2 { return "", fmt.Errorf("expected path|content") }
+		if len(parts) < 2 { return "", fmt.Errorf("expected path|content or JSON with 'path' and 'content'") }
 		return "", m.cfg.Backend.Write(parts[0], parts[1])
 	}
 }
 
 func (m *middleware[M]) newEditTool() func(ctx context.Context, args string) (string, error) {
 	return func(ctx context.Context, args string) (string, error) {
+		var jsonArgs struct {
+			Path string `json:"path"`
+			Old  string `json:"old"`
+			New  string `json:"new"`
+		}
+		if err := json.Unmarshal([]byte(args), &jsonArgs); err == nil && jsonArgs.Path != "" && jsonArgs.Old != "" {
+			return "", m.cfg.Backend.Edit(jsonArgs.Path, jsonArgs.Old, jsonArgs.New)
+		}
 		parts := strings.SplitN(args, "|", 3)
-		if len(parts) < 3 { return "", fmt.Errorf("expected path|old|new") }
+		if len(parts) < 3 { return "", fmt.Errorf("expected path|old|new or JSON with 'path', 'old', 'new'") }
 		return "", m.cfg.Backend.Edit(parts[0], parts[1], parts[2])
 	}
 }
@@ -149,6 +167,17 @@ func (m *middleware[M]) newGlobTool() func(ctx context.Context, args string) (st
 
 func (m *middleware[M]) newGrepTool() func(ctx context.Context, args string) (string, error) {
 	return func(ctx context.Context, args string) (string, error) {
+		var jsonArgs struct {
+			Pattern    string `json:"pattern"`
+			Path       string `json:"path"`
+			OutputMode string `json:"output_mode"`
+		}
+		if err := json.Unmarshal([]byte(args), &jsonArgs); err == nil && jsonArgs.Pattern != "" {
+			result, err := m.cfg.Backend.Grep(jsonArgs.Pattern, jsonArgs.Path)
+			if err != nil { return "", err }
+			return formatGrepResult(result, jsonArgs.OutputMode)
+		}
+		// Fall back to | separator
 		parts := strings.SplitN(args, "|", 3)
 		pattern, path := parts[0], "."
 		if len(parts) > 1 { path = parts[1] }
@@ -157,24 +186,27 @@ func (m *middleware[M]) newGrepTool() func(ctx context.Context, args string) (st
 
 		result, err := m.cfg.Backend.Grep(pattern, path)
 		if err != nil { return "", err }
+		return formatGrepResult(result, outputMode)
+	}
+}
 
-		switch outputMode {
-		case "count":
-			lines := strings.Count(result, "\n")
-			return fmt.Sprintf("%d matches", lines), nil
-		case "files":
-			unique := make(map[string]bool)
-			for _, line := range strings.Split(result, "\n") {
-				if line == "" { continue }
-				parts := strings.SplitN(line, ":", 2)
-				if len(parts) > 0 { unique[parts[0]] = true }
-			}
-			names := make([]string, 0, len(unique))
-			for n := range unique { names = append(names, n) }
-			return strings.Join(names, "\n"), nil
-		default:
-			return result, nil
+func formatGrepResult(result, outputMode string) (string, error) {
+	switch outputMode {
+	case "count":
+		lines := strings.Count(result, "\n")
+		return fmt.Sprintf("%d matches", lines), nil
+	case "files":
+		unique := make(map[string]bool)
+		for _, line := range strings.Split(result, "\n") {
+			if line == "" { continue }
+			parts := strings.SplitN(line, ":", 2)
+			if len(parts) > 0 { unique[parts[0]] = true }
 		}
+		names := make([]string, 0, len(unique))
+		for n := range unique { names = append(names, n) }
+		return strings.Join(names, "\n"), nil
+	default:
+		return result, nil
 	}
 }
 

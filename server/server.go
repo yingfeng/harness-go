@@ -930,8 +930,88 @@ func (s *Server) handleStreamRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: Implement SSE streaming
-	s.writeError(w, http.StatusNotImplemented, "Streaming not yet implemented")
+	var req struct {
+		AssistantID string                 `json:"assistant_id"`
+		Input       interface{}            `json:"input"`
+		Config      map[string]interface{} `json:"config,omitempty"`
+		ThreadID    string                 `json:"thread_id,omitempty"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.writeError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	s.mu.RLock()
+	assistant, ok := s.assistants[req.AssistantID]
+	if !ok {
+		s.mu.RUnlock()
+		s.writeError(w, http.StatusNotFound, "Assistant not found")
+		return
+	}
+	g, ok := s.graphs[assistant.GraphID]
+	s.mu.RUnlock()
+	if !ok {
+		s.writeError(w, http.StatusNotFound, "Graph not found")
+		return
+	}
+
+	config := &types.RunnableConfig{}
+	if req.Config != nil {
+		if recursionLimit, ok := req.Config["recursion_limit"].(float64); ok {
+			config.RecursionLimit = int(recursionLimit)
+		}
+		if configurable, ok := req.Config["configurable"].(map[string]interface{}); ok {
+			config.Configurable = configurable
+		}
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		s.writeError(w, http.StatusInternalServerError, "Streaming not supported")
+		return
+	}
+
+	ctx := r.Context()
+	outputCh, errCh := g.Stream(ctx, req.Input, types.StreamModeValues, config)
+
+	for {
+		select {
+		case data, ok := <-outputCh:
+			if !ok {
+				// Check for error
+				select {
+				case err, ok := <-errCh:
+					if ok && err != nil {
+						fmt.Fprintf(w, "event: error\ndata: %s\n\n", err.Error())
+						flusher.Flush()
+					}
+				default:
+				}
+				fmt.Fprintf(w, "event: done\ndata: {}\n\n")
+				flusher.Flush()
+				return
+			}
+			jsonData, _ := json.Marshal(data)
+			fmt.Fprintf(w, "event: data\ndata: %s\n\n", jsonData)
+			flusher.Flush()
+		case err := <-errCh:
+			if err != nil {
+				fmt.Fprintf(w, "event: error\ndata: %s\n\n", err.Error())
+				flusher.Flush()
+			}
+			fmt.Fprintf(w, "event: done\ndata: {}\n\n")
+			flusher.Flush()
+			return
+		case <-ctx.Done():
+			fmt.Fprintf(w, "event: error\ndata: %s\n\n", ctx.Err().Error())
+			flusher.Flush()
+			return
+		}
+	}
 }
 
 // handleStreamThreadRun handles streaming run within a thread.
@@ -941,8 +1021,91 @@ func (s *Server) handleStreamThreadRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: Implement SSE streaming
-	s.writeError(w, http.StatusNotImplemented, "Streaming not yet implemented")
+	var req struct {
+		AssistantID string                 `json:"assistant_id"`
+		Input       interface{}            `json:"input"`
+		Config      map[string]interface{} `json:"config,omitempty"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.writeError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	// Extract thread_id from URL path
+	path := strings.TrimPrefix(r.URL.Path, "/threads/")
+	parts := strings.Split(path, "/")
+	threadID := parts[0]
+
+	s.mu.RLock()
+	assistant, ok := s.assistants[req.AssistantID]
+	if !ok {
+		s.mu.RUnlock()
+		s.writeError(w, http.StatusNotFound, "Assistant not found")
+		return
+	}
+	g, ok := s.graphs[assistant.GraphID]
+	s.mu.RUnlock()
+	if !ok {
+		s.writeError(w, http.StatusNotFound, "Graph not found")
+		return
+	}
+
+	config := &types.RunnableConfig{}
+	if req.Config != nil {
+		if recursionLimit, ok := req.Config["recursion_limit"].(float64); ok {
+			config.RecursionLimit = int(recursionLimit)
+		}
+		if configurable, ok := req.Config["configurable"].(map[string]interface{}); ok {
+			config.Configurable = configurable
+		}
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		s.writeError(w, http.StatusInternalServerError, "Streaming not supported")
+		return
+	}
+
+	ctx := r.Context()
+	outputCh, errCh := g.Stream(ctx, req.Input, types.StreamModeValues, config)
+
+	for {
+		select {
+		case data, ok := <-outputCh:
+			if !ok {
+				select {
+				case err, ok := <-errCh:
+					if ok && err != nil {
+						fmt.Fprintf(w, "event: error\ndata: %s\n\n", err.Error())
+						flusher.Flush()
+					}
+				default:
+				}
+				fmt.Fprintf(w, "event: done\ndata: {\"thread_id\":%q}\n\n", threadID)
+				flusher.Flush()
+				return
+			}
+			jsonData, _ := json.Marshal(data)
+			fmt.Fprintf(w, "event: data\ndata: %s\n\n", jsonData)
+			flusher.Flush()
+		case err := <-errCh:
+			if err != nil {
+				fmt.Fprintf(w, "event: error\ndata: %s\n\n", err.Error())
+				flusher.Flush()
+			}
+			fmt.Fprintf(w, "event: done\ndata: {\"thread_id\":%q}\n\n", threadID)
+			flusher.Flush()
+			return
+		case <-ctx.Done():
+			fmt.Fprintf(w, "event: error\ndata: %s\n\n", ctx.Err().Error())
+			flusher.Flush()
+			return
+		}
+	}
 }
 
 // handleWaitRun handles wait for run completion.
@@ -952,8 +1115,36 @@ func (s *Server) handleWaitRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: Implement wait for completion
-	s.writeError(w, http.StatusNotImplemented, "Wait not yet implemented")
+	var req struct {
+		RunID string `json:"run_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.writeError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	for i := 0; i < 300; i++ {
+		s.mu.RLock()
+		run, ok := s.runs[req.RunID]
+		s.mu.RUnlock()
+
+		if !ok {
+			s.writeError(w, http.StatusNotFound, "Run not found")
+			return
+		}
+
+		if run.Status == "success" || run.Status == "error" {
+			s.writeJSON(w, http.StatusOK, run)
+			return
+		}
+
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	s.writeJSON(w, http.StatusOK, map[string]interface{}{
+		"run_id": req.RunID,
+		"status": "timeout",
+	})
 }
 
 // handleBatchRuns handles batch run creation.
@@ -963,8 +1154,60 @@ func (s *Server) handleBatchRuns(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: Implement batch runs
-	s.writeError(w, http.StatusNotImplemented, "Batch runs not yet implemented")
+	var req struct {
+		Runs []struct {
+			AssistantID string                 `json:"assistant_id"`
+			Input       interface{}            `json:"input"`
+			Config      map[string]interface{} `json:"config,omitempty"`
+		} `json:"runs"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.writeError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	results := make([]interface{}, 0, len(req.Runs))
+	for _, runReq := range req.Runs {
+		s.mu.RLock()
+		assistant, aok := s.assistants[runReq.AssistantID]
+		var g *graph.CompiledGraph
+		if aok {
+			g, _ = s.graphs[assistant.GraphID]
+		}
+		s.mu.RUnlock()
+
+		if !aok || g == nil {
+			results = append(results, map[string]interface{}{
+				"assistant_id": runReq.AssistantID,
+				"error":        "Assistant or graph not found",
+			})
+			continue
+		}
+
+		config := &types.RunnableConfig{}
+		if runReq.Config != nil {
+			if recursionLimit, ok := runReq.Config["recursion_limit"].(float64); ok {
+				config.RecursionLimit = int(recursionLimit)
+			}
+			if configurable, ok := runReq.Config["configurable"].(map[string]interface{}); ok {
+				config.Configurable = configurable
+			}
+		}
+
+		output, err := g.Invoke(context.Background(), runReq.Input, config)
+		result := map[string]interface{}{
+			"assistant_id": runReq.AssistantID,
+			"output":       output,
+		}
+		if err != nil {
+			result["error"] = err.Error()
+		}
+		results = append(results, result)
+	}
+
+	s.writeJSON(w, http.StatusOK, map[string]interface{}{
+		"results": results,
+	})
 }
 
 // handleThreadState handles thread state operations.
@@ -989,11 +1232,27 @@ func (s *Server) handleGetThreadState(w http.ResponseWriter, r *http.Request, th
 		return
 	}
 
-	// TODO: Implement state retrieval
-	s.writeJSON(w, http.StatusOK, map[string]interface{}{
+	var latestRun *Run
+	for _, run := range s.runs {
+		if run.ThreadID == threadID {
+			if latestRun == nil || run.CreatedAt.After(latestRun.CreatedAt) {
+				latestRun = run
+			}
+		}
+	}
+
+	state := map[string]interface{}{
 		"thread_id": threadID,
-		"state":     nil,
-	})
+		"status":    "idle",
+		"values":    nil,
+	}
+
+	if latestRun != nil {
+		state["status"] = latestRun.Status
+		state["values"] = latestRun.Output
+	}
+
+	s.writeJSON(w, http.StatusOK, state)
 }
 
 // handleUpdateThreadState updates thread state.
@@ -1041,8 +1300,21 @@ func (s *Server) handleThreadHistory(w http.ResponseWriter, r *http.Request, thr
 		return
 	}
 
-	// TODO: Implement history retrieval
-	s.writeJSON(w, http.StatusOK, []interface{}{})
+	history := make([]map[string]interface{}, 0)
+	for _, run := range s.runs {
+		if run.ThreadID == threadID {
+			history = append(history, map[string]interface{}{
+				"run_id":     run.RunID,
+				"status":     run.Status,
+				"input":      run.Input,
+				"output":     run.Output,
+				"created_at": run.CreatedAt,
+				"updated_at": run.UpdatedAt,
+			})
+		}
+	}
+
+	s.writeJSON(w, http.StatusOK, history)
 }
 
 // handleStoreAPI handles all store-related API calls
@@ -1074,10 +1346,35 @@ func (s *Server) handleStore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: Implement store search
-	s.writeJSON(w, http.StatusOK, map[string]interface{}{
-		"items": []interface{}{},
-	})
+	if s.store == nil {
+		s.writeJSON(w, http.StatusOK, map[string]interface{}{"items": []interface{}{}})
+		return
+	}
+
+	var req struct {
+		Namespace []string `json:"namespace"`
+		Query     string   `json:"query"`
+		Limit     int      `json:"limit"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.writeError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if req.Limit <= 0 {
+		req.Limit = 10
+	}
+
+	items, err := s.store.Search(r.Context(), req.Namespace, req.Query, req.Limit)
+	if err != nil {
+		s.writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	if items == nil {
+		items = []Item{}
+	}
+	s.writeJSON(w, http.StatusOK, map[string]interface{}{"items": items})
 }
 
 // handleStoreDetail handles individual store operations.
@@ -1101,8 +1398,24 @@ func (s *Server) handleGetStoreItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: Implement get item
-	s.writeError(w, http.StatusNotImplemented, "Not implemented")
+	namespace := strings.Split(r.URL.Query().Get("namespace"), ",")
+	if len(namespace) == 1 && namespace[0] == "" {
+		namespace = nil
+	}
+	key := r.URL.Query().Get("key")
+
+	if key == "" {
+		s.writeError(w, http.StatusBadRequest, "key parameter required")
+		return
+	}
+
+	item, err := s.store.Get(r.Context(), namespace, key)
+	if err != nil {
+		s.writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+
+	s.writeJSON(w, http.StatusOK, item)
 }
 
 // handlePutStoreItem puts a store item.
@@ -1112,8 +1425,26 @@ func (s *Server) handlePutStoreItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: Implement put item
-	s.writeError(w, http.StatusNotImplemented, "Not implemented")
+	var item Item
+	if err := json.NewDecoder(r.Body).Decode(&item); err != nil {
+		s.writeError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if item.Key == "" {
+		s.writeError(w, http.StatusBadRequest, "item.key is required")
+		return
+	}
+
+	item.CreatedAt = time.Now()
+	item.UpdatedAt = time.Now()
+
+	if err := s.store.Put(r.Context(), item.Namespace, item.Key, item); err != nil {
+		s.writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	s.writeJSON(w, http.StatusOK, item)
 }
 
 // handleDeleteStoreItem deletes a store item.
@@ -1123,8 +1454,23 @@ func (s *Server) handleDeleteStoreItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: Implement delete item
-	s.writeError(w, http.StatusNotImplemented, "Not implemented")
+	namespace := strings.Split(r.URL.Query().Get("namespace"), ",")
+	if len(namespace) == 1 && namespace[0] == "" {
+		namespace = nil
+	}
+	key := r.URL.Query().Get("key")
+
+	if key == "" {
+		s.writeError(w, http.StatusBadRequest, "key parameter required")
+		return
+	}
+
+	if err := s.store.Delete(r.Context(), namespace, key); err != nil {
+		s.writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // handleStoreNamespaces handles store namespace listing.
@@ -1139,8 +1485,21 @@ func (s *Server) handleStoreNamespaces(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: Implement namespace listing
-	s.writeJSON(w, http.StatusOK, [][]string{})
+	prefix := strings.Split(r.URL.Query().Get("prefix"), ",")
+	if len(prefix) == 1 && prefix[0] == "" {
+		prefix = nil
+	}
+
+	namespaces, err := s.store.ListNamespaces(r.Context(), prefix)
+	if err != nil {
+		s.writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	if namespaces == nil {
+		namespaces = [][]string{}
+	}
+	s.writeJSON(w, http.StatusOK, namespaces)
 }
 
 // writeJSON writes a JSON response.

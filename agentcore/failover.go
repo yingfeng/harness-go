@@ -21,16 +21,32 @@ type FailoverConfigMsg = FailoverConfig[*schema.Message]
 
 // failoverModel provides failover across multiple chat models.
 type failoverModel[M MessageType] struct {
-	models []ChatModel[M]
+	models           []ChatModel[M]
+	shouldFailover   func(ctx context.Context, err error) bool
+	getFailoverModel func(ctx context.Context, err error) ChatModel[M]
 }
 
-func newFailoverModel[M MessageType](models []ChatModel[M]) ChatModel[M] {
-	return &failoverModel[M]{models: models}
+func newFailoverModel[M MessageType](models []ChatModel[M], cfg *FailoverConfig[M]) ChatModel[M] {
+	var sf func(ctx context.Context, err error) bool
+	var gf func(ctx context.Context, err error) ChatModel[M]
+	if cfg != nil {
+		sf = cfg.ShouldFailover
+		gf = cfg.GetFailoverModel
+	}
+	return &failoverModel[M]{
+		models:           models,
+		shouldFailover:   sf,
+		getFailoverModel: gf,
+	}
 }
 
 func (m *failoverModel[M]) Generate(ctx context.Context, input []M, opts ...ModelOption) (M, error) {
 	var lastErr error
 	for i, model := range m.models {
+		if i > 0 && m.shouldFailover != nil && !m.shouldFailover(ctx, lastErr) {
+			var zero M
+			return zero, fmt.Errorf("failover skipped: %w", lastErr)
+		}
 		r, err := model.Generate(ctx, input, opts...)
 		if err == nil { return r, nil }
 		lastErr = fmt.Errorf("model[%d]: %w", i, err)
@@ -42,6 +58,9 @@ func (m *failoverModel[M]) Generate(ctx context.Context, input []M, opts ...Mode
 func (m *failoverModel[M]) Stream(ctx context.Context, input []M, opts ...ModelOption) (*schema.StreamReader[M], error) {
 	var lastErr error
 	for i, model := range m.models {
+		if i > 0 && m.shouldFailover != nil && !m.shouldFailover(ctx, lastErr) {
+			return nil, fmt.Errorf("failover skipped: %w", lastErr)
+		}
 		s, err := model.Stream(ctx, input, opts...)
 		if err == nil { return s, nil }
 		lastErr = fmt.Errorf("model[%d]: %w", i, err)
@@ -59,5 +78,5 @@ func (m *failoverModel[M]) BindTools(tools []*schema.ToolInfo) error {
 // WithModelFailover creates a failover-wrapped model.
 func WithModelFailover[M MessageType](primary ChatModel[M], secondaries ...ChatModel[M]) ChatModel[M] {
 	all := append([]ChatModel[M]{primary}, secondaries...)
-	return newFailoverModel(all)
+	return newFailoverModel(all, nil)
 }

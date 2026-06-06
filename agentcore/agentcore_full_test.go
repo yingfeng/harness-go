@@ -661,3 +661,45 @@ func (m *errorMiddleware) AfterAgent(ctx context.Context, state *ChatModelAgentS
 }
 
 func atomicAdd32(p *int32) int32 { return 0 }
+
+// ======================== RunOption Tests ========================
+
+func TestRunOptions_WithChatModelOptions(t *testing.T) {
+	opt := WithChatModelOptions([]ModelOption{})
+	o := &runOptions{}
+	opt.apply(o)
+	if o.chatModelOptions == nil {
+		t.Error("chatModelOptions should not be nil")
+	}
+}
+
+func TestRunOptions_WithToolOptions(t *testing.T) {
+	opt := WithToolOptions([]ToolOption{})
+	o := &runOptions{}
+	opt.apply(o)
+	if o.toolOptions == nil {
+		t.Error("toolOptions should not be nil")
+	}
+}
+
+func TestRunOptions_WithAgentToolOptions(t *testing.T) {
+	opt := WithAgentToolOptions("sub_agent", []RunOption{WithSkipTransferMessages()})
+	o := &runOptions{}
+	opt.apply(o)
+	if o.agentToolOptions == nil {
+		t.Error("agentToolOptions should not be nil")
+	}
+	if opts, ok := o.agentToolOptions["sub_agent"]; !ok || len(opts) != 1 {
+		t.Errorf("expected 1 options for sub_agent, got %d", len(opts))
+	}
+}
+
+func TestRunOptions_WithHistoryModifier(t *testing.T) {
+	fn := func(ctx context.Context, msgs []Message) []Message { return msgs }
+	opt := WithHistoryModifier(fn)
+	o := &runOptions{}
+	opt.apply(o)
+	if o.historyModifier == nil {
+		t.Error("historyModifier should not be nil")
+	}
+}

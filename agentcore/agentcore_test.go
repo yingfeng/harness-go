@@ -13,9 +13,10 @@ import (
 // ---- Mock ChatModel ----
 
 type mockModel struct {
-	responses []string
-	mu        sync.Mutex
-	callCount int
+	responses   []string
+	mu          sync.Mutex
+	callCount   int
+	shouldFail  bool
 }
 
 func (m *mockModel) addResp(r string) {
@@ -25,6 +26,9 @@ func (m *mockModel) addResp(r string) {
 }
 
 func (m *mockModel) Generate(ctx context.Context, msgs []Message, opts ...modelOption) (Message, error) {
+	if m.shouldFail {
+		return nil, errors.New("mock model failed")
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.callCount >= len(m.responses) {
@@ -136,12 +140,15 @@ func (m *loopToolModel) BindTools(tools []*schema.ToolInfo) error { return nil }
 
 type testMiddleware struct {
 	BaseMiddleware[*schema.Message]
-	beforeAgent    func(context.Context, *ChatModelAgentContext) (context.Context, *ChatModelAgentContext, error)
-	beforeModel    func(context.Context, *ChatModelAgentState, *ModelContext) (context.Context, *ChatModelAgentState, error)
-	afterModel     func(context.Context, *ChatModelAgentState, *ModelContext) (context.Context, *ChatModelAgentState, error)
-	afterAgent     func(context.Context, *ChatModelAgentState) (context.Context, error)
-	wrapModel      func(context.Context, ChatModel[*schema.Message], *ModelContext) (ChatModel[*schema.Message], error)
-	wrapToolInvoke func(context.Context, InvokableToolEndpoint, *ToolContext) (InvokableToolEndpoint, error)
+	beforeAgent        func(context.Context, *ChatModelAgentContext) (context.Context, *ChatModelAgentContext, error)
+	beforeModel        func(context.Context, *ChatModelAgentState, *ModelContext) (context.Context, *ChatModelAgentState, error)
+	afterModel         func(context.Context, *ChatModelAgentState, *ModelContext) (context.Context, *ChatModelAgentState, error)
+	afterAgent         func(context.Context, *ChatModelAgentState) (context.Context, error)
+	wrapModel          func(context.Context, ChatModel[*schema.Message], *ModelContext) (ChatModel[*schema.Message], error)
+	wrapToolInvoke     func(context.Context, InvokableToolEndpoint, *ToolContext) (InvokableToolEndpoint, error)
+	wrapToolStream     func(context.Context, StreamableToolEndpoint, *ToolContext) (StreamableToolEndpoint, error)
+	wrapEnhancedInvoke   func(context.Context, EnhancedInvokableToolEndpoint, *ToolContext) (EnhancedInvokableToolEndpoint, error)
+	wrapEnhancedStream   func(context.Context, EnhancedStreamableToolEndpoint, *ToolContext) (EnhancedStreamableToolEndpoint, error)
 }
 
 func (m *testMiddleware) BeforeAgent(ctx context.Context, rc *ChatModelAgentContext) (context.Context, *ChatModelAgentContext, error) {
@@ -167,6 +174,18 @@ func (m *testMiddleware) WrapModel(ctx context.Context, c ChatModel[*schema.Mess
 func (m *testMiddleware) WrapToolInvoke(ctx context.Context, ep InvokableToolEndpoint, tc *ToolContext) (InvokableToolEndpoint, error) {
 	if m.wrapToolInvoke != nil { return m.wrapToolInvoke(ctx, ep, tc) }
 	return ep, nil
+}
+func (m *testMiddleware) WrapToolStream(ctx context.Context, ep StreamableToolEndpoint, tc *ToolContext) (StreamableToolEndpoint, error) {
+	if m.wrapToolStream != nil { return m.wrapToolStream(ctx, ep, tc) }
+	return ep, nil
+}
+func (m *testMiddleware) WrapEnhancedInvokableToolCall(ctx context.Context, ep EnhancedInvokableToolEndpoint, tc *ToolContext) (EnhancedInvokableToolEndpoint, error) {
+	if m.wrapEnhancedInvoke != nil { return m.wrapEnhancedInvoke(ctx, ep, tc) }
+	return m.BaseMiddleware.WrapEnhancedInvokableToolCall(ctx, ep, tc)
+}
+func (m *testMiddleware) WrapEnhancedStreamableToolCall(ctx context.Context, ep EnhancedStreamableToolEndpoint, tc *ToolContext) (EnhancedStreamableToolEndpoint, error) {
+	if m.wrapEnhancedStream != nil { return m.wrapEnhancedStream(ctx, ep, tc) }
+	return m.BaseMiddleware.WrapEnhancedStreamableToolCall(ctx, ep, tc)
 }
 
 // ---- cancelTestChatModel: delayable model that responds to ctx.Done() ----

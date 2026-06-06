@@ -67,3 +67,91 @@ func TestSelectPrompt(t *testing.T) {
 		t.Error("empty select prompt")
 	}
 }
+
+func TestDefaultConfig_Enhanced(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.SubAgents != nil {
+		t.Error("expected nil SubAgents by default")
+	}
+	if cfg.FailoverModel != nil {
+		t.Error("expected nil FailoverModel by default")
+	}
+	if cfg.OutputKey != "" {
+		t.Errorf("expected empty OutputKey, got %q", cfg.OutputKey)
+	}
+}
+
+func TestNewWithSubAgents_NilConfig(t *testing.T) {
+	ctx := context.Background()
+	flow, err := NewWithSubAgents(ctx, nil)
+	if err != nil {
+		t.Fatalf("NewWithSubAgents(nil): %v", err)
+	}
+	if flow == nil {
+		t.Fatal("nil flow agent")
+	}
+}
+
+func TestNewWithSubAgents_NoSubs(t *testing.T) {
+	ctx := context.Background()
+	cfg := DefaultConfig()
+	cfg.Model = &mockModel{}
+	flow, err := NewWithSubAgents(ctx, cfg)
+	if err != nil {
+		t.Fatalf("NewWithSubAgents: %v", err)
+	}
+	if flow == nil {
+		t.Fatal("nil flow agent")
+	}
+}
+
+func TestNewWithSubAgents_WithSubs(t *testing.T) {
+	ctx := context.Background()
+	cfg := DefaultConfig()
+	cfg.Model = &mockModel{}
+	sub := agentcore.NewChatModelAgent(&agentcore.ChatModelConfig[*schema.Message]{
+		Model: &mockModel{}, Instruction: "You are a helper.",
+	}).WithName("helper")
+
+	cfg.SubAgents = []SubAgentSpec{
+		{Name: "helper", Description: "A helper agent", Agent: sub},
+	}
+
+	flow, err := NewWithSubAgents(ctx, cfg)
+	if err != nil {
+		t.Fatalf("NewWithSubAgents with subs: %v", err)
+	}
+	if flow == nil {
+		t.Fatal("nil flow agent")
+	}
+}
+
+func TestWithFailoverModel(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Model = &mockModel{}
+	cfg.FailoverModel = &mockModel{}
+
+	agent := NewTyped(cfg)
+	if agent == nil {
+		t.Fatal("nil agent")
+	}
+}
+
+func TestNewWithSubAgents_BasicCreation(t *testing.T) {
+	subAgent := agentcore.NewChatModelAgent(&agentcore.ChatModelConfig[*schema.Message]{
+		Model: &mockModel{},
+		Instruction: "You handle data processing.",
+	}).WithName("data_processor")
+	
+	cfg := &Config{
+		Model: &mockModel{},
+		SubAgents: []SubAgentSpec{
+			{Name: "data_processor", Description: "Handles data", Agent: subAgent},
+		},
+	}
+	// Test the agent creation (not the sub-agent flow - that needs actual execution)
+	agent := NewTyped(cfg)
+	if agent == nil {
+		t.Fatal("nil agent")
+	}
+}

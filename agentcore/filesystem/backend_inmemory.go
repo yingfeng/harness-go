@@ -108,3 +108,37 @@ func (b *InMemoryBackend) List(dir string) ([]FileInfo, error) {
 func (b *InMemoryBackend) Execute(command string) (string, error) {
 	return fmt.Sprintf("executed (in-memory): %s", command), nil
 }
+
+func (b *InMemoryBackend) ReadBytes(path string, offset, limit int64) ([]byte, error) {
+	content, err := b.Read(path)
+	if err != nil {
+		return nil, err
+	}
+	runes := []rune(content)
+	if int(offset) >= len(runes) {
+		return nil, fmt.Errorf("offset %d beyond content length %d", offset, len(runes))
+	}
+	end := int(offset) + int(limit)
+	if end > len(runes) {
+		end = len(runes)
+	}
+	return []byte(string(runes[offset:end])), nil
+}
+
+func (b *InMemoryBackend) MimeType(path string) string {
+	ext := strings.ToLower(filepath.Ext(path))
+	switch ext {
+	case ".txt", ".go", ".py", ".js", ".ts", ".html", ".css", ".md", ".json", ".xml", ".yaml", ".yml":
+		return "text/plain"
+	case ".png":
+		return "image/png"
+	case ".jpg", ".jpeg":
+		return "image/jpeg"
+	case ".gif":
+		return "image/gif"
+	case ".pdf":
+		return "application/pdf"
+	default:
+		return "application/octet-stream"
+	}
+}

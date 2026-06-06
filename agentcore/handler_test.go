@@ -322,7 +322,15 @@ func TestMiddleware_WrapModelReturnsError(t *testing.T) {
 	iter := agent.Run(context.Background(), &AgentInput{
 		Messages: []Message{schema.UserMessage("test")},
 	})
-	_ = iter
+	var lastErr error
+	for {
+		ev, ok := iter.Next()
+		if !ok { break }
+		if ev.Err != nil { lastErr = ev.Err }
+	}
+	if lastErr == nil {
+		t.Error("expected error from WrapModel middleware")
+	}
 }
 
 func TestMiddleware_WrapToolInvokeProxy(t *testing.T) {
@@ -394,7 +402,9 @@ func TestMiddleware_MultipleWrapToolInvocations(t *testing.T) {
 	if result != "done" {
 		t.Errorf("result = %q", result)
 	}
-	_ = log
+	if len(log) != 2 {
+		t.Errorf("expected 2 middleware calls, got %d: %v", len(log), log)
+	}
 }
 
 // ---- Tool integration with middleware chain ----
@@ -429,5 +439,79 @@ func TestMiddleware_WrapToolInlineExecution(t *testing.T) {
 	}
 	if result != "[mock result for greet]" {
 		t.Errorf("result = %q", result)
+	}
+}
+
+func TestMiddleware_WrapModelPassthrough(t *testing.T) {
+	mw := &testMiddleware{}
+	model := &mockModel{}
+	model.addResp("passthrough-result")
+	mc := &ModelContext{}
+	wrapped, err := mw.WrapModel(context.Background(), model, mc)
+	if err != nil {
+		t.Fatalf("WrapModel: %v", err)
+	}
+	resp, err := wrapped.Generate(context.Background(), []*schema.Message{{Role: schema.RoleUser, Content: "test"}})
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	if resp.Content != "passthrough-result" {
+		t.Errorf("expected 'passthrough-result', got %q", resp.Content)
+	}
+}
+
+func TestMiddleware_WrapEnhancedToolCall(t *testing.T) {
+	mw := &testMiddleware{}
+	var called bool
+	mw.wrapEnhancedInvoke = func(ctx context.Context, ep EnhancedInvokableToolEndpoint, tc *ToolContext) (EnhancedInvokableToolEndpoint, error) {
+		called = true
+		return ep, nil
+	}
+	ep := EnhancedInvokableToolEndpoint(func(ctx context.Context, args *schema.ToolArgument, opts ...ToolOption) (*schema.ToolResult, error) {
+		return &schema.ToolResult{Content: "enhanced result"}, nil
+	})
+	wrapped, err := mw.WrapEnhancedInvokableToolCall(context.Background(), ep, &ToolContext{Name: "enhanced_tool"})
+	if err != nil {
+		t.Fatalf("WrapEnhancedInvokableToolCall: %v", err)
+	}
+	result, err := wrapped(context.Background(), &schema.ToolArgument{})
+	if err != nil {
+		t.Fatalf("invoke: %v", err)
+	}
+	if result.Content != "enhanced result" {
+		t.Errorf("expected 'enhanced result', got %q", result.Content)
+	}
+	if !called {
+		t.Error("middleware not called")
+	}
+}
+
+func TestMiddleware_WrapEnhancedStreamableToolCall(t *testing.T) {
+	mw := &testMiddleware{}
+	var called bool
+	mw.wrapEnhancedStream = func(ctx context.Context, ep EnhancedStreamableToolEndpoint, tc *ToolContext) (EnhancedStreamableToolEndpoint, error) {
+		called = true
+		return ep, nil
+	}
+	ep := EnhancedStreamableToolEndpoint(func(ctx context.Context, args *schema.ToolArgument, opts ...ToolOption) (*schema.StreamReader[*schema.ToolResult], error) {
+		return schema.StreamReaderFromArray([]*schema.ToolResult{{Content: "streamed"}}), nil
+	})
+	wrapped, err := mw.WrapEnhancedStreamableToolCall(context.Background(), ep, &ToolContext{Name: "stream_tool"})
+	if err != nil {
+		t.Fatalf("WrapEnhancedStreamableToolCall: %v", err)
+	}
+	sr, err := wrapped(context.Background(), &schema.ToolArgument{})
+	if err != nil {
+		t.Fatalf("invoke: %v", err)
+	}
+	result, err := sr.Recv()
+	if err != nil {
+		t.Fatalf("recv: %v", err)
+	}
+	if result.Content != "streamed" {
+		t.Errorf("expected 'streamed', got %q", result.Content)
+	}
+	if !called {
+		t.Error("middleware not called")
 	}
 }

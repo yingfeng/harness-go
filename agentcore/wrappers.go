@@ -66,10 +66,86 @@ type callbackModelWrapper[M MessageType] struct {
 }
 
 func (w *callbackModelWrapper[M]) Generate(ctx context.Context, msgs []M, opts ...ModelOption) (M, error) {
-	return w.inner.Generate(ctx, msgs, opts...)
+	msgs = injectMessageID(msgs)
+	cbs := getCallbacks(ctx)
+	if len(cbs) > 0 {
+		input := &AgentCallbackInput{}
+		if len(msgs) > 0 {
+			switch any(msgs[0]).(type) {
+			case *schema.Message:
+				msgSlice := make([]Message, len(msgs))
+				for i, m := range msgs { msgSlice[i] = any(m).(*schema.Message) }
+				input.Input = &AgentInput{Messages: msgSlice}
+			}
+		}
+		for _, cb := range cbs { cb.onStart(ctx, input) }
+	}
+	resp, err := w.inner.Generate(ctx, msgs, opts...)
+	if len(cbs) > 0 {
+		evIter, evGen := NewAsyncIteratorPair[*AgentEvent]()
+		if err == nil {
+			evGen.Send(&AgentEvent{
+				Output: &AgentOutput{MessageOutput: &MessageVariant{Message: any(resp).(*schema.Message)}},
+			})
+		} else {
+			evGen.Send(&AgentEvent{Err: err})
+		}
+		evGen.Close()
+		output := &AgentCallbackOutput{Events: evIter}
+		for _, cb := range cbs { cb.onEnd(ctx, output) }
+	}
+	return resp, err
 }
 func (w *callbackModelWrapper[M]) Stream(ctx context.Context, msgs []M, opts ...ModelOption) (*schema.StreamReader[M], error) {
-	return w.inner.Stream(ctx, msgs, opts...)
+	cbs := getCallbacks(ctx)
+	if len(cbs) > 0 {
+		input := &AgentCallbackInput{}
+		if len(msgs) > 0 {
+			switch any(msgs[0]).(type) {
+			case *schema.Message:
+				msgSlice := make([]Message, len(msgs))
+				for i, m := range msgs { msgSlice[i] = any(m).(*schema.Message) }
+				input.Input = &AgentInput{Messages: msgSlice}
+			}
+		}
+		for _, cb := range cbs { cb.onStart(ctx, input) }
+	}
+	s, err := w.inner.Stream(ctx, msgs, opts...)
+	if err != nil {
+		if len(cbs) > 0 {
+			evIter, evGen := NewAsyncIteratorPair[*AgentEvent]()
+			evGen.Send(&AgentEvent{Err: err})
+			evGen.Close()
+			output := &AgentCallbackOutput{Events: evIter}
+			for _, cb := range cbs { cb.onEnd(ctx, output) }
+		}
+		return nil, err
+	}
+	// Wrap stream to fire OnEnd on completion
+	r := schema.NewStreamReader[M]()
+	go func() {
+		defer r.Close()
+		defer s.Close()
+		var allChunks []M
+		for {
+			c, e := s.Recv()
+			if e == io.EOF { break }
+			if e != nil { r.Send(c, e); return }
+			allChunks = append(allChunks, c)
+			r.Send(c, nil)
+		}
+		if len(cbs) > 0 && len(allChunks) > 0 {
+			merged, _ := mergeChunks(allChunks)
+			evIter, evGen := NewAsyncIteratorPair[*AgentEvent]()
+			evGen.Send(&AgentEvent{
+				Output: &AgentOutput{MessageOutput: &MessageVariant{Message: any(merged).(*schema.Message)}},
+			})
+			evGen.Close()
+			output := &AgentCallbackOutput{Events: evIter}
+			for _, cb := range cbs { cb.onEnd(ctx, output) }
+		}
+	}()
+	return r, nil
 }
 func (w *callbackModelWrapper[M]) BindTools(tools []*schema.ToolInfo) error { return w.inner.BindTools(tools) }
 
@@ -94,7 +170,7 @@ func BuildModelWrapperChain[M MessageType](base ChatModel[M], ec *chatModelExecC
 	// 3. Failover (wraps retry so each failover attempt gets retry behavior)
 	if cfg.FailoverConfig != nil && len(cfg.FailoverConfig.Models) > 0 {
 		allModels := append([]ChatModel[M]{base}, cfg.FailoverConfig.Models...)
-		model = newFailoverModel(allModels)
+		model = newFailoverModel(allModels, cfg.FailoverConfig)
 	}
 
 	// 4. User middleware wrappers (outermost)
@@ -113,4 +189,16 @@ func BuildModelWrapperChain[M MessageType](base ChatModel[M], ec *chatModelExecC
 	model = &callbackModelWrapper[M]{inner: model}
 
 	return model
+}
+
+// injectMessageID assigns a unique message ID to each message if not already present.
+func injectMessageID[M MessageType](msgs []M) []M {
+	for _, msg := range msgs {
+		switch v := any(msg).(type) {
+		case *schema.Message:
+			if v.Extra == nil { v.Extra = make(map[string]any) }
+			v.Extra = EnsureMessageID(v.Extra)
+		}
+	}
+	return msgs
 }

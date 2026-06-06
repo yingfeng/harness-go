@@ -85,6 +85,54 @@ func TestNewWithRouter(t *testing.T) {
 	}
 }
 
+func TestDeterministicTransfer(t *testing.T) {
+	ctx := context.Background()
+	model := &mockSupervisorModel{}
+	subAgent := agentcore.NewChatModelAgent(&agentcore.ChatModelConfig[*schema.Message]{Model: model}).WithName("coder")
+
+	// Verify that sub-agents get wrapped with DeterministicTransfer
+	flow, err := New(ctx, &Config{
+		Model:  model,
+		Name:   "my_supervisor",
+		Agents: []AgentSpec{{Name: "coder", Description: "Writes code", Agent: subAgent}},
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if flow == nil {
+		t.Fatal("nil flow agent")
+	}
+	// The flow should run without error — deterministic transfer wrapping
+	// is internal and should not break normal operation
+	input := &agentcore.AgentInput{Messages: []*schema.Message{
+		{Role: schema.RoleUser, Content: "write code"},
+	}}
+	iter := flow.Run(ctx, input)
+	var events []*agentcore.AgentEvent
+	for {
+		ev, ok := iter.Next()
+		if !ok { break }
+		events = append(events, ev)
+	}
+	if len(events) == 0 {
+		t.Error("expected at least one event")
+	}
+}
+
+func TestGetType(t *testing.T) {
+	model := &mockSupervisorModel{}
+
+	// The supervisor's ChatModelAgent should have GetType == "ChatModelAgent"
+	sup := agentcore.NewChatModelAgent(&agentcore.ChatModelConfig[*schema.Message]{
+		Model:       model,
+		Instruction: "test",
+	}).WithName("supervisor")
+
+	if sup.GetType() != "ChatModelAgent" {
+		t.Errorf("expected GetType() = ChatModelAgent, got %s", sup.GetType())
+	}
+}
+
 type mockSupervisorModel struct{}
 
 func (m *mockSupervisorModel) Generate(ctx context.Context, msgs []*schema.Message, opts ...agentcore.ModelOption) (*schema.Message, error) {
@@ -100,4 +148,25 @@ func contains(s, sub string) bool {
 		if s[i:i+len(sub)] == sub { return true }
 	}
 	return false
+}
+
+func TestDeterministicTransferConstraint(t *testing.T) {
+	ctx := context.Background()
+	model := &mockSupervisorModel{}
+	subAgent := agentcore.NewChatModelAgent(&agentcore.ChatModelConfig[*schema.Message]{
+		Model: model,
+		Instruction: "You are a coder.",
+	}).WithName("coder")
+	
+	// Verify that the sub-agent can be wrapped with deterministic transfer
+	wrapped := agentcore.AgentWithDeterministicTransfer(ctx, &agentcore.DeterministicTransferConfig{
+		Agent:        subAgent,
+		ToAgentNames: []string{"supervisor"},
+	})
+	if wrapped == nil {
+		t.Fatal("nil wrapped agent")
+	}
+	if wrapped.Name(ctx) != "coder" {
+		t.Errorf("expected name 'coder', got %q", wrapped.Name(ctx))
+	}
 }

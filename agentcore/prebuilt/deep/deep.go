@@ -14,6 +14,13 @@ import (
 	"github.com/infiniflow/ragflow/harness/agentcore/schema"
 )
 
+// SubAgentSpec defines a sub-agent available for task delegation.
+type SubAgentSpec struct {
+	Name        string
+	Description string
+	Agent       agentcore.Agent
+}
+
 // Config holds configuration for the Deep Agent.
 type Config struct {
 	Name          string
@@ -23,6 +30,9 @@ type Config struct {
 	MaxIterations int
 	Instruction   string // Custom system prompt (overrides default)
 	EnableShell   bool   // Enable shell command execution tool
+	SubAgents     []SubAgentSpec            // NEW: Sub-agents for task delegation
+	FailoverModel agentcore.ChatModel[*schema.Message] // NEW: Failover model
+	OutputKey     string                    // NEW: Session output storage key
 }
 
 func DefaultConfig() *Config {
@@ -45,6 +55,11 @@ func NewTyped(cfg *Config) *agentcore.TypedChatModelAgent[*schema.Message] {
 		instruction = systemPrompt
 	}
 
+	// Append OutputKey hint to system prompt if set
+	if cfg.OutputKey != "" {
+		instruction += "\n\nStore the final answer in the session under key {" + cfg.OutputKey + "}."
+	}
+
 	// Build tool set: user tools + task management
 	tools := make([]agentcore.Tool, 0, len(cfg.Tools)+8)
 	tools = append(tools, cfg.Tools...)
@@ -62,13 +77,39 @@ func NewTyped(cfg *Config) *agentcore.TypedChatModelAgent[*schema.Message] {
 		tools = append(tools, ShellTool("."))
 	}
 
-	a := agentcore.NewChatModelAgent(&agentcore.ChatModelConfig[*schema.Message]{
+	chatCfg := &agentcore.ChatModelConfig[*schema.Message]{
 		Model:         cfg.Model,
 		Tools:         tools,
 		Instruction:   instruction,
 		MaxIterations: cfg.MaxIterations,
-	})
+		OutputKey:     cfg.OutputKey,
+	}
+
+	// Set up failover if configured
+	if cfg.FailoverModel != nil {
+		chatCfg.FailoverConfig = &agentcore.FailoverConfig[*schema.Message]{
+			Models: []agentcore.ChatModel[*schema.Message]{cfg.FailoverModel},
+		}
+	}
+
+	a := agentcore.NewChatModelAgent(chatCfg)
 	return a.WithName(cfg.Name).WithDescription(cfg.Description)
+}
+
+// NewWithSubAgents creates a DeepAgent with sub-agent delegation support.
+// The deep agent can transfer tasks to sub-agents and receive results.
+// If no sub-agents are configured, returns the plain deep agent.
+func NewWithSubAgents(ctx context.Context, cfg *Config) (agentcore.ResumableAgent, error) {
+	if cfg == nil { cfg = DefaultConfig() }
+	deep := NewTyped(cfg)
+	if cfg == nil || len(cfg.SubAgents) == 0 {
+		return deep, nil
+	}
+	subs := make([]agentcore.Agent, 0, len(cfg.SubAgents))
+	for _, sa := range cfg.SubAgents {
+		subs = append(subs, sa.Agent)
+	}
+	return agentcore.SetSubAgents(ctx, deep, subs)
 }
 
 // New creates a DeepAgent as a generic agent.

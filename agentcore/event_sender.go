@@ -108,9 +108,22 @@ func (h *eventSenderToolHandler[M]) WrapEnhancedInvokableToolCall(ctx context.Co
 		result, err := next(ctx, args, opts...)
 
 		if ec != nil && ec.generator != nil && result != nil {
+			// Check if the result has multimodal extra content (e.g., content blocks, file references)
 			content := result.Content
 			if content == "" { content = result.Error }
+
 			msg := schema.ToolMessage(content, callID)
+			msg.Name = name
+
+			// If Extra contains content blocks or multimodal data, attach them via Extra
+			if result.Extra != nil {
+				if msg.Extra == nil {
+					msg.Extra = make(map[string]any)
+				}
+				for k, v := range result.Extra {
+					msg.Extra[k] = v
+				}
+			}
 			ev := typedEventFromMessage(any(msg).(M), nil, schema.RoleTool, name)
 			ec.send(ev)
 		}
@@ -146,6 +159,18 @@ func (h *eventSenderToolHandler[M]) WrapEnhancedStreamableToolCall(ctx context.C
 				content := last.Content
 				if content == "" { content = last.Error }
 				msg := schema.ToolMessage(content, callID)
+				msg.Name = name
+
+				// If Extra contains multimodal data, propagate to event message
+				if last.Extra != nil {
+					if msg.Extra == nil {
+						msg.Extra = make(map[string]any)
+					}
+					for k, v := range last.Extra {
+						msg.Extra[k] = v
+					}
+				}
+
 				ev := typedEventFromMessage(any(msg).(M), nil, schema.RoleTool, name)
 				ec.send(ev)
 			}

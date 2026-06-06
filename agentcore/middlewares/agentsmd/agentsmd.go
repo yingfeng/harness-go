@@ -80,6 +80,7 @@ func (m *middleware[M]) BeforeAgent(ctx context.Context, rc *agentcore.ChatModel
 	// Mark as injected in session
 	if sess != nil {
 		sess.Values["_agentsmd_injected"] = true
+		_ = agentcore.SetRunLocalValue(ctx, "_agentsmd_injected", true)
 	}
 
 	return ctx, rc, nil
@@ -87,7 +88,13 @@ func (m *middleware[M]) BeforeAgent(ctx context.Context, rc *agentcore.ChatModel
 
 // getSession extracts the run session from context.
 func getSession(ctx context.Context) *runCtx {
-	return nil // In production: retrieve from context values
+	rc := &runCtx{Values: make(map[string]any)}
+	// Try to use agentcore run-local values for session tracking
+	v, ok, _ := agentcore.GetRunLocalValue(ctx, "_agentsmd_injected")
+	if ok {
+		rc.Values["_agentsmd_injected"] = v
+	}
+	return rc
 }
 
 // runCtx is a minimal session wrapper for idempotency tracking.

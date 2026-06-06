@@ -58,7 +58,10 @@ func (m *middleware[M]) BeforeModelRewrite(ctx context.Context, state *agentcore
 
 	// Fire before event if enabled
 	if m.cfg.EmitInternalEvents {
-		// In production: emit events to track summarization
+		ev := &agentcore.TypedAgentEvent[M]{
+			Output: &agentcore.TypedAgentOutput[M]{},
+		}
+		_ = agentcore.TypedSendEvent(ctx, ev)
 	}
 
 	// Perform summarization
@@ -155,12 +158,20 @@ func (m *middleware[M]) generateSummary(ctx context.Context, msgs []M) (string, 
 	// Call with retry
 	var lastErr error
 	maxAttempts := m.cfg.MaxRetries
-	if maxAttempts <= 0 { maxAttempts = 1 + m.cfg.RetryConfig.MaxRetries }
+	if maxAttempts <= 0 {
+		maxAttempts = 1
+		if m.cfg.RetryConfig != nil && m.cfg.RetryConfig.MaxRetries > 0 {
+			maxAttempts = 1 + m.cfg.RetryConfig.MaxRetries
+		}
+	}
 	for attempt := 0; attempt <= maxAttempts; attempt++ {
 		resp, err := m.cfg.Model.Generate(ctx, promptMsgs)
 		if err == nil {
 			if m.cfg.EmitInternalEvents {
-				// emit event
+				ev := &agentcore.TypedAgentEvent[M]{
+					Output: &agentcore.TypedAgentOutput[M]{},
+				}
+				_ = agentcore.TypedSendEvent(ctx, ev)
 			}
 			return extractText(resp), nil
 		}

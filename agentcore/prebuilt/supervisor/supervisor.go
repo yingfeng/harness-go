@@ -53,10 +53,22 @@ func New(ctx context.Context, cfg *Config) (agentcore.ResumableAgent, error) {
 
 	supAgent := sup.WithName(cfg.Name).WithDescription(cfg.Description)
 
-	// Set sub-agents for transfer
-	var subs []agentcore.Agent
-	for _, as := range cfg.Agents { subs = append(subs, as.Agent) }
-	flow, err := agentcore.SetSubAgents(ctx, supAgent, subs)
+	// Wrap sub-agents with deterministic transfer constraint.
+	// Each sub-agent can only transfer back to the supervisor.
+	wrappedSubs := make([]agentcore.Agent, 0, len(cfg.Agents))
+	for _, as := range cfg.Agents {
+		wrapped := agentcore.AgentWithDeterministicTransfer(ctx, &agentcore.DeterministicTransferConfig{
+			Agent:        as.Agent,
+			ToAgentNames: []string{cfg.Name},
+		})
+		wrappedSubs = append(wrappedSubs, wrapped)
+	}
+
+	// TODO: Add unified tracing container for supervisor identification.
+	// Currently NewChatModelAgent returns a concrete type, so we cannot
+	// easily add a GetType() method to identify the supervisor.
+
+	flow, err := agentcore.SetSubAgents(ctx, supAgent, wrappedSubs)
 	if err != nil { return nil, fmt.Errorf("set sub-agents: %w", err) }
 
 	return flow, nil

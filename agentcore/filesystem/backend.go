@@ -27,3 +27,10 @@ type Shell interface {
 	Execute(command string) (string, error)
 	ExecuteStreaming(command string) (<-chan string, error)
 }
+
+// MultiModalReader is an optional interface that backends can implement
+// to support reading with offset/limit and multi-modal content detection.
+type MultiModalReader interface {
+	ReadBytes(path string, offset, limit int64) ([]byte, error)
+	MimeType(path string) string // Returns content type hint (e.g., "text/plain", "image/png")
+}
