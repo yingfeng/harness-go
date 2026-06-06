@@ -189,20 +189,30 @@ func (m *testMiddleware) WrapEnhancedStreamableToolCall(ctx context.Context, ep 
 }
 
 // ---- cancelTestChatModel: delayable model that responds to ctx.Done() ----
-
+// Supports multiple responses for ReAct loop testing.
 type cancelTestChatModel struct {
 	delayNs     int64
-	response    *schema.Message
+	responses   []*schema.Message
 	startedChan chan struct{}
 	doneChan    chan struct{}
+	mu          sync.Mutex
 }
 
 func newCancelTestChatModel(resp *schema.Message) *cancelTestChatModel {
-	return &cancelTestChatModel{
-		response:    resp,
+	m := &cancelTestChatModel{
 		startedChan: make(chan struct{}, 1),
 		doneChan:    make(chan struct{}, 1),
 	}
+	if resp != nil {
+		m.responses = []*schema.Message{resp}
+	}
+	return m
+}
+
+func (m *cancelTestChatModel) addResp(content string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.responses = append(m.responses, &schema.Message{Role: schema.RoleAssistant, Content: content})
 }
 
 func (m *cancelTestChatModel) getDelay() time.Duration {
@@ -225,7 +235,16 @@ func (m *cancelTestChatModel) Generate(ctx context.Context, msgs []Message, opts
 	case m.doneChan <- struct{}{}:
 	default:
 	}
-	return m.response, nil
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if len(m.responses) > 0 {
+		resp := m.responses[0]
+		if len(m.responses) > 1 {
+			m.responses = m.responses[1:]
+		}
+		return resp, nil
+	}
+	return &schema.Message{Role: schema.RoleAssistant, Content: "fallback"}, nil
 }
 func (m *cancelTestChatModel) Stream(ctx context.Context, msgs []Message, opts ...modelOption) (*schema.StreamReader[Message], error) {
 	select {
@@ -241,7 +260,12 @@ func (m *cancelTestChatModel) Stream(ctx context.Context, msgs []Message, opts .
 	case m.doneChan <- struct{}{}:
 	default:
 	}
-	return schema.StreamReaderFromArray([]Message{m.response}), nil
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if len(m.responses) > 0 {
+		return schema.StreamReaderFromArray([]Message{m.responses[0]}), nil
+	}
+	return schema.StreamReaderFromArray([]Message{{Role: schema.RoleAssistant, Content: "stream"}}), nil
 }
 func (m *cancelTestChatModel) BindTools(tools []*schema.ToolInfo) error { return nil }
 

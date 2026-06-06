@@ -855,13 +855,10 @@ func TestTurnLoop_StopCheckPointIDInCancelError(t *testing.T) {
 
 	slowModel := &cancelTestChatModel{
 		delayNs: int64(500 * time.Millisecond),
-		response: &schema.Message{
-			Role:    schema.RoleAssistant,
-			Content: "Hello",
-		},
 		startedChan: modelStarted,
 		doneChan:    make(chan struct{}, 1),
 	}
+	slowModel.addResp("Hello")
 
 	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{
 		Instruction: "You are a test assistant",
@@ -894,13 +891,10 @@ func TestTurnLoop_CancelError_CapturedIndependentlyOfCallback(t *testing.T) {
 
 	slowModel := &cancelTestChatModel{
 		delayNs: int64(500 * time.Millisecond),
-		response: &schema.Message{
-			Role:    schema.RoleAssistant,
-			Content: "Hello",
-		},
 		startedChan: modelStarted,
 		doneChan:    make(chan struct{}, 1),
 	}
+	slowModel.addResp("Hello")
 
 	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{
 		Instruction: "You are a test assistant",
@@ -939,13 +933,10 @@ func TestTurnLoop_StopWithoutCheckpointIDDoesNotPersist(t *testing.T) {
 
 	slowModel := &cancelTestChatModel{
 		delayNs: int64(500 * time.Millisecond),
-		response: &schema.Message{
-			Role:    schema.RoleAssistant,
-			Content: "Hello",
-		},
 		startedChan: modelStarted,
 		doneChan:    make(chan struct{}, 1),
 	}
+	slowModel.addResp("Hello")
 
 	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{
 		Instruction: "You are a test assistant",
