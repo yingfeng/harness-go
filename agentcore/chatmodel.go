@@ -534,9 +534,20 @@ func streamWithCancel[M MessageType](s *schema.StreamReader[M], cc *cancelContex
 		go func() {
 			defer close(ch)
 			for {
+				select {
+				case <-cc.immediateChan:
+					return
+				default:
+				}
 				d, e := s.Recv()
-				ch <- struct{ Data M; Err error }{d, e}
-				if e != nil { return }
+				select {
+				case ch <- struct{ Data M; Err error }{d, e}:
+				case <-cc.immediateChan:
+					return
+				}
+				if e != nil {
+					return
+				}
 			}
 		}()
 		for {
@@ -546,7 +557,9 @@ func streamWithCancel[M MessageType](s *schema.StreamReader[M], cc *cancelContex
 				r.Send(z, ErrStreamCanceled)
 				return
 			case v := <-ch:
-				if v.Err != nil { return }
+				if v.Err != nil {
+					return
+				}
 				r.Send(v.Data, nil)
 			}
 		}

@@ -14,51 +14,103 @@ import (
 	"github.com/infiniflow/ragflow/harness/types"
 )
 
-// Node represents a node in the graph.
+// Node represents a node in the graph. Each node is a callable function that
+// receives the current shared state and returns a (possibly modified) state.
+// Nodes are connected by edges which determine execution order.
 type Node struct {
-	Name     string
+	// Name is a unique identifier for this node within the graph.
+	Name string
+	// Function is the node's executable body. It receives context and state,
+	// and returns the new state or an error.
 	Function types.NodeFunc
-	// Channels this node reads from
+	// Triggers lists channel names this node reads from.
 	Triggers []string
-	// Channels this node writes to
+	// Writes lists channel names this node writes to.
 	Writes   []string
-	// Retry policy for this node
+	// RetryPolicy configures automatic retry for this node.
 	RetryPolicy *types.RetryPolicy
-	// Tags for the node
+	// Tags are opaque labels for filtering and debugging.
 	Tags []string
-	// Metadata for the node
+	// Metadata holds arbitrary key-value pairs for tooling.
 	Metadata map[string]interface{}
 }
 
-// Edge represents an edge in the graph.
+// Edge is a directed connection between two nodes. After the From node
+// completes, execution proceeds to the To node. Use constants.Start and
+// constants.End for the virtual start/end nodes.
+//
+// Example:
+//
+//	sg.AddEdge("node_a", "node_b")    // node_a always flows to node_b
+//	sg.AddEdge("node_b", "__end__")    // node_b is a terminal node
 type Edge struct {
 	From string
 	To   string
 }
 
-// ConditionalEdge represents a conditional edge with a condition function.
+// ConditionalEdge allows routing to different nodes based on a condition
+// function. The Condition function is evaluated after the From node completes;
+// its return value is looked up in Mapping to determine the next node.
+//
+// Example:
+//
+//	sg.AddConditionalEdges("router",
+//	    func(ctx context.Context, state any) (any, error) {
+//	        return state.(MyState).Route, nil
+//	    },
+//	    map[string]string{
+//	        "path_a": "node_a",
+//	        "path_b": "node_b",
+//	        "__end__": "__end__",
+//	    },
+//	)
 type ConditionalEdge struct {
 	From      string
 	Condition types.EdgeFunc
-	// Mapping from condition result to target node
+	// Mapping from condition result to target node name.
 	Mapping map[string]string
 }
 
-// Branch represents a branch in the graph.
+// Branch provides a higher-level conditional edge. The Condition function
+// is evaluated, and Then receives the result to produce zero or more target
+// node names. Unlike ConditionalEdge, Branch supports single-source fan-out.
 type Branch struct {
 	From      string
 	Condition types.EdgeFunc
-	// Then is called with the condition result to determine next nodes
+	// Then is called with the condition result to determine next nodes.
 	Then func(interface{}) []string
 }
 
-// Send represents a dynamic node invocation.
+// Send represents a dynamic node invocation. It is used with StateGraph's
+// dynamic routing to invoke a named node with a specific argument, bypassing
+// the normal state channel. This enables map-reduce and fan-out patterns
+// where different nodes receive different subsets of the state.
 type Send struct {
 	Node string
 	Arg  interface{}
 }
 
 // StateGraph is a graph whose nodes communicate by reading and writing to a shared state.
+//
+// Nodes execute sequentially or conditionally based on directed edges. Each node
+// receives the current state (a map or struct matching the schema) and returns
+// an updated state. The framework merges returned values into channels using
+// configured reducers.
+//
+// Usage:
+//
+//	// Define state schema
+//	type MyState struct { Messages []string }
+//
+//	builder := NewStateGraph(MyState{})
+//	builder.AddNode("agent", func(ctx context.Context, state interface{}) (interface{}, error) {
+//	    s := state.(MyState)
+//	    s.Messages = append(s.Messages, "hello")
+//	    return s, nil
+//	})
+//	builder.AddEdge("__start__", "agent")
+//	builder.AddEdge("agent", "__end__")
+//	compiled, err := builder.Compile()
 type StateGraph struct {
 	// Nodes in the graph
 	nodes map[string]*Node
@@ -400,7 +452,22 @@ func (g *StateGraph) configureChannelsFromSchema() error {
 	return nil
 }
 
-// Compile compiles the graph into an executable CompiledGraph.
+// Compile validates the graph structure and produces an executable CompiledGraph.
+// Validation includes reachability checks (all nodes reachable from the entry point),
+// state schema validation, and channel configuration from struct annotations.
+//
+// opts configure runtime behavior:
+//   - WithCheckpointer: enable persistence for interrupt/resume
+//   - WithInterrupts: set human-in-the-loop breakpoints
+//   - WithRecursionLimit: cap Pregel iterations (default 25)
+//   - WithDebug: enable verbose execution logging
+//
+// Example:
+//
+//	cg, err := sg.Compile(
+//	    graph.WithCheckpointer(mySaver),
+//	    graph.WithInterrupts("human_review"),
+//	)
 func (g *StateGraph) Compile(opts ...CompileOption) (*CompiledGraph, error) {
 	if err := g.Validate(); err != nil {
 		return nil, fmt.Errorf("graph validation failed: %w", err)
@@ -426,17 +493,21 @@ func (g *StateGraph) Compile(opts ...CompileOption) (*CompiledGraph, error) {
 	return cg, nil
 }
 
-// CompileOption is an option for compiling a graph.
+// CompileOption configures CompiledGraph behavior at compile time.
 type CompileOption func(*CompiledGraph)
 
-// WithCheckpointer sets the checkpointer for the compiled graph.
+// WithCheckpointer enables checkpoint-based persistence for interrupt/resume.
+// The checkpointer is called at each Pregel step to save execution state.
+// Built-in implementations: MemorySaver, SqliteSaver, PostgresSaver.
 func WithCheckpointer(checkpointer Checkpointer) CompileOption {
 	return func(cg *CompiledGraph) {
 		cg.checkpointer = checkpointer
 	}
 }
 
-// WithInterrupts sets the nodes that should trigger interrupts.
+// WithInterrupts marks one or more nodes as interrupt points (human-in-the-loop
+// breakpoints). Execution pauses before these nodes and can be resumed later
+// via the checkpointer. Use "*" to interrupt before every node.
 func WithInterrupts(nodes ...string) CompileOption {
 	return func(cg *CompiledGraph) {
 		for _, node := range nodes {
@@ -445,14 +516,17 @@ func WithInterrupts(nodes ...string) CompileOption {
 	}
 }
 
-// WithRecursionLimit sets the recursion limit.
+// WithRecursionLimit sets the maximum number of Pregel iterations before the
+// graph aborts with GraphRecursionError. The default is 25. Increase for deeply
+// nested or iterative graphs, decrease to catch runaway loops early.
 func WithRecursionLimit(limit int) CompileOption {
 	return func(cg *CompiledGraph) {
 		cg.recursionLimit = limit
 	}
 }
 
-// WithDebug enables debug mode.
+// WithDebug enables verbose execution logging for debugging node execution
+// order, channel state transitions, and task scheduling.
 func WithDebug(debug bool) CompileOption {
 	return func(cg *CompiledGraph) {
 		cg.debug = debug
@@ -466,20 +540,34 @@ type Checkpointer = checkpoint.BaseCheckpointer
 // ---- Pregel runner bridge ----
 //
 // PregelRunFunc is the pluggable execution function for CompiledGraph.
-// It allows external packages (e.g., harness) to inject a pregel.Engine-based
-// runner without creating an import cycle (graph → pregel → graph).
+// It allows the root harness package to inject a pregel.Engine-based runner
+// without creating an import cycle (graph → pregel → graph).
 //
 // The default value (nil) falls back to the inline Pregel loop.
-// Set it via SetPregelRunFunc, typically from an init() in the root package.
+// Set it via SetPregelRunFunc, typically from an init() in the root harness package.
 var PregelRunFunc func(ctx context.Context, cg *CompiledGraph, input interface{}, config *types.RunnableConfig, streamMode types.StreamMode) (interface{}, error)
 
 // SetPregelRunFunc replaces the default Pregel execution function.
-// Call this from an init() in the root harness package to inject a pregel.Engine-based runner.
+// Called from harness.go's init() to inject a pregel.Engine-based runner.
+// External consumers should compile graphs via sg.Compile() and call Invoke/Stream;
+// they do not need to call SetPregelRunFunc directly.
 func SetPregelRunFunc(fn func(ctx context.Context, cg *CompiledGraph, input interface{}, config *types.RunnableConfig, streamMode types.StreamMode) (interface{}, error)) {
 	PregelRunFunc = fn
 }
 
-// CompiledGraph is a compiled, executable graph.
+// CompiledGraph is a compiled, executable graph produced by StateGraph.Compile().
+//
+// It provides two execution paths:
+//   - Invoke: synchronous, returns final state
+//   - Stream: asynchronous, returns channels for streaming events
+//
+// Execution delegates to PregelRunFunc (production) or falls back to an inline
+// Pregel loop (backward compatibility).
+//
+// Example:
+//
+//	cg, err := sg.Compile(graph.WithCheckpointer(memSaver))
+//	result, err := cg.Invoke(ctx, MyState{Messages: []string{"hello"}})
 type CompiledGraph struct {
 	graph          *StateGraph
 	checkpointer   Checkpointer
@@ -488,7 +576,13 @@ type CompiledGraph struct {
 	debug          bool
 }
 
-// Invoke executes the graph with the given input and returns the final state.
+// Invoke executes the graph synchronously. It applies input to the state
+// channels, runs the Pregel loop, and returns the final state after all nodes
+// complete or an interrupt/error occurs.
+//
+// config is optional; when nil, a default RunnableConfig is used. For resumable
+// execution, pass a config with ThreadID and a checkpointer configured during
+// Compile().
 func (cg *CompiledGraph) Invoke(ctx context.Context, input interface{}, config ...*types.RunnableConfig) (interface{}, error) {
 	rc := &types.RunnableConfig{}
 	if len(config) > 0 && config[0] != nil {
@@ -503,7 +597,17 @@ func (cg *CompiledGraph) Invoke(ctx context.Context, input interface{}, config .
 	return result, nil
 }
 
-// Stream executes the graph and returns a stream of updates.
+// Stream executes the graph and returns channels for receiving streaming events.
+// outputCh yields stream events (checkpoint snapshots, task start/end, value updates,
+// or the final state depending on streamMode). errCh receives a single error or nil
+// when execution completes.
+//
+// streamMode controls which events are emitted:
+//   - StreamModeValues: final state only
+//   - StreamModeUpdates: per-node state updates
+//   - StreamModeTasks: task lifecycle events
+//   - StreamModeCheckpoints: checkpoint snapshots
+//   - StreamModeDebug: all event types
 func (cg *CompiledGraph) Stream(ctx context.Context, input interface{}, mode types.StreamMode, config ...*types.RunnableConfig) (<-chan interface{}, <-chan error) {
 	outputCh := make(chan interface{}, 1) // Buffer to reduce blocking
 	errCh := make(chan error, 1)
@@ -631,27 +735,29 @@ func (cg *CompiledGraph) inlineRun(ctx context.Context, input interface{}, confi
 	return finalState, nil
 }
 
-// GetGraph returns the underlying StateGraph.
+// GetGraph returns the underlying StateGraph for read-only inspection.
 func (cg *CompiledGraph) GetGraph() *StateGraph {
 	return cg.graph
 }
 
-// GetCheckpointer returns the configured checkpointer.
+// GetCheckpointer returns the configured checkpointer, or nil if none was set.
 func (cg *CompiledGraph) GetCheckpointer() Checkpointer {
 	return cg.checkpointer
 }
 
-// GetInterrupts returns the interrupt node set.
+// GetInterrupts returns the set of node names that are configured to interrupt
+// execution (human-in-the-loop breakpoints).
 func (cg *CompiledGraph) GetInterrupts() map[string]bool {
 	return cg.interrupts
 }
 
-// GetRecursionLimit returns the recursion limit.
+// GetRecursionLimit returns the maximum number of Pregel steps before the
+// graph aborts with a GraphRecursionError.
 func (cg *CompiledGraph) GetRecursionLimit() int {
 	return cg.recursionLimit
 }
 
-// IsDebug returns whether debug mode is enabled.
+// IsDebug reports whether debug mode is enabled for detailed execution logging.
 func (cg *CompiledGraph) IsDebug() bool {
 	return cg.debug
 }

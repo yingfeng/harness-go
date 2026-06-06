@@ -18,7 +18,17 @@ import (
 	"github.com/infiniflow/ragflow/harness/types"
 )
 
-// Engine implements the Pregel execution model.
+// Engine implements the Pregel (bulk-synchronous parallel) execution model
+// for StateGraph. It manages channel-based state communication, concurrent
+// task execution via AsyncPipeline, streaming event emission, and checkpoint
+// persistence.
+//
+// Create an Engine via NewEngine with option functions:
+//
+//	engine := NewEngine(graph,
+//	    WithCheckpointer(cp),
+//	    WithRecursionLimit(50),
+//	)
 type Engine struct {
 	graph               *graph.StateGraph
 	checkpointer        graph.Checkpointer
@@ -44,7 +54,11 @@ type deferredCheckpoint struct {
 	Checkpoint  map[string]interface{}
 }
 
-// NewEngine creates a new Pregel engine with the given StateGraph.
+// NewEngine creates a new Pregel engine bound to a StateGraph.
+// Options configure checkpointer, recursion limit, concurrency, retry, cache, etc.
+//
+// The engine is not reusable across multiple Run calls; create a new engine
+// per execution when isolation is required.
 func NewEngine(g *graph.StateGraph, opts ...EngineOption) *Engine {
 	eng := &Engine{
 		graph:           g,
@@ -72,6 +86,9 @@ func NewEngine(g *graph.StateGraph, opts ...EngineOption) *Engine {
 }
 
 // EngineOption is an option for configuring the Pregel engine.
+// Available options: WithCheckpointer, WithInterrupts, WithRecursionLimit,
+// WithDebug, WithConfig, WithMaxConcurrency, WithRetryPolicy, WithCache,
+// WithBackgroundExecutor.
 type EngineOption func(*Engine)
 
 // WithCheckpointer sets the checkpointer.
@@ -151,7 +168,13 @@ type ExecuteResult struct {
 	Metadata map[string]interface{}
 }
 
-// Run executes the graph using the Pregel algorithm.
+// Run executes the graph using the Pregel algorithm and returns streaming events.
+// outputCh yields StreamEvent values (checkpoints, task start/end, state updates,
+// and a final event with the complete state). errCh receives a single error on failure
+// or nil on clean completion.
+//
+// The caller MUST read from outputCh until it is closed to prevent goroutine leaks.
+// For synchronous execution, use RunSync instead.
 func (e *Engine) Run(ctx context.Context, input interface{}, mode types.StreamMode) (<-chan interface{}, <-chan error) {
 	outputCh := make(chan interface{}, 100)
 	errCh := make(chan error, 1)
@@ -164,10 +187,19 @@ func (e *Engine) Run(ctx context.Context, input interface{}, mode types.StreamMo
 		streamManager := NewStreamManager(mode, 100)
 		defer streamManager.Close()
 		
+		done := make(chan struct{})
+		defer close(done)
+		
 		// Forward stream events to output channel
 		go func() {
 			for event := range streamManager.Events() {
-				outputCh <- event
+				select {
+				case outputCh <- event:
+				case <-done:
+					return
+				case <-ctx.Done():
+					return
+				}
 			}
 		}()
 		
