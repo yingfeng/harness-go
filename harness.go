@@ -55,6 +55,8 @@
 package harness
 
 import (
+	"context"
+
 	"github.com/infiniflow/ragflow/harness/agentcore"
 	"github.com/infiniflow/ragflow/harness/channels"
 	"github.com/infiniflow/ragflow/harness/checkpoint"
@@ -63,6 +65,7 @@ import (
 	"github.com/infiniflow/ragflow/harness/graph"
 	"github.com/infiniflow/ragflow/harness/interrupt"
 	"github.com/infiniflow/ragflow/harness/prebuilt"
+	"github.com/infiniflow/ragflow/harness/pregel"
 	"github.com/infiniflow/ragflow/harness/types"
 )
 
@@ -445,4 +448,36 @@ func NewCommand() *Command {
 // NewSend creates a new Send.
 func NewSend(node string, arg interface{}) *Send {
 	return &Send{Node: node, Arg: arg}
+}
+
+// init configures the graph package to use pregel.Engine as the Pregel runner.
+// This merges the two Pregel implementations: CompiledGraph.run() delegates
+// to pregel.Engine.RunSync() instead of its inline loop.
+func init() {
+	graph.SetPregelRunFunc(pregelRunCompiledGraph)
+}
+
+// pregelRunCompiledGraph is the Pregel runner that delegates to pregel.Engine.
+// It is set as graph.PregelRunFunc via init() above.
+func pregelRunCompiledGraph(
+	ctx context.Context,
+	cg *graph.CompiledGraph,
+	input interface{},
+	config *types.RunnableConfig,
+	streamMode types.StreamMode,
+) (interface{}, error) {
+	// Extract interrupt node names from the set
+	interruptKeys := make([]string, 0, len(cg.GetInterrupts()))
+	for k := range cg.GetInterrupts() {
+		interruptKeys = append(interruptKeys, k)
+	}
+
+	engine := pregel.NewEngine(cg.GetGraph(),
+		pregel.WithCheckpointer(cg.GetCheckpointer()),
+		pregel.WithInterrupts(interruptKeys...),
+		pregel.WithRecursionLimit(cg.GetRecursionLimit()),
+		pregel.WithDebug(cg.IsDebug()),
+		pregel.WithConfig(config),
+	)
+	return engine.RunSync(ctx, input)
 }

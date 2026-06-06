@@ -1171,12 +1171,28 @@ func (e *Engine) saveDeferredCheckpoints(ctx context.Context) error {
 // This is a convenience wrapper around Run() for callers that want a blocking API.
 func (e *Engine) RunSync(ctx context.Context, input interface{}) (interface{}, error) {
 	outputCh, errCh := e.Run(ctx, input, types.StreamModeValues)
-	select {
-	case result := <-outputCh:
-		return result, nil
-	case err := <-errCh:
-		return nil, err
-	case <-ctx.Done():
-		return nil, ctx.Err()
+	var finalState interface{}
+	for {
+		select {
+		case result, ok := <-outputCh:
+			if !ok {
+				return finalState, nil
+			}
+			// Extract final state from StreamEvent wrapping
+			if se, ok := result.(*StreamEvent); ok && se.Type == EventTypeFinal {
+				if data, ok := se.Data.(map[string]interface{}); ok {
+					if state, ok := data["state"]; ok {
+						finalState = state
+					}
+				}
+			}
+		case err := <-errCh:
+			if err != nil {
+				return nil, err
+			}
+			return finalState, nil
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
 	}
 }

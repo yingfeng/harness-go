@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/infiniflow/ragflow/harness/channels"
+	"github.com/infiniflow/ragflow/harness/checkpoint"
 	"github.com/infiniflow/ragflow/harness/constants"
 	"github.com/infiniflow/ragflow/harness/errors"
 	"github.com/infiniflow/ragflow/harness/types"
@@ -458,11 +459,24 @@ func WithDebug(debug bool) CompileOption {
 	}
 }
 
-// Checkpointer is the interface for checkpoint savers.
-type Checkpointer interface {
-	Get(ctx context.Context, config map[string]interface{}) (map[string]interface{}, error)
-	Put(ctx context.Context, config map[string]interface{}, checkpoint map[string]interface{}) error
-	List(ctx context.Context, config map[string]interface{}, limit int) ([]map[string]interface{}, error)
+// Checkpointer is the interface for checkpoint persistence.
+// It is a type alias for checkpoint.BaseCheckpointer.
+type Checkpointer = checkpoint.BaseCheckpointer
+
+// ---- Pregel runner bridge ----
+//
+// PregelRunFunc is the pluggable execution function for CompiledGraph.
+// It allows external packages (e.g., harness) to inject a pregel.Engine-based
+// runner without creating an import cycle (graph → pregel → graph).
+//
+// The default value (nil) falls back to the inline Pregel loop.
+// Set it via SetPregelRunFunc, typically from an init() in the root package.
+var PregelRunFunc func(ctx context.Context, cg *CompiledGraph, input interface{}, config *types.RunnableConfig, streamMode types.StreamMode) (interface{}, error)
+
+// SetPregelRunFunc replaces the default Pregel execution function.
+// Call this from an init() in the root harness package to inject a pregel.Engine-based runner.
+func SetPregelRunFunc(fn func(ctx context.Context, cg *CompiledGraph, input interface{}, config *types.RunnableConfig, streamMode types.StreamMode) (interface{}, error)) {
+	PregelRunFunc = fn
 }
 
 // CompiledGraph is a compiled, executable graph.
@@ -521,22 +535,27 @@ func (cg *CompiledGraph) Stream(ctx context.Context, input interface{}, mode typ
 	return outputCh, errCh
 }
 
-// run executes the graph using the Pregel model.
+// run delegates to the configured Pregel runner, or falls back to the inline
+// Pregel loop when no external runner is set.
 func (cg *CompiledGraph) run(ctx context.Context, input interface{}, config *types.RunnableConfig, streamMode types.StreamMode) (interface{}, error) {
-	g := cg.graph
+	if PregelRunFunc != nil {
+		return PregelRunFunc(ctx, cg, input, config, streamMode)
+	}
+	return cg.inlineRun(ctx, input, config)
+}
 
-	// Initialize channels from graph state schema
+// inlineRun is the default inline Pregel loop kept as a fallback.
+func (cg *CompiledGraph) inlineRun(ctx context.Context, input interface{}, config *types.RunnableConfig) (interface{}, error) {
+	g := cg.graph
 	channelRegistry := channels.NewRegistry()
 	for name, ch := range g.GetChannels() {
 		channelRegistry.Register(name, ch.Copy())
 	}
 
-	// Apply input to channels
-	if err := applyInput(channelRegistry, input); err != nil {
+	if err := inlineApplyInput(channelRegistry, input); err != nil {
 		return nil, fmt.Errorf("failed to apply input: %w", err)
 	}
 
-	// Load checkpoint if available
 	if cg.checkpointer != nil {
 		threadID := getThreadID(config)
 		cp, err := cg.checkpointer.Get(ctx, map[string]interface{}{
@@ -549,7 +568,6 @@ func (cg *CompiledGraph) run(ctx context.Context, input interface{}, config *typ
 		}
 	}
 
-	// Execute Pregel loop
 	step := 0
 	completedTasks := make(map[string]bool)
 	lastCompletedNode := ""
@@ -560,7 +578,7 @@ func (cg *CompiledGraph) run(ctx context.Context, input interface{}, config *typ
 			return nil, &errors.GraphRecursionError{Limit: cg.recursionLimit}
 		}
 
-		tasks, err := getNextTasks(channelRegistry, completedTasks, lastCompletedNode, lastState, g)
+		tasks, err := inlineGetNextTasks(channelRegistry, completedTasks, lastCompletedNode, lastState, g)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get next tasks: %w", err)
 		}
@@ -568,8 +586,7 @@ func (cg *CompiledGraph) run(ctx context.Context, input interface{}, config *typ
 			break
 		}
 
-		// Check for interrupts
-		interrupted := shouldInterrupt(tasks, cg.interrupts)
+		interrupted := inlineShouldInterrupt(tasks, cg.interrupts)
 		if interrupted {
 			if cg.checkpointer != nil {
 				cp := channelRegistry.CreateCheckpoint()
@@ -580,27 +597,23 @@ func (cg *CompiledGraph) run(ctx context.Context, input interface{}, config *typ
 			return nil, &errors.GraphInterrupt{}
 		}
 
-		// Execute tasks
-		results, err := executeTasks(ctx, tasks, g)
+		results, err := inlineExecuteTasks(ctx, tasks, g)
 		if err != nil {
 			return nil, fmt.Errorf("failed to execute tasks: %w", err)
 		}
 
-		// Mark tasks as completed
 		for _, result := range results {
 			if result.err == nil {
 				completedTasks[result.nodeName] = true
 				lastCompletedNode = result.nodeName
-				lastState = mergeStates(lastState, result.output)
+				lastState = inlineMergeStates(lastState, result.output)
 			}
 		}
 
-		// Apply writes to channels
-		if err := applyWrites(channelRegistry, results); err != nil {
+		if err := inlineApplyWrites(channelRegistry, results); err != nil {
 			return nil, fmt.Errorf("failed to apply writes: %w", err)
 		}
 
-		// Save checkpoint
 		if cg.checkpointer != nil {
 			cp := channelRegistry.CreateCheckpoint()
 			_ = cg.checkpointer.Put(ctx, map[string]interface{}{
@@ -611,7 +624,7 @@ func (cg *CompiledGraph) run(ctx context.Context, input interface{}, config *typ
 		step++
 	}
 
-	finalState, err := buildOutput(channelRegistry, lastState)
+	finalState, err := inlineBuildOutput(channelRegistry, lastState)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build output: %w", err)
 	}
@@ -623,15 +636,35 @@ func (cg *CompiledGraph) GetGraph() *StateGraph {
 	return cg.graph
 }
 
-// ---- Pregel execution helpers ----
+// GetCheckpointer returns the configured checkpointer.
+func (cg *CompiledGraph) GetCheckpointer() Checkpointer {
+	return cg.checkpointer
+}
 
-type runTask struct {
+// GetInterrupts returns the interrupt node set.
+func (cg *CompiledGraph) GetInterrupts() map[string]bool {
+	return cg.interrupts
+}
+
+// GetRecursionLimit returns the recursion limit.
+func (cg *CompiledGraph) GetRecursionLimit() int {
+	return cg.recursionLimit
+}
+
+// IsDebug returns whether debug mode is enabled.
+func (cg *CompiledGraph) IsDebug() bool {
+	return cg.debug
+}
+
+// ---- Inline Pregel execution helpers (fallback when no external runner is set) ----
+
+type inlineTask struct {
 	id       string
 	nodeName string
 	input    interface{}
 }
 
-type runTaskResult struct {
+type inlineTaskResult struct {
 	taskID   string
 	nodeName string
 	output   interface{}
@@ -647,8 +680,8 @@ func getThreadID(config *types.RunnableConfig) string {
 	return uuid.New().String()
 }
 
-func applyInput(registry *channels.Registry, input interface{}) error {
-	inputMap, err := toMap(input)
+func inlineApplyInput(registry *channels.Registry, input interface{}) error {
+	inputMap, err := inlineToMap(input)
 	if err != nil {
 		return err
 	}
@@ -664,14 +697,14 @@ func applyInput(registry *channels.Registry, input interface{}) error {
 	return nil
 }
 
-func getNextTasks(registry *channels.Registry, completedTasks map[string]bool, lastCompletedNode string, currentState interface{}, g *StateGraph) ([]*runTask, error) {
-	tasks := make([]*runTask, 0)
+func inlineGetNextTasks(registry *channels.Registry, completedTasks map[string]bool, lastCompletedNode string, currentState interface{}, g *StateGraph) ([]*inlineTask, error) {
+	tasks := make([]*inlineTask, 0)
 	if len(completedTasks) == 0 && g.entryPoint != "" {
 		node, ok := g.GetNode(g.entryPoint)
 		if !ok {
 			return nil, &errors.NodeNotFoundError{NodeName: g.entryPoint}
 		}
-		tasks = append(tasks, &runTask{id: uuid.New().String(), nodeName: node.Name, input: currentState})
+		tasks = append(tasks, &inlineTask{id: uuid.New().String(), nodeName: node.Name, input: currentState})
 		return tasks, nil
 	}
 	if lastCompletedNode != "" {
@@ -710,14 +743,14 @@ func getNextTasks(registry *channels.Registry, completedTasks map[string]bool, l
 		for nodeName := range nextNodes {
 			node, ok := g.GetNode(nodeName)
 			if ok {
-				tasks = append(tasks, &runTask{id: uuid.New().String(), nodeName: node.Name, input: currentState})
+				tasks = append(tasks, &inlineTask{id: uuid.New().String(), nodeName: node.Name, input: currentState})
 			}
 		}
 	}
 	return tasks, nil
 }
 
-func shouldInterrupt(tasks []*runTask, interrupts map[string]bool) bool {
+func inlineShouldInterrupt(tasks []*inlineTask, interrupts map[string]bool) bool {
 	if len(interrupts) == 0 {
 		return false
 	}
@@ -730,26 +763,26 @@ func shouldInterrupt(tasks []*runTask, interrupts map[string]bool) bool {
 	return false
 }
 
-func executeTasks(ctx context.Context, tasks []*runTask, g *StateGraph) ([]*runTaskResult, error) {
-	results := make([]*runTaskResult, 0, len(tasks))
+func inlineExecuteTasks(ctx context.Context, tasks []*inlineTask, g *StateGraph) ([]*inlineTaskResult, error) {
+	results := make([]*inlineTaskResult, 0, len(tasks))
 	for _, t := range tasks {
 		node, ok := g.GetNode(t.nodeName)
 		if !ok {
 			return nil, &errors.NodeNotFoundError{NodeName: t.nodeName}
 		}
 		output, err := node.Function(ctx, t.input)
-		results = append(results, &runTaskResult{taskID: t.id, nodeName: t.nodeName, output: output, err: err})
+		results = append(results, &inlineTaskResult{taskID: t.id, nodeName: t.nodeName, output: output, err: err})
 	}
 	return results, nil
 }
 
-func applyWrites(registry *channels.Registry, results []*runTaskResult) error {
+func inlineApplyWrites(registry *channels.Registry, results []*inlineTaskResult) error {
 	writes := make(map[string][]interface{})
 	for _, result := range results {
 		if result.err != nil {
 			continue
 		}
-		outputMap, err := toMap(result.output)
+		outputMap, err := inlineToMap(result.output)
 		if err != nil {
 			return fmt.Errorf("failed to convert output to map: %w", err)
 		}
@@ -765,7 +798,7 @@ func applyWrites(registry *channels.Registry, results []*runTaskResult) error {
 	return nil
 }
 
-func buildOutput(registry *channels.Registry, lastState interface{}) (interface{}, error) {
+func inlineBuildOutput(registry *channels.Registry, lastState interface{}) (interface{}, error) {
 	values, err := registry.GetValues()
 	if err != nil {
 		return lastState, nil
@@ -776,7 +809,7 @@ func buildOutput(registry *channels.Registry, lastState interface{}) (interface{
 	return lastState, nil
 }
 
-func mergeStates(existing, new interface{}) interface{} {
+func inlineMergeStates(existing, new interface{}) interface{} {
 	if existing == nil {
 		return new
 	}
@@ -798,7 +831,7 @@ func mergeStates(existing, new interface{}) interface{} {
 	return new
 }
 
-func toMap(v interface{}) (map[string]interface{}, error) {
+func inlineToMap(v interface{}) (map[string]interface{}, error) {
 	if v == nil {
 		return nil, fmt.Errorf("nil value")
 	}

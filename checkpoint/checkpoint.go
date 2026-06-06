@@ -12,6 +12,16 @@ import (
 	"github.com/infiniflow/ragflow/harness/types"
 )
 
+// BaseCheckpointer is the canonical checkpoint persistence interface.
+// It provides the standard Get/Put/List contract used by graph and pregel packages.
+// All concrete checkpoint implementations (MemorySaver, SqliteSaver, PostgresSaver)
+// satisfy this interface.
+type BaseCheckpointer interface {
+	Get(ctx context.Context, config map[string]interface{}) (map[string]interface{}, error)
+	Put(ctx context.Context, config map[string]interface{}, checkpoint map[string]interface{}) error
+	List(ctx context.Context, config map[string]interface{}, limit int) ([]map[string]interface{}, error)
+}
+
 // CheckpointMetadata contains metadata about a checkpoint.
 type CheckpointMetadata struct {
 	// ID is the unique identifier for this checkpoint
