@@ -127,7 +127,7 @@ func runFlowAgentWithIsolatedSession(ctx context.Context, fa *flowAgent, input *
 
 	ctx = setRunCtx(ctx, &runContext{
 		RootInput: parentRunCtx.RootInput,
-		RunPath:   parentRunCtx.RunPath,
+		RunPath:   parentRunCtx.getRunPath(),
 		Session:   isolatedSession,
 	})
 
@@ -167,7 +167,7 @@ func resumeFlowAgentWithIsolatedSession(ctx context.Context, fa *flowAgent, info
 
 	ctx = setRunCtx(ctx, &runContext{
 		RootInput: parentRunCtx.RootInput,
-		RunPath:   parentRunCtx.RunPath,
+		RunPath:   parentRunCtx.getRunPath(),
 		Session:   isolatedSession,
 	})
 

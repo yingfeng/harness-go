@@ -242,7 +242,7 @@ func (a *workflowAgent) runPar(ctx context.Context, gen *AsyncGenerator[*AgentEv
 		st := &wfParallelState{SubEvents: subEvts}
 		ev := CompositeInterrupt(ctx, "Parallel interrupted", st, signals...)
 		ev.Action.Interrupted.Data = &WorkflowInterruptInfo{OrigInput: inputFromCtx(ctx), ParallelInfo: dataMap}
-		ev.AgentName = a.Name(ctx); ev.RunPath = getRunCtx(ctx).RunPath
+		ev.AgentName = a.Name(ctx); ev.RunPath = getRunCtx(ctx).getRunPath()
 		gen.Send(ev)
 	}
 	return nil

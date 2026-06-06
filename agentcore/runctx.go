@@ -140,9 +140,36 @@ func (s *runSession) getEvents() []any {
 
 // runContext holds runtime metadata for an agent execution.
 type runContext struct {
+	mu        sync.Mutex
 	RootInput any
 	RunPath   []RunStep
 	Session   *runSession
+}
+
+// getRunPath safely returns a copy of RunPath under lock.
+func (rc *runContext) getRunPath() []RunStep {
+	if rc == nil { return nil }
+	rc.mu.Lock()
+	defer rc.mu.Unlock()
+	cp := make([]RunStep, len(rc.RunPath))
+	copy(cp, rc.RunPath)
+	return cp
+}
+
+// setRunPath safely replaces RunPath under lock.
+func (rc *runContext) setRunPath(v []RunStep) {
+	if rc == nil { return }
+	rc.mu.Lock()
+	rc.RunPath = v
+	rc.mu.Unlock()
+}
+
+// appendRunPath safely appends to RunPath under lock.
+func (rc *runContext) appendRunPath(v RunStep) {
+	if rc == nil { return }
+	rc.mu.Lock()
+	rc.RunPath = append(rc.RunPath, v)
+	rc.mu.Unlock()
 }
 
 type runContextKey struct{}
@@ -158,7 +185,7 @@ func initRunCtx(ctx context.Context, agentName string, input *AgentInput) (conte
 		rc = &runContext{RootInput: input, RunPath: make([]RunStep, 0), Session: newRunSession()}
 		ctx = context.WithValue(ctx, runContextKey{}, rc)
 	}
-	rc.RunPath = append(rc.RunPath, RunStep{agentName: agentName})
+	rc.appendRunPath(RunStep{agentName: agentName})
 	return ctx, rc
 }
 
@@ -186,10 +213,11 @@ func updateRunPathOnly(ctx context.Context, steps ...string) context.Context {
 	if rc == nil {
 		return ctx
 	}
-	rc.RunPath = make([]RunStep, 0, len(steps))
+	newPath := make([]RunStep, 0, len(steps))
 	for _, s := range steps {
-		rc.RunPath = append(rc.RunPath, RunStep{agentName: s})
+		newPath = append(newPath, RunStep{agentName: s})
 	}
+	rc.setRunPath(newPath)
 	return ctx
 }
 

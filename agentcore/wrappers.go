@@ -199,12 +199,19 @@ func BuildModelWrapperChain[M MessageType](base ChatModel[M], ec *chatModelExecC
 }
 
 // injectMessageID assigns a unique message ID to each message if not already present.
+// Operates on copies to avoid data races when messages are shared across parallel goroutines.
 func injectMessageID[M MessageType](msgs []M) []M {
-	for _, msg := range msgs {
+	for i, msg := range msgs {
 		switch v := any(msg).(type) {
 		case *schema.Message:
-			if v.Extra == nil { v.Extra = make(map[string]any) }
-			v.Extra = EnsureMessageID(v.Extra)
+			if v.Extra != nil && GetMessageID(v.Extra) != "" {
+				continue // already has ID, skip
+			}
+			// Deep-copy so concurrent access is safe for shared messages.
+			cp := copyMessage(msg)
+			copied := any(cp).(*schema.Message)
+			copied.Extra = EnsureMessageID(copied.Extra)
+			msgs[i] = any(copied).(M)
 		}
 	}
 	return msgs

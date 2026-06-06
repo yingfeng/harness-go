@@ -190,13 +190,14 @@ func (a *flowAgent) runLoop(ctx, subCtx context.Context, rc *runContext, ai *Asy
 	for {
 		ev, ok := ai.Next()
 		if !ok { break }
-		if len(ev.RunPath) == 0 { ev.AgentName = a.Name(ctx); ev.RunPath = rc.RunPath }
-		if (ev.Action == nil || ev.Action.Interrupted == nil) && pathMatch(rc.RunPath, ev.RunPath) {
+		curRunPath := rc.getRunPath()
+		if len(ev.RunPath) == 0 { ev.AgentName = a.Name(ctx); ev.RunPath = curRunPath }
+		if (ev.Action == nil || ev.Action.Interrupted == nil) && pathMatch(curRunPath, ev.RunPath) {
 			cp := copyTypedAgentEvent(ev)
 			setAutomaticClose(cp); setAutomaticClose(ev)
 			rc.Session.addEvent(cp)
 		}
-		if pathMatch(rc.RunPath, ev.RunPath) { lastAction = ev.Action }
+		if pathMatch(curRunPath, ev.RunPath) { lastAction = ev.Action }
 		cp := copyTypedAgentEvent(ev)
 		setAutomaticClose(cp); setAutomaticClose(ev)
 		gen.Send(ev)
@@ -317,8 +318,9 @@ func (a *typedFlowAgent[M]) runLoop(ctx context.Context, rc *runContext, ai *Asy
 	for {
 		ev, ok := ai.Next()
 		if !ok { break }
-		if len(ev.RunPath) == 0 { ev.AgentName = a.Name(ctx); ev.RunPath = rc.RunPath }
-		if (ev.Action == nil || ev.Action.Interrupted == nil) && pathMatch(rc.RunPath, ev.RunPath) {
+		curRunPath := rc.getRunPath()
+		if len(ev.RunPath) == 0 { ev.AgentName = a.Name(ctx); ev.RunPath = curRunPath }
+		if (ev.Action == nil || ev.Action.Interrupted == nil) && pathMatch(curRunPath, ev.RunPath) {
 			cp := copyTypedAgentEvent(ev)
 			typedSetAutomaticClose(cp); typedSetAutomaticClose(ev)
 			addTypedEvent(rc.Session, cp)
@@ -355,7 +357,7 @@ func initTypedRunCtx[M MessageType](ctx context.Context, name string, input *Typ
 		rc = &runContext{RootInput: input, RunPath: make([]RunStep, 0), Session: newRunSession()}
 		ctx = context.WithValue(ctx, runContextKey{}, rc)
 	}
-	rc.RunPath = append(rc.RunPath, RunStep{agentName: name})
+	rc.appendRunPath(RunStep{agentName: name})
 	return ctx, rc
 }
 
