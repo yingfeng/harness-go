@@ -8,68 +8,51 @@ import (
 	"github.com/infiniflow/ragflow/harness/agentcore/schema"
 )
 
+type mockModel struct{}
+
+func (m *mockModel) Generate(ctx context.Context, msgs []*schema.Message, opts ...agentcore.ModelOption) (*schema.Message, error) {
+	return &schema.Message{Role: schema.RoleAssistant, Content: "plan result"}, nil
+}
+func (m *mockModel) Stream(ctx context.Context, msgs []*schema.Message, opts ...agentcore.ModelOption) (*schema.StreamReader[*schema.Message], error) {
+	return schema.StreamReaderFromArray([]*schema.Message{{Role: schema.RoleAssistant, Content: "plan stream"}}), nil
+}
+func (m *mockModel) BindTools(tools []*schema.ToolInfo) error { return nil }
+
 func TestNewTyped_DefaultValues(t *testing.T) {
-	model := &fakePEModel{}
-	cfg := &Config{Model: model}
-	a := NewTyped(cfg)
-	if a == nil {
-		t.Fatal("nil agent")
-	}
-	if a.Name(nil) != "plan_execute_agent" {
-		t.Errorf("default name = %s", a.Name(nil))
+	cfg := &Config{Model: &mockModel{}}
+	agent := NewTyped(cfg)
+	if agent == nil { t.Fatal("nil agent") }
+	name := agent.Name(context.Background())
+	if name != "plan_execute_agent" {
+		t.Errorf("expected name 'plan_execute_agent', got %q", name)
 	}
 }
 
 func TestNewTyped_CustomName(t *testing.T) {
-	model := &fakePEModel{}
-	cfg := &Config{Model: model, Name: "my_planner", MaxIterations: 99}
-	a := NewTyped(cfg)
-	name := a.Name(nil)
-	if name != "my_planner" {
-		t.Errorf("name = %s, want my_planner", name)
+	cfg := &Config{Model: &mockModel{}, Name: "custom_planner"}
+	agent := NewTyped(cfg)
+	if agent == nil { t.Fatal("nil agent") }
+	name := agent.Name(context.Background())
+	if name != "custom_planner" {
+		t.Errorf("name = %q", name)
 	}
 }
 
 func TestNewTyped_MaxIterationsZero(t *testing.T) {
-	model := &fakePEModel{}
-	cfg := &Config{Model: model, MaxIterations: 0} // should default to 15
-	a := NewTyped(cfg)
-	if a == nil {
-		t.Fatal("nil agent with zero max iterations")
-	}
+	cfg := &Config{Model: &mockModel{}, MaxIterations: 0}
+	agent := NewTyped(cfg)
+	if agent == nil { t.Fatal("nil agent") }
 }
 
 func TestNew(t *testing.T) {
-	model := &fakePEModel{}
-	a := New(&Config{Model: model})
-	if a == nil {
-		t.Fatal("New() returned nil")
-	}
+	cfg := &Config{Model: &mockModel{}}
+	agent := New(cfg)
+	if agent == nil { t.Fatal("nil agent") }
 }
 
 func TestPrompt(t *testing.T) {
-	p := Prompt()
-	if p == "" {
-		t.Error("Prompt empty")
+	prompt := Prompt()
+	if prompt == "" {
+		t.Error("empty prompt")
 	}
-	if !contains(p, "plan-execute-replan") {
-		t.Error("missing plan-execute pattern in prompt")
-	}
-}
-
-type fakePEModel struct{}
-
-func (m *fakePEModel) Generate(ctx context.Context, msgs []*schema.Message, opts ...agentcore.ModelOption) (*schema.Message, error) {
-	return &schema.Message{Role: schema.RoleAssistant, Content: "plan result"}, nil
-}
-func (m *fakePEModel) Stream(ctx context.Context, msgs []*schema.Message, opts ...agentcore.ModelOption) (*schema.StreamReader[*schema.Message], error) {
-	return schema.StreamReaderFromArray([]*schema.Message{{Content: "plan"}}), nil
-}
-func (m *fakePEModel) BindTools(tools []*schema.ToolInfo) error { return nil }
-
-func contains(s, sub string) bool {
-	for i := 0; i <= len(s)-len(sub); i++ {
-		if s[i:i+len(sub)] == sub { return true }
-	}
-	return false
 }

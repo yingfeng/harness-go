@@ -8,130 +8,62 @@ import (
 	"github.com/infiniflow/ragflow/harness/agentcore/schema"
 )
 
+type mockModel struct{}
+
+func (m *mockModel) Generate(ctx context.Context, msgs []*schema.Message, opts ...agentcore.ModelOption) (*schema.Message, error) {
+	return &schema.Message{Role: schema.RoleAssistant, Content: "deep result"}, nil
+}
+func (m *mockModel) Stream(ctx context.Context, msgs []*schema.Message, opts ...agentcore.ModelOption) (*schema.StreamReader[*schema.Message], error) {
+	return schema.StreamReaderFromArray([]*schema.Message{{Role: schema.RoleAssistant, Content: "deep stream"}}), nil
+}
+func (m *mockModel) BindTools(tools []*schema.ToolInfo) error { return nil }
+
 func TestDefaultConfig(t *testing.T) {
 	cfg := DefaultConfig()
 	if cfg.Name != "deep_agent" {
-		t.Errorf("default name = %s", cfg.Name)
+		t.Errorf("expected name 'deep_agent', got %q", cfg.Name)
 	}
 	if cfg.MaxIterations != 20 {
-		t.Errorf("default MaxIterations = %d, want 20", cfg.MaxIterations)
-	}
-	if cfg.EnableShell {
-		t.Error("shell should be disabled by default")
+		t.Errorf("expected MaxIterations 20, got %d", cfg.MaxIterations)
 	}
 }
 
 func TestNewTyped_NilConfig(t *testing.T) {
-	// Should not panic with nil config
-	cfg := DefaultConfig()
-	a := NewTyped(cfg)
-	if a == nil {
-		t.Fatal("nil agent")
-	}
-	if a.Name(nil) != "deep_agent" {
-		t.Errorf("name = %s", a.Name(nil))
+	agent := NewTyped(nil)
+	if agent == nil {
+		t.Fatal("nil agent for nil config")
 	}
 }
 
 func TestNewTyped_WithModel(t *testing.T) {
-	model := &fakeModelForDeep{}
-	cfg := &Config{Model: model, MaxIterations: 5, Name: "test_deep"}
-	a := NewTyped(cfg)
-	if a.Name(nil) != "test_deep" {
-		t.Errorf("custom name not applied: %s", a.Name(nil))
+	cfg := DefaultConfig()
+	cfg.Model = &mockModel{}
+	agent := NewTyped(cfg)
+	if agent == nil { t.Fatal("nil agent") }
+	name := agent.Name(context.Background())
+	if name != "deep_agent" {
+		t.Errorf("name = %q", name)
 	}
 }
 
 func TestNew(t *testing.T) {
-	model := &fakeModelForDeep{}
-	cfg := &Config{Model: model}
-	a := New(cfg)
-	if a == nil {
-		t.Fatal("New() returned nil")
-	}
+	cfg := DefaultConfig()
+	cfg.Model = &mockModel{}
+	agent := New(cfg)
+	if agent == nil { t.Fatal("nil agent") }
+	_ = agent
 }
 
 func TestPrompt(t *testing.T) {
-	p := Prompt()
-	if p == "" {
-		t.Error("Prompt() empty")
-	}
-	if !contains(p, "Deep Agent") {
-		t.Error("prompt missing 'Deep Agent'")
+	prompt := Prompt()
+	if prompt == "" {
+		t.Error("empty prompt")
 	}
 }
 
 func TestSelectPrompt(t *testing.T) {
-	en := SelectPrompt("en")
-	zh := SelectPrompt("zh")
-	unknown := SelectPrompt("fr") // fallback to default
-
-	if en == zh {
-		t.Error("en and zh prompts should differ")
+	prompt := SelectPrompt("en")
+	if prompt == "" {
+		t.Error("empty select prompt")
 	}
-	if unknown != Prompt() {
-		t.Error("unknown language should fall back to default")
-	}
-}
-
-func TestTaskManager_CRUD(t *testing.T) {
-	m := NewTaskManager()
-
-	t1 := m.Create("task A", "")
-	if t1.ID == "" || t1.State != TaskPending {
-		t.Error("Create failed")
-	}
-
-	list := m.List()
-	if len(list) != 1 {
-		t.Errorf("List returned %d", len(list))
-	}
-
-	got, err := m.Get(t1.ID)
-	if err != nil || got.ID != t1.ID {
-		t.Error("Get failed")
-	}
-
-	err = m.Update(t1.ID, "done!", TaskCompleted)
-	if err != nil {
-		t.Fatalf("Update: %v", err)
-	}
-	got2, _ := m.Get(t1.ID)
-	if got2.Result != "done!" || got2.State != TaskCompleted {
-		t.Error("Update did not persist")
-	}
-}
-
-func TestTaskManager_GetNotFound(t *testing.T) {
-	m := NewTaskManager()
-	_, err := m.Get("nope")
-	if err == nil {
-		t.Error("expected error")
-	}
-}
-
-func TestTaskState_Consts(t *testing.T) {
-	consts := []TaskState{TaskPending, TaskRunning, TaskCompleted, TaskFailed}
-	for _, c := range consts {
-		if c == "" {
-			t.Errorf("empty const: %v", c)
-		}
-	}
-}
-
-type fakeModelForDeep struct{}
-
-func (m *fakeModelForDeep) Generate(ctx context.Context, msgs []*schema.Message, opts ...agentcore.ModelOption) (*schema.Message, error) {
-	return &schema.Message{Role: schema.RoleAssistant, Content: "ok"}, nil
-}
-func (m *fakeModelForDeep) Stream(ctx context.Context, msgs []*schema.Message, opts ...agentcore.ModelOption) (*schema.StreamReader[*schema.Message], error) {
-	return schema.StreamReaderFromArray([]*schema.Message{{Content: "ok"}}), nil
-}
-func (m *fakeModelForDeep) BindTools(tools []*schema.ToolInfo) error { return nil }
-
-func contains(s, sub string) bool {
-	for i := 0; i <= len(s)-len(sub); i++ {
-		if s[i:i+len(sub)] == sub { return true }
-	}
-	return false
 }

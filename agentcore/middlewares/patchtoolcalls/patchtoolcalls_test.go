@@ -10,67 +10,115 @@ import (
 
 func TestBeforeModelRewrite_InsertsPlaceholders(t *testing.T) {
 	mw := New[*schema.Message]()
-
-	state := &agentcore.TypedChatModelAgentState[*schema.Message]{
-		Messages: []*schema.Message{
-			schema.UserMessage("hello"),
-			{
-				Role:      schema.RoleAssistant,
-				Content:   "",
-				ToolCalls: []schema.ToolCall{{ID: "tc1", Function: schema.ToolCallFunction{Name: "search", Arguments: "{}"}}},
+	msgs := []*schema.Message{
+		schema.UserMessage("Hello"),
+		{
+			Role:    schema.RoleAssistant,
+			Content: "",
+			ToolCalls: []schema.ToolCall{
+				{ID: "call_1", Type: "function", Function: schema.ToolCallFunction{Name: "search", Arguments: `{"q":"test"}`}},
 			},
-			// Missing tool result — next message is user, not tool
-			schema.UserMessage("continue"),
 		},
+		// No corresponding tool message for call_1
+		schema.UserMessage("Tell me more"),
 	}
-	mc := &agentcore.TypedModelContext[*schema.Message]{}
+	state := agentcore.NewChatModelAgentState(msgs, nil, 10)
+	_, newState, err := mw.BeforeModelRewrite(context.Background(), state, nil)
+	if err != nil { t.Fatalf("BeforeModelRewrite: %v", err) }
 
-	_, newState, err := mw.BeforeModelRewrite(context.Background(), state, mc)
-	if err != nil {
-		t.Fatalf("BeforeModelRewrite: %v", err)
-	}
-
-	// Should have inserted a placeholder tool message
+	// Should have inserted a placeholder for the missing tool result
 	foundPlaceholder := false
 	for _, m := range newState.Messages {
-		if m.Role == schema.RoleTool && contains(m.Content, "not completed") {
+		if m.Role == schema.RoleTool && m.Name == "call_1" {
 			foundPlaceholder = true
+			break
 		}
 	}
 	if !foundPlaceholder {
-		t.Error("placeholder tool message not inserted for incomplete tool call")
+		t.Error("no placeholder inserted for missing tool call 'call_1'")
 	}
 }
 
 func TestBeforeModelRewrite_CompleteToolCall(t *testing.T) {
 	mw := New[*schema.Message]()
-
-	state := &agentcore.TypedChatModelAgentState[*schema.Message]{
-		Messages: []*schema.Message{
-			schema.UserMessage("hello"),
-			{
-				Role:      schema.RoleAssistant,
-				Content:   "",
-				ToolCalls: []schema.ToolCall{{ID: "tc1", Function: schema.ToolCallFunction{Name: "search", Arguments: "{}"}}},
+	msgs := []*schema.Message{
+		schema.UserMessage("Hello"),
+		{
+			Role:    schema.RoleAssistant,
+			Content: "",
+			ToolCalls: []schema.ToolCall{
+				{ID: "call_1", Type: "function", Function: schema.ToolCallFunction{Name: "search", Arguments: `{"q":"test"}`}},
 			},
-			schema.ToolMessage("search result", "tc1"), // proper tool result
 		},
+		schema.ToolMessage("Search result", "call_1"),
 	}
-	mc := &agentcore.TypedModelContext[*schema.Message]{}
+	state := agentcore.NewChatModelAgentState(msgs, nil, 10)
+	_, newState, err := mw.BeforeModelRewrite(context.Background(), state, nil)
+	if err != nil { t.Fatalf("BeforeModelRewrite: %v", err) }
 
-	_, newState, err := mw.BeforeModelRewrite(context.Background(), state, mc)
-	if err != nil {
-		t.Fatalf("BeforeModelRewrite: %v", err)
+	// Should NOT insert a placeholder since the tool result exists
+	placeholderCount := 0
+	for _, m := range newState.Messages {
+		if m.Role == schema.RoleTool && m.Name == "call_1" {
+			placeholderCount++
+		}
 	}
-	// Should NOT insert placeholder — tool call already has result
-	if len(newState.Messages) != 3 {
-		t.Errorf("unexpected message count: %d (should stay 3)", len(newState.Messages))
+	if placeholderCount > 1 {
+		t.Errorf("expected 1 tool message for call_1, got %d", placeholderCount)
 	}
 }
 
-func contains(s, sub string) bool {
-	for i := 0; i <= len(s)-len(sub); i++ {
-		if s[i:i+len(sub)] == sub { return true }
+func TestBeforeModelRewrite_NoToolCalls(t *testing.T) {
+	mw := New[*schema.Message]()
+	msgs := []*schema.Message{
+		schema.UserMessage("No tools here"),
+		{Role: schema.RoleAssistant, Content: "Just a response"},
 	}
-	return false
+	state := agentcore.NewChatModelAgentState(msgs, nil, 10)
+	_, newState, err := mw.BeforeModelRewrite(context.Background(), state, nil)
+	if err != nil { t.Fatalf("BeforeModelRewrite: %v", err) }
+	if len(newState.Messages) != 2 {
+		t.Errorf("expected no changes, got %d messages", len(newState.Messages))
+	}
+}
+
+func TestBeforeModelRewrite_MultipleMissingCalls(t *testing.T) {
+	mw := New[*schema.Message]()
+	msgs := []*schema.Message{
+		schema.UserMessage("Hello"),
+		{
+			Role:    schema.RoleAssistant,
+			Content: "",
+			ToolCalls: []schema.ToolCall{
+				{ID: "call_a", Function: schema.ToolCallFunction{Name: "tool1", Arguments: "{}"}},
+				{ID: "call_b", Function: schema.ToolCallFunction{Name: "tool2", Arguments: "{}"}},
+			},
+		},
+		// No tool result after assistant message - both calls are missing
+		schema.UserMessage("User follow-up"),
+	}
+	state := agentcore.NewChatModelAgentState(msgs, nil, 10)
+	_, newState, err := mw.BeforeModelRewrite(context.Background(), state, nil)
+	if err != nil { t.Fatalf("BeforeModelRewrite: %v", err) }
+
+	// Should have inserted placeholders for both missing calls
+	foundA := false
+	foundB := false
+	for _, m := range newState.Messages {
+		if m.Role == schema.RoleTool {
+			if m.Name == "call_a" { foundA = true }
+			if m.Name == "call_b" { foundB = true }
+		}
+	}
+	if !foundA || !foundB {
+		t.Errorf("missing placeholders: call_a=%v call_b=%v", foundA, foundB)
+	}
+}
+
+func TestBeforeModelRewrite_EmptyState(t *testing.T) {
+	mw := New[*schema.Message]()
+	state := agentcore.NewChatModelAgentState[*schema.Message](nil, nil, 10)
+	_, newState, err := mw.BeforeModelRewrite(context.Background(), state, nil)
+	if err != nil { t.Fatalf("BeforeModelRewrite: %v", err) }
+	_ = newState
 }

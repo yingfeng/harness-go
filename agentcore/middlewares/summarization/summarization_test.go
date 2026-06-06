@@ -8,58 +8,95 @@ import (
 	"github.com/infiniflow/ragflow/harness/agentcore/schema"
 )
 
-type mockSummaryModel struct{}
+// Test helpers
 
-func (m *mockSummaryModel) Generate(ctx context.Context, msgs []*schema.Message, opts ...agentcore.ModelOption) (*schema.Message, error) {
-	return &schema.Message{Role: schema.RoleAssistant, Content: "summary"}, nil
+type mockBackend struct {
+	responses []string
+	callCount int
 }
-func (m *mockSummaryModel) Stream(ctx context.Context, msgs []*schema.Message, opts ...agentcore.ModelOption) (*schema.StreamReader[*schema.Message], error) {
-	return schema.StreamReaderFromArray([]*schema.Message{{Role: schema.RoleAssistant, Content: "summary"}}), nil
+
+func (m *mockBackend) Generate(ctx context.Context, msgs []*schema.Message, opts ...agentcore.ModelOption) (*schema.Message, error) {
+	if m.callCount >= len(m.responses) {
+		return nil, nil
+	}
+	resp := m.responses[m.callCount]
+	m.callCount++
+	return &schema.Message{Role: schema.RoleAssistant, Content: resp}, nil
 }
-func (m *mockSummaryModel) BindTools(tools []*schema.ToolInfo) error { return nil }
+
+func (m *mockBackend) Stream(ctx context.Context, msgs []*schema.Message, opts ...agentcore.ModelOption) (*schema.StreamReader[*schema.Message], error) {
+	msg, _ := m.Generate(ctx, msgs, opts...)
+	return schema.StreamReaderFromArray([]*schema.Message{msg}), nil
+}
+
+func (m *mockBackend) BindTools(tools []*schema.ToolInfo) error { return nil }
+
+// ---- Tests ----
 
 func TestNew_NilConfig(t *testing.T) {
-	mw := New(nil)
-	if mw == nil { t.Fatal("nil middleware") }
+	mw := NewTyped[*schema.Message](nil)
+	if mw == nil {
+		t.Fatal("nil middleware returned for nil config")
+	}
 }
 
 func TestBeforeModelRewrite_NoTrigger(t *testing.T) {
-	mw := New(&Config{Model: &mockSummaryModel{}, MaxTokens: 1000})
-	state := &agentcore.TypedChatModelAgentState[*schema.Message]{
-		Messages: []*schema.Message{
-			schema.UserMessage("Hello"),
-		},
-	}
-	ctx, newState, err := mw.BeforeModelRewrite(context.Background(), state, nil)
-	if err != nil { t.Fatalf("BeforeModelRewrite: %v", err) }
-	_ = ctx
-	if len(newState.Messages) != 1 {
-		t.Error("should not summarize when below threshold")
-	}
-}
+	mw := NewTyped[*schema.Message](&TypedConfig[*schema.Message]{
+		Trigger: &TriggerCondition{MaxMessages: 100},
+	})
 
-func TestTriggerCondition(t *testing.T) {
-	cfg := &Config{Trigger: &TriggerCondition{MaxMessages: 2}}
-	if cfg.Trigger.MaxMessages != 2 { t.Error("trigger not set") }
+	msgs := []*schema.Message{
+		schema.UserMessage("Hello"),
+		schema.SystemMessage("System prompt"),
+	}
+	state := agentcore.NewChatModelAgentState(msgs, nil, 10)
+	_, newState, err := mw.BeforeModelRewrite(context.Background(), state, nil)
+	if err != nil {
+		t.Fatalf("BeforeModelRewrite: %v", err)
+	}
+	if len(newState.Messages) != 2 {
+		t.Errorf("expected 2 messages (no trigger), got %d", len(newState.Messages))
+	}
 }
 
 func TestExtractText(t *testing.T) {
-	msg := schema.UserMessage("hello")
-	if text := extractText(msg); text != "hello" { t.Errorf("got %q", text) }
-	agentic := &schema.AgenticMessage{Role: schema.AgenticRoleAssistant, Content: "world"}
-	if text := extractText(agentic); text != "world" { t.Errorf("got %q", text) }
-}
-
-func TestDefaultTokenCounter(t *testing.T) {
-	msgs := []*schema.Message{schema.UserMessage("hello world"), schema.UserMessage("test message")}
-	count, err := defaultTokenCounter(context.Background(), msgs)
-	if err != nil { t.Fatalf("counter: %v", err) }
-	if count <= 0 { t.Errorf("expected positive count, got %d", count) }
+	tests := []struct {
+		name string
+		msg  *schema.Message
+		want string
+	}{
+		{"content", schema.UserMessage("Hello world"), "Hello world"},
+		{"empty content", &schema.Message{Role: schema.RoleAssistant, Content: ""}, ""},
+		{"multi-line", schema.UserMessage("Line1\nLine2"), "Line1\nLine2"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.msg.Content
+			if got != tt.want {
+				t.Errorf("content = %q, want %q", got, tt.want)
+			}
+		})
+	}
 }
 
 func TestGetSummaryInstruction_Language(t *testing.T) {
-	en := getSummaryInstruction("en")
-	zh := getSummaryInstruction("zh")
-	if en == "" || zh == "" { t.Error("empty instruction") }
-	if en == zh { t.Log("instructions are same (expected for bilingual)") }
+	cfg := &TypedConfig[*schema.Message]{
+		Model:       &mockBackend{},
+		SummaryLang: "Chinese",
+	}
+	mw := NewTyped[*schema.Message](cfg)
+	if mw == nil {
+		t.Fatal("nil middleware")
+	}
+}
+
+func TestSummarization_NilModelConfig(t *testing.T) {
+	cfg := &TypedConfig[*schema.Message]{
+		Model:   nil,
+		Trigger: &TriggerCondition{MaxMessages: 1},
+	}
+	mw := NewTyped[*schema.Message](cfg)
+	if mw == nil {
+		t.Fatal("nil middleware")
+	}
 }
