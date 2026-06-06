@@ -1,21 +1,92 @@
 package agentcore
 
 import (
+	"bytes"
 	"context"
+	"encoding/gob"
+	"fmt"
+	"reflect"
 	"sync"
+	"time"
+
+	"github.com/infiniflow/ragflow/harness/agentcore/schema"
 )
+
+func init() {
+	schema.RegisterType("_harness_event_wrap_entry", func() any { return &eventWrapEntry{} })
+}
+
+// eventWrapEntry wraps an event with metadata for checkpoint persistence.
+type eventWrapEntry struct {
+	Event     any
+	Timestamp int64
+}
+
+func (e *eventWrapEntry) GobEncode() ([]byte, error) {
+	var buf bytes.Buffer
+	enc := gob.NewEncoder(&buf)
+	if err := enc.Encode(e.Timestamp); err != nil {
+		return nil, err
+	}
+	if e.Event == nil {
+		if err := enc.Encode(false); err != nil {
+			return nil, err
+		}
+	} else {
+		if err := enc.Encode(true); err != nil {
+			return nil, err
+		}
+		typeName := reflect.TypeOf(e.Event).String()
+		// Gob-registered types use their registered name; try direct encode first.
+		if err := enc.Encode(&typeName); err != nil {
+			return nil, err
+		}
+		if err := enc.Encode(e.Event); err != nil {
+			return nil, fmt.Errorf("gob encode event (%s): %w", typeName, err)
+		}
+	}
+	return buf.Bytes(), nil
+}
+
+func (e *eventWrapEntry) GobDecode(data []byte) error {
+	buf := bytes.NewBuffer(data)
+	dec := gob.NewDecoder(buf)
+	if err := dec.Decode(&e.Timestamp); err != nil {
+		return err
+	}
+	var nonNil bool
+	if err := dec.Decode(&nonNil); err != nil {
+		return err
+	}
+	if nonNil {
+		var typeName string
+		if err := dec.Decode(&typeName); err != nil {
+			return err
+		}
+		// Decode into generic interface{} — gob will reconstruct registered types.
+		e.Event = new(any)
+		if err := dec.Decode(e.Event); err != nil {
+			return fmt.Errorf("gob decode event (%s): %w", typeName, err)
+		}
+		// Decode into interface{} wraps in a *any; unwrap.
+		if p, ok := e.Event.(*any); ok {
+			e.Event = *p
+		}
+	}
+	return nil
+}
 
 // laneEvents holds per-lane event history for parallel workflows.
 type laneEvents struct {
-	Events []*agentEventWrap
+	Events []*eventWrapEntry
 }
 
 // runSession holds per-execution mutable state for an agent run.
 type runSession struct {
-	mu        sync.Mutex
-	Values    map[string]any
-	valuesMx  *sync.Mutex
-	events    []any
+	mu         sync.Mutex
+	Values     map[string]any
+	valuesMx   *sync.Mutex
+	events     []*eventWrapEntry
 	LaneEvents *laneEvents
 }
 
@@ -26,14 +97,18 @@ func newRunSession() *runSession {
 func (s *runSession) addEvent(event any) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.events = append(s.events, event)
+	s.events = append(s.events, &eventWrapEntry{Event: event, Timestamp: time.Now().UnixNano()})
 }
 
 func (s *runSession) getEvents() []any {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	r := make([]any, len(s.events))
-	copy(r, s.events)
+	for i, e := range s.events {
+		if e != nil {
+			r[i] = e.Event
+		}
+	}
 	return r
 }
 

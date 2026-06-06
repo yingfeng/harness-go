@@ -185,7 +185,10 @@ func BuildModelWrapperChain[M MessageType](base ChatModel[M], ec *chatModelExecC
 		if err == nil && wrapped != nil { model = wrapped }
 	}
 
-	// 5. Callback injection (outermost — wraps everything)
+	// 5. State wrapper: message deep copy + ID injection (guards against middleware side-effects)
+	model = &typedStateModelWrapper[M]{inner: model}
+
+	// 6. Callback injection (outermost — wraps everything)
 	model = &callbackModelWrapper[M]{inner: model}
 
 	return model
