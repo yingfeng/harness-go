@@ -22,6 +22,28 @@ type eventWrapEntry struct {
 	Timestamp int64
 }
 
+// consumeStream checks if the wrapped event contains a streaming message and, if so,
+// fully consumes the stream before checkpoint. This prevents partial data in checkpoints.
+func (e *eventWrapEntry) consumeStream() {
+	if e.Event == nil {
+		return
+	}
+	ev, ok := e.Event.(*AgentEvent)
+	if !ok || ev.Output == nil || ev.Output.MessageOutput == nil {
+		return
+	}
+	mv := ev.Output.MessageOutput
+	if !mv.IsStreaming || mv.MessageStream == nil {
+		return
+	}
+	merged, err := schema.ConcatMessageStream(mv.MessageStream)
+	if err == nil {
+		mv.Message = merged
+		mv.IsStreaming = false
+		mv.MessageStream = nil
+	}
+}
+
 func (e *eventWrapEntry) GobEncode() ([]byte, error) {
 	var buf bytes.Buffer
 	enc := gob.NewEncoder(&buf)
@@ -83,11 +105,12 @@ type laneEvents struct {
 
 // runSession holds per-execution mutable state for an agent run.
 type runSession struct {
-	mu         sync.Mutex
-	Values     map[string]any
-	valuesMx   *sync.Mutex
-	events     []*eventWrapEntry
-	LaneEvents *laneEvents
+	mu          sync.Mutex
+	Values      map[string]any
+	valuesMx    *sync.Mutex
+	events      []*eventWrapEntry
+	TypedEvents any // *[]*typedAgentEventWrapper[M] for AgenticMessage path (gob-encodable)
+	LaneEvents  *laneEvents
 }
 
 func newRunSession() *runSession {
@@ -97,7 +120,10 @@ func newRunSession() *runSession {
 func (s *runSession) addEvent(event any) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.events = append(s.events, &eventWrapEntry{Event: event, Timestamp: time.Now().UnixNano()})
+	entry := &eventWrapEntry{Event: event, Timestamp: time.Now().UnixNano()}
+	// Consume any streaming content before storing for checkpoint safety
+	entry.consumeStream()
+	s.events = append(s.events, entry)
 }
 
 func (s *runSession) getEvents() []any {

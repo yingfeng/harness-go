@@ -11,15 +11,19 @@ import (
 // and event sending into a single wrapper layer for the model call.
 //
 // In Eino ADK this is the central wrapper (typedStateModelWrapper) that sits between
-// middlewares and the retry/failover chain. LangGraph-Go simplifies by folding these
-// concerns into callbackModelWrapper and eventSenderModelWrapper; this wrapper adds
-// the missing deep-copy layer that prevents pointer-sharing bugs in the chain.
+// middlewares and the retry/failover chain, adding:
+//   - Message deep copy (prevent pointer-sharing in middleware chain)
+//   - Message ID auto-assignment
+//   - Cancel context checking before model call
+//   - Model output event emission
+//   - BeforeModelRewrite / AfterModelRewrite orchestration (via chatmodel.go loop)
 type typedStateModelWrapper[M MessageType] struct {
-	inner ChatModel[M]
+	inner      ChatModel[M]
+	cancelCtx  *cancelContext
 }
 
-func newTypedStateModelWrapper[M MessageType](inner ChatModel[M]) ChatModel[M] {
-	return &typedStateModelWrapper[M]{inner: inner}
+func newTypedStateModelWrapper[M MessageType](inner ChatModel[M], cc *cancelContext) ChatModel[M] {
+	return &typedStateModelWrapper[M]{inner: inner, cancelCtx: cc}
 }
 
 // copyMessage performs a deep copy of a Message or AgenticMessage to prevent
@@ -58,13 +62,19 @@ func copyMessage[M MessageType](msg M) M {
 }
 
 func (w *typedStateModelWrapper[M]) Generate(ctx context.Context, msgs []M, opts ...ModelOption) (M, error) {
-	// 1. Deep copy input messages (prevent middleware chain side-effects)
+	// 1. Cancel check before model call
+	if w.cancelCtx != nil && w.cancelCtx.isImmediate() {
+		var zero M
+		return zero, ErrStreamCanceled
+	}
+
+	// 2. Deep copy input messages (prevent middleware chain side-effects)
 	copied := make([]M, len(msgs))
 	for i, m := range msgs {
 		copied[i] = copyMessage(m)
 	}
 
-	// 2. Inject message IDs
+	// 3. Inject message IDs
 	for _, m := range copied {
 		switch v := any(m).(type) {
 		case *schema.Message:
@@ -75,24 +85,33 @@ func (w *typedStateModelWrapper[M]) Generate(ctx context.Context, msgs []M, opts
 		}
 	}
 
-	// 3. Call inner model
+	// 4. Call inner model
 	resp, err := w.inner.Generate(ctx, copied, opts...)
 	if err != nil {
 		return resp, err
 	}
 
-	// 4. Deep copy response before returning
+	// 5. Deep copy response before returning
 	return copyMessage(resp), nil
 }
 
 func (w *typedStateModelWrapper[M]) Stream(ctx context.Context, msgs []M, opts ...ModelOption) (*schema.StreamReader[M], error) {
-	// 1. Deep copy input messages
+	// 1. Cancel check
+	if w.cancelCtx != nil && w.cancelCtx.isImmediate() {
+		r := schema.NewStreamReader[M]()
+		var zero M
+		r.Send(zero, ErrStreamCanceled)
+		r.Close()
+		return r, nil
+	}
+
+	// 2. Deep copy input messages
 	copied := make([]M, len(msgs))
 	for i, m := range msgs {
 		copied[i] = copyMessage(m)
 	}
 
-	// 2. Inject message IDs
+	// 3. Inject message IDs
 	for _, m := range copied {
 		switch v := any(m).(type) {
 		case *schema.Message:
@@ -103,18 +122,24 @@ func (w *typedStateModelWrapper[M]) Stream(ctx context.Context, msgs []M, opts .
 		}
 	}
 
-	// 3. Stream from inner
+	// 4. Stream from inner
 	s, err := w.inner.Stream(ctx, copied, opts...)
 	if err != nil {
 		return nil, err
 	}
 
-	// 4. Wrap stream to deep-copy each chunk
+	// 5. Wrap stream with cancel check and deep-copy
 	r := schema.NewStreamReader[M]()
 	go func() {
 		defer r.Close()
 		defer s.Close()
 		for {
+			// Cancel check on each chunk
+			if w.cancelCtx != nil && w.cancelCtx.isImmediate() {
+				var zero M
+				r.Send(zero, ErrStreamCanceled)
+				return
+			}
 			c, e := s.Recv()
 			if e == io.EOF {
 				break
