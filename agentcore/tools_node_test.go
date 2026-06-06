@@ -51,10 +51,10 @@ func TestToolsNode_Execute_ToolNotFound(t *testing.T) {
 
 	results, _, err := tn.Execute(context.Background(), resp, state, nil)
 	if err != nil {
-		t.Fatalf("Execute: %v", err)
+		t.Fatalf("unexpected error: %v", err)
 	}
 	if len(results) != 1 {
-		t.Errorf("expected 1 result (error msg), got %d", len(results))
+		t.Errorf("expected 1 result (error msg in tool response), got %d", len(results))
 	}
 }
 

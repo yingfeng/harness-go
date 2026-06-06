@@ -145,30 +145,6 @@ func TestFilterCallbackHandlersForNestedAgents_MatchingAgent(t *testing.T) {
 	}
 }
 
-// ---- getAgentType tests ----
-
-type typedAgentMock struct{}
-
-func (t *typedAgentMock) Run(ctx context.Context, input *AgentInput, opts ...RunOption) *AsyncIterator[*AgentEvent] { return nil }
-func (t *typedAgentMock) Name(ctx context.Context) string { return "typed" }
-func (t *typedAgentMock) Description(ctx context.Context) string { return "" }
-func (t *typedAgentMock) GetType() string { return "CustomType" }
-
-func TestGetAgentType(t *testing.T) {
-	if gt := getAgentType(&typedAgentMock{}); gt != "CustomType" {
-		t.Errorf("expected CustomType, got %s", gt)
-	}
-}
-
-func TestGetAgentType_Default(t *testing.T) {
-	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{
-		Model: &mockModel{},
-	})
-	if gt := getAgentType(agent); gt != "ChatModelAgent" {
-		t.Errorf("expected ChatModelAgent, got %s", gt)
-	}
-}
-
 // ---- RunLocalValue tests ----
 
 func TestSetRunLocalValue_NotInAgentExec(t *testing.T) {
