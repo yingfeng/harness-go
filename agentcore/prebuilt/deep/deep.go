@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"github.com/infiniflow/ragflow/harness/agentcore"
-	"github.com/infiniflow/ragflow/harness/agentcore/middlewares/filesystem"
 	"github.com/infiniflow/ragflow/harness/agentcore/schema"
 )
 
@@ -23,7 +22,6 @@ type Config struct {
 	Tools         []agentcore.Tool
 	MaxIterations int
 	Instruction   string // Custom system prompt (overrides default)
-	BaseDir       string // Base directory for file operations
 	EnableShell   bool   // Enable shell command execution tool
 }
 
@@ -32,7 +30,6 @@ func DefaultConfig() *Config {
 		Name:          "deep_agent",
 		Description:   "A depth-first task decomposition and execution agent",
 		MaxIterations: 20,
-		BaseDir:       ".",
 		EnableShell:   false,
 	}
 }
@@ -48,13 +45,9 @@ func NewTyped(cfg *Config) *agentcore.TypedChatModelAgent[*schema.Message] {
 		instruction = systemPrompt
 	}
 
-	// Build tool set: user tools + filesystem + optional shell + task management
+	// Build tool set: user tools + task management
 	tools := make([]agentcore.Tool, 0, len(cfg.Tools)+8)
 	tools = append(tools, cfg.Tools...)
-
-	// Filesystem tools
-	fsCfg := &filesystem.Config{BaseDir: cfg.BaseDir}
-	tools = append(tools, filesystem.AllTools(fsCfg)...)
 
 	// Task management (write_todos)
 	taskMgr := NewTaskManager()
@@ -66,7 +59,7 @@ func NewTyped(cfg *Config) *agentcore.TypedChatModelAgent[*schema.Message] {
 
 	// Optional shell tool
 	if cfg.EnableShell {
-		tools = append(tools, ShellTool(cfg.BaseDir))
+		tools = append(tools, ShellTool("."))
 	}
 
 	a := agentcore.NewChatModelAgent(&agentcore.ChatModelConfig[*schema.Message]{

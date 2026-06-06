@@ -1,188 +1,88 @@
 package filesystem
 
 import (
-	"encoding/json"
-	"os"
-	"path/filepath"
+	"context"
+	"strings"
 	"testing"
+
+	"github.com/infiniflow/ragflow/harness/agentcore"
+	"github.com/infiniflow/ragflow/harness/agentcore/schema"
 )
 
-func tmpDir(t *testing.T) string {
-	dir, err := os.MkdirTemp("", "fs-test-*")
-	if err != nil { t.Fatal(err) }
-	t.Cleanup(func() { os.RemoveAll(dir) })
-	return dir
+type testBackend struct {
+	readResult string
+	readErr    error
 }
 
-func TestToolReadFile(t *testing.T) {
-	dir := tmpDir(t)
-	cfg := &Config{BaseDir: dir}
-	file := filepath.Join(dir, "test.txt")
-	os.WriteFile(file, []byte("hello world"), 0644)
+func (b *testBackend) Read(path string) (string, error)                     { return b.readResult, b.readErr }
+func (b *testBackend) Write(path, content string) error                     { return nil }
+func (b *testBackend) Edit(path, old, new string) error                     { return nil }
+func (b *testBackend) Ls(path string) ([]string, error)                     { return nil, nil }
+func (b *testBackend) Glob(pattern string) ([]string, error)                { return []string{"a.txt", "b.go"}, nil }
+func (b *testBackend) Grep(pattern, path string) (string, error)            { return "match1\nmatch2", nil }
+func (b *testBackend) Execute(command string) (string, error)               { return "done", nil }
 
-	tool := ToolReadFile(cfg)
-	result, err := tool.Invoke(nil, `{"file_path":"`+file+`"}`)
-	if err != nil {
-		t.Fatalf("Invoke: %v", err)
-	}
-	if result != "hello world" {
-		t.Errorf("result = %q, want hello world", result)
-	}
-}
-
-func TestToolReadFile_NotFound(t *testing.T) {
-	dir := tmpDir(t)
-	cfg := &Config{BaseDir: dir}
-	tool := ToolReadFile(cfg)
-	_, err := tool.Invoke(nil, `{"file_path":"/nonexistent/file.txt"}`)
-	if err == nil {
-		t.Error("expected error for missing file")
+func TestNew_NilBackend(t *testing.T) {
+	mw := New[*schema.Message](nil)
+	rc := &agentcore.ChatModelAgentContext{Instruction: "base", Tools: make([]agentcore.Tool, 0)}
+	_, newRc, err := mw.BeforeAgent(context.Background(), rc)
+	if err != nil { t.Fatalf("BeforeAgent: %v", err) }
+	if len(newRc.Tools) != 0 {
+		t.Error("nil backend should not add tools")
 	}
 }
 
-func TestToolWriteFile(t *testing.T) {
-	dir := tmpDir(t)
-	cfg := &Config{BaseDir: dir}
-	file := filepath.Join(dir, "output.txt")
-
-	tool := ToolWriteFile(cfg)
-	result, err := tool.Invoke(nil, `{"file_path":"`+file+`","content":"written content"}`)
-	if err != nil {
-		t.Fatalf("Invoke: %v", err)
-	}
-
-	data, _ := os.ReadFile(file)
-	if string(data) != "written content" {
-		t.Errorf("file content = %q", string(data))
-	}
-
-	var resp struct{ Written bool; Path string; Bytes int }
-	json.Unmarshal([]byte(result), &resp)
-	if !resp.Written || resp.Bytes != len("written content") {
-		t.Errorf("response: %+v", resp)
+func TestNew_AddsAllTools(t *testing.T) {
+	mw := New[*schema.Message](&testBackend{readResult: "hello"})
+	rc := &agentcore.ChatModelAgentContext{Instruction: "base", Tools: make([]agentcore.Tool, 0)}
+	_, newRc, err := mw.BeforeAgent(context.Background(), rc)
+	if err != nil { t.Fatalf("BeforeAgent: %v", err) }
+	if len(newRc.Tools) != 7 {
+		t.Errorf("expected 7 tools, got %d", len(newRc.Tools))
 	}
 }
 
-func TestToolEditFile(t *testing.T) {
-	dir := tmpDir(t)
-	cfg := &Config{BaseDir: dir}
-	file := filepath.Join(dir, "edit.txt")
-	os.WriteFile(file, []byte("hello old world"), 0644)
-
-	tool := ToolEditFile(cfg)
-	result, err := tool.Invoke(nil, `{"file_path":"`+file+`","old_string":"old","new_string":"NEW"}`)
-	if err != nil {
-		t.Fatalf("Invoke: %v", err)
-	}
-
-	data, _ := os.ReadFile(file)
-	if string(data) != "hello NEW world" {
-		t.Errorf("after edit: %q", string(data))
-	}
-	_ = result
-}
-
-func TestToolEditFile_OldStringNotFound(t *testing.T) {
-	dir := tmpDir(t)
-	cfg := &Config{BaseDir: dir}
-	file := filepath.Join(dir, "x.txt")
-	os.WriteFile(file, []byte("content"), 0644)
-
-	tool := ToolEditFile(cfg)
-	_, err := tool.Invoke(nil, `{"file_path":"`+file+`","old_string":"MISSING","new_string":"X"}`)
-	if err == nil {
-		t.Error("expected error for missing old_string")
-	}
-}
-
-func TestToolGlob(t *testing.T) {
-	dir := tmpDir(t)
-	cfg := &Config{BaseDir: dir}
-	os.WriteFile(filepath.Join(dir, "a.go"), []byte(""), 0644)
-	os.WriteFile(filepath.Join(dir, "b.go"), []byte(""), 0644)
-	os.Mkdir(filepath.Join(dir, "sub"), 0755)
-	os.WriteFile(filepath.Join(dir, "sub", "c.go"), []byte(""), 0644)
-
-	tool := ToolGlob(cfg)
-	result, err := tool.Invoke(nil, `{"pattern":"*.go","path":"`+dir+`"}`)
-	if err != nil {
-		t.Fatalf("Invoke: %v", err)
-	}
-
-	var matches []string
-	json.Unmarshal([]byte(result), &matches)
-	// Should find at least a.go, b.go in root; c.go in sub/
-	if len(matches) < 2 {
-		t.Errorf("glob found %d files, want >=2 (root + sub): %v", len(matches), matches)
-	}
-}
-
-func TestToolGrep(t *testing.T) {
-	dir := tmpDir(t)
-	cfg := &Config{BaseDir: dir}
-	os.WriteFile(filepath.Join(dir, "test.log"), []byte("line1 TODO: fix this\nline2 normal\nline3 TODO: another"), 0644)
-
-	tool := ToolGrep(cfg)
-	result, err := tool.Invoke(nil, `{"pattern":"TODO","path":"`+dir+`","file_pattern":"*.log"}`)
-	if err != nil {
-		t.Fatalf("Invoke: %v", err)
-	}
-
-	var results []struct{ File string; Line int; Text string }
-	json.Unmarshal([]byte(result), &results)
-	if len(results) != 2 {
-		t.Errorf("grep found %d results, want 2: %v", len(results), results)
-	}
-}
-
-func TestValidatePath_EscapesBase(t *testing.T) {
-	cfg := &Config{BaseDir: "/safe"}
-	err := validatePath("/safe/../../etc/passwd", cfg)
-	if err == nil {
-		t.Error("expected path escape error")
-	}
-}
-
-func TestValidatePath_AbsoluteNoBase(t *testing.T) {
-	cfg := &Config{}
-	if err := validatePath("/tmp/file.txt", cfg); err != nil {
-		t.Errorf("absolute path without base_dir should be allowed: %v", err)
-	}
-}
-
-func TestDefaultConfig(t *testing.T) {
-	cfg := DefaultConfig()
-	if cfg.MaxReadSize != 1024*1024 {
-		t.Errorf("MaxReadSize = %d, want 1MB", cfg.MaxReadSize)
-	}
-}
-
-func TestAllTools(t *testing.T) {
-	tools := AllTools(nil)
-	names := make(map[string]bool)
-	for _, tool := range tools { names[tool.Name()] = true }
-	for _, expected := range []string{"read_file", "write_file", "edit_file", "glob", "grep"} {
-		if !names[expected] {
-			t.Errorf("missing tool: %s", expected)
+func TestTool_Read_Function(t *testing.T) {
+	mw := New[*schema.Message](&testBackend{readResult: "file content"})
+	rc := &agentcore.ChatModelAgentContext{}
+	_, newRc, _ := mw.BeforeAgent(context.Background(), rc)
+	// Find read_file tool
+	for _, tool := range newRc.Tools {
+		if tool.Name() == "read_file" {
+			result, err := tool.Invoke(context.Background(), "test.txt")
+			if err != nil { t.Fatalf("read_file: %v", err) }
+			if result != "file content" { t.Errorf("got %q", result) }
+			return
 		}
 	}
+	t.Error("read_file tool not found")
 }
 
-func TestMaxReadSize_Truncation(t *testing.T) {
-	dir := tmpDir(t)
-	longContent := make([]byte, 2000)
-	for i := range longContent { longContent[i] = 'A' }
-	file := filepath.Join(dir, "big.bin")
-	os.WriteFile(file, longContent, 0644)
+func TestTool_Write_Function(t *testing.T) {
+	mw := New[*schema.Message](&testBackend{})
+	rc := &agentcore.ChatModelAgentContext{}
+	_, newRc, _ := mw.BeforeAgent(context.Background(), rc)
+	for _, tool := range newRc.Tools {
+		if tool.Name() == "write_file" {
+			_, err := tool.Invoke(context.Background(), "test.txt|content")
+			if err != nil { t.Fatalf("write_file: %v", err) }
+			return
+		}
+	}
+	t.Error("write_file tool not found")
+}
 
-	cfg := &Config{BaseDir: dir, MaxReadSize: 100}
-	tool := ToolReadFile(cfg)
-	result, err := tool.Invoke(nil, `{"file_path":"`+file+`"}`)
-	if err != nil {
-		t.Fatalf("Invoke: %v", err)
+func TestTool_Glob_Function(t *testing.T) {
+	mw := New[*schema.Message](&testBackend{})
+	rc := &agentcore.ChatModelAgentContext{}
+	_, newRc, _ := mw.BeforeAgent(context.Background(), rc)
+	for _, tool := range newRc.Tools {
+		if tool.Name() == "glob" {
+			result, err := tool.Invoke(context.Background(), "*.txt")
+			if err != nil { t.Fatalf("glob: %v", err) }
+			if !strings.Contains(result, "a.txt") { t.Errorf("expected a.txt in %q", result) }
+			return
+		}
 	}
-	if len(result) <= 100 {
-		// Should be truncated with suffix
-		t.Log("truncated result length:", len(result))
-	}
+	t.Error("glob tool not found")
 }

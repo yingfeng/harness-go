@@ -630,10 +630,12 @@ func TestAgentToolFromRunner(t *testing.T) {
 
 type testMiddleware struct {
 	BaseMiddleware[*schema.Message]
-	beforeAgent func(context.Context, *ChatModelAgentContext) (context.Context, *ChatModelAgentContext, error)
-	beforeModel func(context.Context, *ChatModelAgentState, *ModelContext) (context.Context, *ChatModelAgentState, error)
-	afterModel  func(context.Context, *ChatModelAgentState, *ModelContext) (context.Context, *ChatModelAgentState, error)
-	afterAgent  func(context.Context, *ChatModelAgentState) (context.Context, error)
+	beforeAgent   func(context.Context, *ChatModelAgentContext) (context.Context, *ChatModelAgentContext, error)
+	beforeModel   func(context.Context, *ChatModelAgentState, *ModelContext) (context.Context, *ChatModelAgentState, error)
+	afterModel    func(context.Context, *ChatModelAgentState, *ModelContext) (context.Context, *ChatModelAgentState, error)
+	afterAgent    func(context.Context, *ChatModelAgentState) (context.Context, error)
+	wrapModel     func(context.Context, ChatModel[*schema.Message], *ModelContext) (ChatModel[*schema.Message], error)
+	wrapToolInvoke func(context.Context, InvokableToolEndpoint, *ToolContext) (InvokableToolEndpoint, error)
 }
 
 func (m *testMiddleware) BeforeAgent(ctx context.Context, rc *ChatModelAgentContext) (context.Context, *ChatModelAgentContext, error) {
@@ -652,3 +654,179 @@ func (m *testMiddleware) AfterAgent(ctx context.Context, state *ChatModelAgentSt
 	if m.afterAgent != nil { return m.afterAgent(ctx, state) }
 	return ctx, nil
 }
+func (m *testMiddleware) WrapModel(ctx context.Context, c ChatModel[*schema.Message], mc *ModelContext) (ChatModel[*schema.Message], error) {
+	if m.wrapModel != nil { return m.wrapModel(ctx, c, mc) }
+	return c, nil
+}
+func (m *testMiddleware) WrapToolInvoke(ctx context.Context, ep InvokableToolEndpoint, tc *ToolContext) (InvokableToolEndpoint, error) {
+	if m.wrapToolInvoke != nil { return m.wrapToolInvoke(ctx, ep, tc) }
+	return ep, nil
+}
+
+// ===== Additional Tests =====
+
+func TestChatModelAgent_WithReturnDirectly(t *testing.T) {
+	tool := &mockTool{name: "quick_tool", desc: "Returns immediately"}
+	forceToolModel := &forcedToolModel{
+		toolCalls: []schema.ToolCall{{ID: "c1", Type: "function", Function: schema.ToolCallFunction{Name: "quick_tool", Arguments: "{}"}}},
+		finalResp: "Final after return-directly",
+		firstCall: true,
+	}
+	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{
+		Model:         forceToolModel,
+		Tools:         []Tool{tool},
+		ReturnDirectly: map[string]bool{"quick_tool": true},
+	})
+	agent.name = "rd_agent"
+	iter := agent.Run(context.Background(), &AgentInput{Messages: []Message{schema.UserMessage("Test")}})
+	var events []*AgentEvent
+	for { ev, ok := iter.Next(); if !ok { break }; events = append(events, ev) }
+	if len(events) == 0 { t.Error("expected events") }
+}
+
+func TestChatModelAgent_WithCheckpoint(t *testing.T) {
+	model := &mockModel{}
+	model.addResp("Checkpoint response")
+	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: model})
+	agent.name = "cp_agent"
+	store := &memStore{}
+	runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: agent, CheckPointStore: store})
+	iter := runner.Run(context.Background(), []Message{schema.UserMessage("Hello")})
+	var events []*AgentEvent
+	for { ev, ok := iter.Next(); if !ok { break }; events = append(events, ev) }
+	if len(events) == 0 { t.Error("expected events") }
+}
+
+func TestWorkflow_Loop(t *testing.T) {
+	m1 := &mockModel{}; m1.addResp("Main result")
+	m2 := &mockModel{}; m2.addResp("Critique result")
+	a1 := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m1})
+	a1.name = "main"
+	a2 := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m2})
+	a2.name = "critique"
+	ctx := context.Background()
+	wf, err := NewLoop(ctx, &LoopConfig{
+		Name: "loop_test", Description: "test", SubAgents: []Agent{a1, a2}, MaxIterations: 3,
+	})
+	if err != nil { t.Fatalf("NewLoop: %v", err) }
+	iter := wf.Run(ctx, &AgentInput{Messages: []Message{schema.UserMessage("Loop test")}})
+	events := 0
+	for { ev, ok := iter.Next(); if !ok { break }; _ = ev; events++ }
+	t.Logf("loop workflow: %d events", events)
+}
+
+func TestCancel_AfterToolCalls(t *testing.T) {
+	model := &mockModel{}; model.addResp("Cancel test")
+	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: model})
+	agent.name = "cancel_tool"
+	opt, cancel := WithCancel()
+	ctx := context.Background()
+	iter := agent.Run(ctx, &AgentInput{Messages: []Message{schema.UserMessage("Hello")}}, opt)
+	cancel(WithCancelMode(CancelAfterToolCalls))
+	for { ev, ok := iter.Next(); if !ok { break }; _ = ev }
+}
+
+func TestMiddleware_WrapModel(t *testing.T) {
+	model := &mockModel{}; model.addResp("Wrapped model")
+	var wrapped bool
+	mw := &testMiddleware{}
+	mw.wrapModel = func(ctx context.Context, m ChatModel[*schema.Message], mc *ModelContext) (ChatModel[*schema.Message], error) {
+		wrapped = true; return m, nil
+	}
+	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: model, Middlewares: []ChatModelMiddleware{mw}})
+	agent.name = "wrap_agent"
+	iter := agent.Run(context.Background(), &AgentInput{Messages: []Message{schema.UserMessage("Test")}})
+	for { ev, ok := iter.Next(); if !ok { break }; _ = ev }
+	if !wrapped { t.Error("WrapModel not called") }
+}
+
+func TestMiddleware_WrapToolInvoke(t *testing.T) {
+	// Verify the WrapToolInvoke method can be called directly on middleware
+	mw := &testMiddleware{}
+	var called bool
+	mw.wrapToolInvoke = func(ctx context.Context, ep InvokableToolEndpoint, tc *ToolContext) (InvokableToolEndpoint, error) {
+		called = true; return ep, nil
+	}
+	ep := func(ctx context.Context, args string, opts ...ToolOption) (string, error) { return "ok", nil }
+	_, err := mw.WrapToolInvoke(context.Background(), InvokableToolEndpoint(ep), &ToolContext{Name: "test"})
+	if err != nil { t.Fatalf("WrapToolInvoke: %v", err) }
+	if !called { t.Error("WrapToolInvoke not called") }
+}
+
+func TestEventSenderModelWrapper(t *testing.T) {
+	w := NewEventSenderModelWrapper[*schema.Message]()
+	if w == nil { t.Fatal("nil wrapper") }
+	// Verify it satisfies middleware interface
+	_, _, _ = w.BeforeAgent(nil, nil)
+	_, _ = w.AfterAgent(nil, nil)
+}
+
+func TestEventSenderToolWrapper(t *testing.T) {
+	w := NewEventSenderToolWrapper[*schema.Message]()
+	if w == nil { t.Fatal("nil wrapper") }
+	if HasUserEventSenderToolWrapper([]TypedChatModelMiddleware[*schema.Message]{w}) == false {
+		t.Error("should detect wrapper")
+	}
+}
+
+func TestHasUserEventSenderModelWrapper(t *testing.T) {
+	if HasUserEventSenderModelWrapper[*schema.Message](nil) { t.Error("nil should be false") }
+	w := NewEventSenderModelWrapper[*schema.Message]()
+	if !HasUserEventSenderModelWrapper[*schema.Message]([]TypedChatModelMiddleware[*schema.Message]{w}) { t.Error("should detect") }
+}
+
+func TestToolsNode_Basic(t *testing.T) {
+	tn := NewToolsNode[*schema.Message](&ToolsNodeConfig{
+		Tools: []Tool{&mockTool{name: "greet", desc: "Greet"}},
+	})
+	resp := &schema.Message{Role: schema.RoleAssistant, Content: "",
+		ToolCalls: []schema.ToolCall{{ID: "c1", Function: schema.ToolCallFunction{Name: "greet", Arguments: `{"name":"world"}`}}}}
+	results, action, err := tn.Execute(context.Background(), resp, nil, nil)
+	if err != nil { t.Fatalf("Execute: %v", err) }
+	if len(results) != 1 { t.Errorf("expected 1 result, got %d", len(results)) }
+	_ = action
+}
+
+func TestInterruptError(t *testing.T) {
+	err := &InterruptError{InterruptContexts: []*InterruptCtx{{ID: "test"}}}
+	if err.Error() == "" { t.Error("error should have message") }
+}
+
+func TestAppendAddressSegment(t *testing.T) {
+	ctx := context.Background()
+	ctx = AppendAddressSegment(ctx, AddressSegmentAgent, "agent1")
+	segs := getAddressSegments(ctx)
+	if len(segs) != 1 || segs[0].ID != "agent1" { t.Errorf("unexpected segments: %+v", segs) }
+}
+
+func TestGetNextResumeAgent(t *testing.T) {
+	ctx := context.Background()
+	ctx = AppendAddressSegment(ctx, AddressSegmentAgent, "next_agent")
+	agent, err := getNextResumeAgent(ctx, &ResumeInfo{})
+	if err != nil { t.Fatalf("getNextResumeAgent: %v", err) }
+	if agent != "next_agent" { t.Errorf("expected next_agent, got %s", agent) }
+}
+
+func TestGetNextResumeAgents(t *testing.T) {
+	ctx := context.Background()
+	ctx = AppendAddressSegment(ctx, AddressSegmentAgent, "agent_a")
+	ctx = AppendAddressSegment(ctx, AddressSegmentTool, "tool_x")
+	agents, err := getNextResumeAgents(ctx, &ResumeInfo{})
+	if err != nil { t.Fatalf("getNextResumeAgents: %v", err) }
+	if !agents["agent_a"] { t.Error("expected agent_a") }
+}
+
+func TestSignalToMaps(t *testing.T) {
+	sig := &InterruptSignal{ID: "interrupt_1", Info: "test interrupt"}
+	addr, state := signalToMaps(sig)
+	if _, ok := addr["interrupt_1"]; !ok { t.Error("expected address map entry for interrupt_1") }
+	if _, ok := state["interrupt_1"]; ok { t.Error("expected state to NOT be set") }
+
+	child := &InterruptSignal{ID: "child_1", Info: "child", State: "state_data"}
+	sig.Children = append(sig.Children, child)
+	addr, state = signalToMaps(sig)
+	if _, ok := addr["child_1"]; !ok { t.Error("expected child address entry") }
+	if v := state["child_1"]; v.State.(string) != "state_data" { t.Error("expected child state") }
+}
+
+
