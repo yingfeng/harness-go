@@ -1,73 +1,158 @@
 // Package skill provides skill loading and execution middleware.
-// Skills are pre-defined capabilities that can be loaded and used by agents.
+// Skills are defined in SKILL.md files with YAML frontmatter.
 package skill
 
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/infiniflow/ragflow/harness/agentcore"
+	"github.com/infiniflow/ragflow/harness/agentcore/schema"
 )
 
+// ExecMode defines how a skill is executed.
 type ExecMode int
 
 const (
-	ModeInline ExecMode = iota
-	ModeFork
-	ModeForkWithContext
+	ModeInline ExecMode = iota // Skill content injected into instruction
+	ModeFork                   // Skill loaded via a tool
+	ModeForkWithContext        // Skill loaded via a tool with parent context
 )
 
+// FileSystemBackend reads skill definitions from a file system.
+type FileSystemBackend interface {
+	Read(path string) (string, error)
+	List() ([]string, error)
+}
+
+// Config defines a single skill.
 type Config struct {
 	Name          string
+	Description   string
 	Content       string
 	ExecutionMode ExecMode
+	Model         string // Model name for fork modes
+	Agent         string // Agent name for fork modes
+}
+
+// TypedConfig configures the skill middleware.
+type TypedConfig[M agentcore.MessageType] struct {
+	Skills       []Config
+	Backend      FileSystemBackend
+	CustomSystemPrompt  func(name, desc string) string
+	CustomToolParams    func(name string) string
+	BuildContent        func(ctx context.Context, cfg Config) (string, error)
+	BuildForkMessages   func(ctx context.Context, cfg Config, request string) (string, error)
+	FormatForkResult    func(ctx context.Context, result string) (string, error)
 }
 
 type middleware[M agentcore.MessageType] struct {
 	agentcore.BaseMiddleware[M]
-	skills     []Config
-	filesystem FileSystemBackend
+	cfg *TypedConfig[M]
 }
 
-type FileSystemBackend interface {
-	Read(path string) (string, error)
+func NewTyped[M agentcore.MessageType](cfg *TypedConfig[M]) agentcore.TypedChatModelMiddleware[M] {
+	return &middleware[M]{cfg: cfg}
 }
 
-func New[M agentcore.MessageType](skills ...Config) agentcore.TypedChatModelMiddleware[M] {
-	return &middleware[M]{skills: skills}
-}
-
-func NewWithBackend[M agentcore.MessageType](fs FileSystemBackend, skills ...Config) agentcore.TypedChatModelMiddleware[M] {
-	return &middleware[M]{skills: skills, filesystem: fs}
+func New(cfg *TypedConfig[*schema.Message]) agentcore.TypedChatModelMiddleware[*schema.Message] {
+	return NewTyped[*schema.Message](cfg)
 }
 
 func (m *middleware[M]) BeforeAgent(ctx context.Context, rc *agentcore.ChatModelAgentContext) (context.Context, *agentcore.ChatModelAgentContext, error) {
-	for _, s := range m.skills {
-		content := s.Content
-		if content == "" && m.filesystem != nil {
-			if c, err := m.filesystem.Read("SKILL.md"); err == nil {
-				content = c
+	if m.cfg == nil { return ctx, rc, nil }
+	skills := m.cfg.Skills
+	if len(skills) == 0 && m.cfg.Backend != nil {
+		names, err := m.cfg.Backend.List()
+		if err == nil {
+			for _, name := range names {
+				content, err := m.cfg.Backend.Read(name)
+				if err != nil { continue }
+				parsed := parseSkill(content)
+				if parsed != nil {
+					skills = append(skills, *parsed)
+				}
 			}
 		}
-		if content == "" { continue }
+	}
 
+	for _, s := range skills {
 		switch s.ExecutionMode {
 		case ModeInline:
-			rc.Instruction = rc.Instruction + "\n\n## Skill: " + s.Name + "\n" + truncate(content, 4000)
+			rc.Instruction = applyCustomInstruction(rc.Instruction, s, m.cfg.CustomSystemPrompt)
 		case ModeFork, ModeForkWithContext:
-			// For fork modes, add a tool that loads the skill on demand
-			rc.Tools = append(rc.Tools, m.newSkillTool(s.Name, content))
+			rc.Tools = append(rc.Tools, m.newSkillTool(s))
 		}
 	}
 	return ctx, rc, nil
 }
 
-func (m *middleware[M]) newSkillTool(name, content string) agentcore.Tool {
-	return agentcore.NewBaseTool("load_skill_"+name,
-		fmt.Sprintf("Load and execute the '%s' skill. Args: parameters for the skill.", name),
+func (m *middleware[M]) newSkillTool(s Config) agentcore.Tool {
+	return agentcore.NewBaseTool("skill_"+s.Name,
+		fmt.Sprintf("Execute the '%s' skill. %s", s.Name, s.Description),
 		func(ctx context.Context, args string) (string, error) {
-			return fmt.Sprintf("### Skill: %s\n\n%s\n\n---\nResults: %s", name, truncate(content, 2000), args), nil
+			if m.cfg.BuildContent != nil {
+				content, err := m.cfg.BuildContent(ctx, s)
+				if err != nil { return "", err }
+				if m.cfg.FormatForkResult != nil {
+					return m.cfg.FormatForkResult(ctx, content)
+				}
+				return content, nil
+			}
+			content := s.Content
+			if content == "" && m.cfg.Backend != nil {
+				loaded, err := m.cfg.Backend.Read(s.Name)
+				if err == nil { content = loaded }
+			}
+			if m.cfg.BuildForkMessages != nil {
+				result, err := m.cfg.BuildForkMessages(ctx, s, args)
+				if err != nil { return "", err }
+				return result, nil
+			}
+			if m.cfg.FormatForkResult != nil {
+				return m.cfg.FormatForkResult(ctx, content)
+			}
+			return fmt.Sprintf("### Skill: %s\n\n%s\n\nArgs: %s", s.Name, truncate(content, 2000), args), nil
 		})
+}
+
+// ---- Helpers ----
+
+func parseSkill(content string) *Config {
+	cfg := &Config{ExecutionMode: ModeInline}
+	content = strings.TrimSpace(content)
+
+	// Parse YAML-like frontmatter
+	if strings.HasPrefix(content, "---") {
+		parts := strings.SplitN(content[3:], "---", 2)
+		if len(parts) == 2 {
+			front := strings.TrimSpace(parts[0])
+			body := strings.TrimSpace(parts[1])
+			for _, line := range strings.Split(front, "\n") {
+				line = strings.TrimSpace(line)
+				if strings.HasPrefix(line, "name:") {
+					cfg.Name = strings.TrimSpace(line[5:])
+				} else if strings.HasPrefix(line, "description:") {
+					cfg.Description = strings.TrimSpace(line[12:])
+				} else if strings.HasPrefix(line, "model:") {
+					cfg.Model = strings.TrimSpace(line[6:])
+				}
+			}
+			cfg.Content = body
+			return cfg
+		}
+	}
+	// No frontmatter: use full content
+	cfg.Content = content
+	return cfg
+}
+
+func applyCustomInstruction(instruction string, s Config, customFn func(name, desc string) string) string {
+	if customFn != nil {
+		return instruction + "\n\n" + customFn(s.Name, s.Description)
+	}
+	return instruction + "\n\n## Skill: " + s.Name + "\n" + truncate(s.Content, 4000)
 }
 
 func truncate(s string, n int) string {

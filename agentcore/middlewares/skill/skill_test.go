@@ -8,52 +8,60 @@ import (
 	"github.com/infiniflow/ragflow/harness/agentcore/schema"
 )
 
-func TestBeforeAgent_Injection(t *testing.T) {
-	mw := New[*schema.Message](
-		Config{Name: "coding", Content: "Always write tests"},
-	)
-
-	rc := &agentcore.ChatModelAgentContext{
-		Instruction: "You are helpful.",
-	}
-	original := rc.Instruction
-
+func TestBeforeAgent_InlineSkill(t *testing.T) {
+	mw := NewTyped[*schema.Message](&TypedConfig[*schema.Message]{
+		Skills: []Config{
+			{Name: "coding", Content: "Always write tests", ExecutionMode: ModeInline},
+		},
+	})
+	rc := &agentcore.ChatModelAgentContext{Instruction: "You are helpful."}
 	_, newRc, err := mw.BeforeAgent(context.Background(), rc)
-	if err != nil {
-		t.Fatalf("BeforeAgent: %v", err)
-	}
-	if newRc.Instruction == original {
-		t.Error("instruction should be modified by skill")
-	}
-	// Verify the appended content is present
-	if !containsStr(newRc.Instruction, "Always write tests") {
-		t.Error("skill content not found in instruction")
+	if err != nil { t.Fatalf("BeforeAgent: %v", err) }
+	if !contains(newRc.Instruction, "Always write tests") {
+		t.Error("skill content not injected")
 	}
 }
 
-func TestBeforeAgent_MultipleSkills(t *testing.T) {
-	mw := New[*schema.Message](
-		Config{Name: "skill-a", Content: "Content A"},
-		Config{Name: "skill-b", Content: "Content B"},
-	)
-
-	rc := &agentcore.ChatModelAgentContext{Instruction: "Base"}
-	_, newRc, _ := mw.BeforeAgent(context.Background(), rc)
-
-	if !containsStr(newRc.Instruction, "Content A") || !containsStr(newRc.Instruction, "Content B") {
-		t.Errorf("missing skill injection in: %s", newRc.Instruction)
+func TestBeforeAgent_ForkSkill(t *testing.T) {
+	mw := NewTyped[*schema.Message](&TypedConfig[*schema.Message]{
+		Skills: []Config{
+			{Name: "search", Content: "Search skill", ExecutionMode: ModeFork},
+		},
+	})
+	rc := &agentcore.ChatModelAgentContext{}
+	_, newRc, err := mw.BeforeAgent(context.Background(), rc)
+	if err != nil { t.Fatalf("BeforeAgent: %v", err) }
+	found := false
+	for _, t := range newRc.Tools {
+		if t.Name() == "skill_search" { found = true; break }
 	}
+	if !found { t.Error("fork skill tool not added") }
 }
 
-func TestExecMode_Consts(t *testing.T) {
-	if ModeInline != 0 || ModeFork != 1 || ModeForkWithContext != 2 {
-		t.Error("ExecMode constants unexpected values")
-	}
+func TestParseSkill_Frontmatter(t *testing.T) {
+	content := "---\nname: test\nmodel: gpt-4\n---\nSkill body"
+	cfg := parseSkill(content)
+	if cfg == nil { t.Fatal("nil config") }
+	if cfg.Name != "test" { t.Errorf("name=%q", cfg.Name) }
+	if cfg.Model != "gpt-4" { t.Errorf("model=%q", cfg.Model) }
+	if !contains(cfg.Content, "Skill body") { t.Error("body not parsed") }
 }
 
-func containsStr(s, sub string) bool { return len(s) >= len(sub) && searchStr(s, sub) }
+func TestParseSkill_NoFrontmatter(t *testing.T) {
+	cfg := parseSkill("Just content")
+	if cfg == nil { t.Fatal("nil config") }
+	if !contains(cfg.Content, "Just content") { t.Error("content not parsed") }
+}
 
-func searchStr(s, sub string) bool {
+func TestBeforeAgent_NilConfig(t *testing.T) {
+	mw := NewTyped[*schema.Message](nil)
+	if mw == nil { t.Fatal("nil middleware") }
+	rc := &agentcore.ChatModelAgentContext{}
+	_, _, err := mw.BeforeAgent(context.Background(), rc)
+	if err != nil { t.Fatalf("BeforeAgent: %v", err) }
+}
+
+func contains(s, sub string) bool {
 	for i := 0; i <= len(s)-len(sub); i++ {
 		if s[i:i+len(sub)] == sub { return true }
 	}

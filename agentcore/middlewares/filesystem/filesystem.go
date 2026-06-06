@@ -8,18 +8,10 @@ import (
 	"strings"
 
 	"github.com/infiniflow/ragflow/harness/agentcore"
+	"github.com/infiniflow/ragflow/harness/agentcore/schema"
 )
 
-// toolFunc adapts a backend method to the Tool invoke signature.
-type toolFunc func(ctx context.Context, args string) (string, error)
-
-func wrapBackend(fn func(string) (string, error)) toolFunc {
-	return func(ctx context.Context, args string) (string, error) { return fn(args) }
-}
-func wrapBackendVoid(fn func(string) error) toolFunc {
-	return func(ctx context.Context, args string) (string, error) { return "", fn(args) }
-}
-
+// Backend abstracts file system operations.
 type Backend interface {
 	Read(path string) (string, error)
 	Write(path, content string) error
@@ -30,70 +22,164 @@ type Backend interface {
 	Execute(command string) (string, error)
 }
 
-type Config struct{ Backend Backend }
+// ToolConfig configures a single tool.
+type ToolConfig struct {
+	Name        string
+	Description string
+	Disabled    bool
+	Custom      func(ctx context.Context, args string) (string, error)
+}
+
+// TypedConfig configures the filesystem middleware.
+type TypedConfig[M agentcore.MessageType] struct {
+	Backend    Backend
+	ToolConfig map[string]*ToolConfig // Override individual tools
+	ReadBytes  int                    // Max bytes per read (default: 1MB)
+}
+
+type Config = TypedConfig[*schema.Message]
 
 type middleware[M agentcore.MessageType] struct {
 	agentcore.BaseMiddleware[M]
-	backend Backend
+	cfg *Config
 }
 
-func New[M agentcore.MessageType](backend Backend) *middleware[M] {
-	return &middleware[M]{backend: backend}
+func NewTyped[M agentcore.MessageType](cfg *Config) *middleware[M] {
+	if cfg == nil { cfg = &Config{ReadBytes: 1 << 20} }
+	if cfg.ReadBytes <= 0 { cfg.ReadBytes = 1 << 20 }
+	return &middleware[M]{cfg: cfg}
 }
+
+func New(cfg *Config) *middleware[*schema.Message] { return NewTyped[*schema.Message](cfg) }
 
 func (m *middleware[M]) BeforeAgent(ctx context.Context, rc *agentcore.ChatModelAgentContext) (context.Context, *agentcore.ChatModelAgentContext, error) {
-	if m.backend == nil { return ctx, rc, nil }
-	rc.Tools = append(rc.Tools, m.newReadTool(), m.newWriteTool(), m.newEditTool(),
-		m.newLsTool(), m.newGlobTool(), m.newGrepTool(), m.newExecTool())
+	if m.cfg.Backend == nil { return ctx, rc, nil }
+	rc.Tools = append(rc.Tools, m.buildTools()...)
 	return ctx, rc, nil
 }
 
-func (m *middleware[M]) newReadTool() agentcore.Tool {
-	return agentcore.NewBaseTool("read_file", "Read file contents. Args: path.",
-		wrapBackend(m.backend.Read))
+func (m *middleware[M]) buildTools() []agentcore.Tool {
+	tools := make([]agentcore.Tool, 0, 7)
+	if tool := m.maybeTool("read_file", "Read file contents. Accepts file path.", m.newReadTool()); tool != nil {
+		tools = append(tools, tool)
+	}
+	if tool := m.maybeTool("write_file", "Write content to a file. Args: path|content.", m.newWriteTool()); tool != nil {
+		tools = append(tools, tool)
+	}
+	if tool := m.maybeTool("edit_file", "Edit file by replacing text. Args: path|old|new.", m.newEditTool()); tool != nil {
+		tools = append(tools, tool)
+	}
+	if tool := m.maybeTool("ls", "List directory contents. Args: path.", m.newLsTool()); tool != nil {
+		tools = append(tools, tool)
+	}
+	if tool := m.maybeTool("glob", "Find files matching a glob pattern. Args: pattern.", m.newGlobTool()); tool != nil {
+		tools = append(tools, tool)
+	}
+	if tool := m.maybeTool("grep", "Search for text in files. Args: pattern|path|output_mode.", m.newGrepTool()); tool != nil {
+		tools = append(tools, tool)
+	}
+	if tool := m.maybeTool("execute", "Execute a shell command. Args: command.", m.newExecTool()); tool != nil {
+		tools = append(tools, tool)
+	}
+	return tools
 }
-func (m *middleware[M]) newWriteTool() agentcore.Tool {
-	return agentcore.NewBaseTool("write_file", "Write content to a file. Args: path|content.",
-		func(ctx context.Context, args string) (string, error) {
-			parts := strings.SplitN(args, "|", 2)
-			if len(parts) < 2 { return "", fmt.Errorf("expected path|content") }
-			return "", m.backend.Write(parts[0], parts[1])
-		})
+
+func (m *middleware[M]) maybeTool(name, defaultDesc string, defaultFn func(ctx context.Context, args string) (string, error)) agentcore.Tool {
+	if m.cfg.ToolConfig != nil {
+		if tc, ok := m.cfg.ToolConfig[name]; ok {
+			if tc.Disabled { return nil }
+			desc := defaultDesc
+			if tc.Description != "" { desc = tc.Description }
+			if tc.Custom != nil { return agentcore.NewBaseTool(tc.Name, desc, tc.Custom) }
+			return agentcore.NewBaseTool(name, desc, defaultFn)
+		}
+	}
+	return agentcore.NewBaseTool(name, defaultDesc, defaultFn)
 }
-func (m *middleware[M]) newEditTool() agentcore.Tool {
-	return agentcore.NewBaseTool("edit_file", "Edit file by replacing text. Args: path|old|new.",
-		func(ctx context.Context, args string) (string, error) {
-			parts := strings.SplitN(args, "|", 3)
-			if len(parts) < 3 { return "", fmt.Errorf("expected path|old|new") }
-			return "", m.backend.Edit(parts[0], parts[1], parts[2])
-		})
+
+func (m *middleware[M]) newReadTool() func(ctx context.Context, args string) (string, error) {
+	return func(ctx context.Context, args string) (string, error) {
+		content, err := m.cfg.Backend.Read(args)
+		if err != nil { return "", err }
+		if len(content) > m.cfg.ReadBytes {
+			content = content[:m.cfg.ReadBytes] + "\n...(truncated)"
+		}
+		// Add line numbers
+		lines := strings.Split(content, "\n")
+		for i, l := range lines {
+			lines[i] = fmt.Sprintf("%6d: %s", i+1, l)
+		}
+		return strings.Join(lines, "\n"), nil
+	}
 }
-func (m *middleware[M]) newLsTool() agentcore.Tool {
-	return agentcore.NewBaseTool("ls", "List directory contents. Args: path.",
-		func(ctx context.Context, args string) (string, error) {
-			results, err := m.backend.Ls(args)
-			if err != nil { return "", err }
-			return strings.Join(results, "\n"), nil
-		})
+
+func (m *middleware[M]) newWriteTool() func(ctx context.Context, args string) (string, error) {
+	return func(ctx context.Context, args string) (string, error) {
+		parts := strings.SplitN(args, "|", 2)
+		if len(parts) < 2 { return "", fmt.Errorf("expected path|content") }
+		return "", m.cfg.Backend.Write(parts[0], parts[1])
+	}
 }
-func (m *middleware[M]) newGlobTool() agentcore.Tool {
-	return agentcore.NewBaseTool("glob", "Find files matching a glob pattern.",
-		wrapBackend(func(path string) (string, error) {
-			results, err := m.backend.Glob(path)
-			if err != nil { return "", err }
-			return strings.Join(results, "\n"), nil
-		}))
+
+func (m *middleware[M]) newEditTool() func(ctx context.Context, args string) (string, error) {
+	return func(ctx context.Context, args string) (string, error) {
+		parts := strings.SplitN(args, "|", 3)
+		if len(parts) < 3 { return "", fmt.Errorf("expected path|old|new") }
+		return "", m.cfg.Backend.Edit(parts[0], parts[1], parts[2])
+	}
 }
-func (m *middleware[M]) newGrepTool() agentcore.Tool {
-	return agentcore.NewBaseTool("grep", "Search text in files. Args: pattern|path.",
-		func(ctx context.Context, args string) (string, error) {
-			parts := strings.SplitN(args, "|", 2)
-			pattern, path := parts[0], "."
-			if len(parts) > 1 { path = parts[1] }
-			return m.backend.Grep(pattern, path)
-		})
+
+func (m *middleware[M]) newLsTool() func(ctx context.Context, args string) (string, error) {
+	return func(ctx context.Context, args string) (string, error) {
+		results, err := m.cfg.Backend.Ls(args)
+		if err != nil { return "", err }
+		if len(results) == 0 { return "(empty directory)", nil }
+		return strings.Join(results, "\n"), nil
+	}
 }
-func (m *middleware[M]) newExecTool() agentcore.Tool {
-	return agentcore.NewBaseTool("execute", "Execute a shell command.",
-		wrapBackend(m.backend.Execute))
+
+func (m *middleware[M]) newGlobTool() func(ctx context.Context, args string) (string, error) {
+	return func(ctx context.Context, args string) (string, error) {
+		results, err := m.cfg.Backend.Glob(args)
+		if err != nil { return "", err }
+		if len(results) == 0 { return "No matches", nil }
+		return strings.Join(results, "\n"), nil
+	}
+}
+
+func (m *middleware[M]) newGrepTool() func(ctx context.Context, args string) (string, error) {
+	return func(ctx context.Context, args string) (string, error) {
+		parts := strings.SplitN(args, "|", 3)
+		pattern, path := parts[0], "."
+		if len(parts) > 1 { path = parts[1] }
+		outputMode := "content"
+		if len(parts) > 2 { outputMode = parts[2] }
+
+		result, err := m.cfg.Backend.Grep(pattern, path)
+		if err != nil { return "", err }
+
+		switch outputMode {
+		case "count":
+			lines := strings.Count(result, "\n")
+			return fmt.Sprintf("%d matches", lines), nil
+		case "files":
+			unique := make(map[string]bool)
+			for _, line := range strings.Split(result, "\n") {
+				if line == "" { continue }
+				parts := strings.SplitN(line, ":", 2)
+				if len(parts) > 0 { unique[parts[0]] = true }
+			}
+			names := make([]string, 0, len(unique))
+			for n := range unique { names = append(names, n) }
+			return strings.Join(names, "\n"), nil
+		default:
+			return result, nil
+		}
+	}
+}
+
+func (m *middleware[M]) newExecTool() func(ctx context.Context, args string) (string, error) {
+	return func(ctx context.Context, args string) (string, error) {
+		return m.cfg.Backend.Execute(args)
+	}
 }

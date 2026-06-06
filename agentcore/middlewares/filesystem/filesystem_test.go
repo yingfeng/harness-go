@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/infiniflow/ragflow/harness/agentcore"
-	"github.com/infiniflow/ragflow/harness/agentcore/schema"
 )
 
 type testBackend struct {
@@ -23,7 +22,7 @@ func (b *testBackend) Grep(pattern, path string) (string, error)            { re
 func (b *testBackend) Execute(command string) (string, error)               { return "done", nil }
 
 func TestNew_NilBackend(t *testing.T) {
-	mw := New[*schema.Message](nil)
+	mw := New(nil)
 	rc := &agentcore.ChatModelAgentContext{Instruction: "base", Tools: make([]agentcore.Tool, 0)}
 	_, newRc, err := mw.BeforeAgent(context.Background(), rc)
 	if err != nil { t.Fatalf("BeforeAgent: %v", err) }
@@ -33,7 +32,7 @@ func TestNew_NilBackend(t *testing.T) {
 }
 
 func TestNew_AddsAllTools(t *testing.T) {
-	mw := New[*schema.Message](&testBackend{readResult: "hello"})
+	mw := New(&Config{Backend: &testBackend{readResult: "hello"}})
 	rc := &agentcore.ChatModelAgentContext{Instruction: "base", Tools: make([]agentcore.Tool, 0)}
 	_, newRc, err := mw.BeforeAgent(context.Background(), rc)
 	if err != nil { t.Fatalf("BeforeAgent: %v", err) }
@@ -43,15 +42,14 @@ func TestNew_AddsAllTools(t *testing.T) {
 }
 
 func TestTool_Read_Function(t *testing.T) {
-	mw := New[*schema.Message](&testBackend{readResult: "file content"})
+	mw := New(&Config{Backend: &testBackend{readResult: "file content"}})
 	rc := &agentcore.ChatModelAgentContext{}
 	_, newRc, _ := mw.BeforeAgent(context.Background(), rc)
-	// Find read_file tool
 	for _, tool := range newRc.Tools {
 		if tool.Name() == "read_file" {
 			result, err := tool.Invoke(context.Background(), "test.txt")
 			if err != nil { t.Fatalf("read_file: %v", err) }
-			if result != "file content" { t.Errorf("got %q", result) }
+			if !strings.Contains(result, "file content") { t.Errorf("got %q", result) }
 			return
 		}
 	}
@@ -59,7 +57,7 @@ func TestTool_Read_Function(t *testing.T) {
 }
 
 func TestTool_Write_Function(t *testing.T) {
-	mw := New[*schema.Message](&testBackend{})
+	mw := New(&Config{Backend: &testBackend{}})
 	rc := &agentcore.ChatModelAgentContext{}
 	_, newRc, _ := mw.BeforeAgent(context.Background(), rc)
 	for _, tool := range newRc.Tools {
@@ -73,7 +71,7 @@ func TestTool_Write_Function(t *testing.T) {
 }
 
 func TestTool_Glob_Function(t *testing.T) {
-	mw := New[*schema.Message](&testBackend{})
+	mw := New(&Config{Backend: &testBackend{}})
 	rc := &agentcore.ChatModelAgentContext{}
 	_, newRc, _ := mw.BeforeAgent(context.Background(), rc)
 	for _, tool := range newRc.Tools {
