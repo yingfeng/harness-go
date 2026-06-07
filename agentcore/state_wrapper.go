@@ -2,6 +2,7 @@ package agentcore
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 
 	"github.com/infiniflow/ragflow/harness/agentcore/schema"
@@ -29,9 +30,10 @@ func newTypedStateModelWrapper[M MessageType](inner ChatModel[M], cc *cancelCont
 // copyMessage performs a deep copy of a Message or AgenticMessage to prevent
 // pointer-sharing bugs when the same message flows through multiple wrappers.
 //
-// TODO: The Extra map copy is shallow (values are shared references). If a
-// middleware modifies a nested map/slice inside Extra, the original message
-// will also be affected. Consider a deep-copy helper for Extra values.
+// The Extra map uses JSON marshal/unmarshal for deep copy (same approach as
+// checkpoint.deepCopy) so that nested maps/slices are fully independent.
+// If JSON round-trip fails for a value, the original reference is kept as
+// a fallback to avoid data loss.
 func copyMessage[M MessageType](msg M) M {
 	switch v := any(msg).(type) {
 	case *schema.Message:
@@ -47,7 +49,7 @@ func copyMessage[M MessageType](msg M) M {
 		if v.Extra != nil {
 			cp.Extra = make(map[string]any, len(v.Extra))
 			for k, val := range v.Extra {
-				cp.Extra[k] = val
+				cp.Extra[k] = deepCopyAny(val)
 			}
 		}
 		return any(cp).(M)
@@ -63,6 +65,23 @@ func copyMessage[M MessageType](msg M) M {
 		return any(cp).(M)
 	}
 	return msg
+}
+
+// deepCopyAny performs a deep copy of an arbitrary value via JSON round-trip.
+// Falls back to the original value if JSON marshal/unmarshal fails.
+func deepCopyAny(v any) any {
+	if v == nil {
+		return nil
+	}
+	data, err := json.Marshal(v)
+	if err != nil {
+		return v // fallback: keep original reference
+	}
+	var result any
+	if err := json.Unmarshal(data, &result); err != nil {
+		return v // fallback: keep original reference
+	}
+	return result
 }
 
 // preprocessInput performs cancel check, deep copy, and message ID injection.

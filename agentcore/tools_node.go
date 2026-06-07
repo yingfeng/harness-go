@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 
 	"github.com/infiniflow/ragflow/harness/agentcore/schema"
 )
@@ -55,29 +56,76 @@ func NewToolsNode[M MessageType](cfg *ToolsNodeConfig) *ToolsNode[M] {
 // Execute processes all tool calls found in the model response.
 // It returns the list of tool result messages to append to state,
 // and any agent action (e.g., return-directly) that should be handled.
+//
+// When multiple independent tool calls are present, Execute runs them concurrently
+// using a bounded goroutine pool (default max concurrency = 10), reducing total
+// latency from O(sum) to O(max). For a single tool call, no goroutine is spawned.
 func (tn *ToolsNode[M]) Execute(ctx context.Context, resp M, state *TypedChatModelAgentState[M], _ interface{}) ([]M, *AgentAction, error) {
 	toolCalls := extractToolCalls(resp)
 	if len(toolCalls) == 0 {
 		return nil, nil, nil
 	}
 
-	var results []M
-	var action *AgentAction
-
-	for _, tc := range toolCalls {
-		// Check return-directly
+	if len(toolCalls) == 1 {
+		// Fast path: single tool call, no goroutine overhead.
+		tc := toolCalls[0]
+		var action *AgentAction
 		if tn.config.ReturnDirectly != nil && tn.config.ReturnDirectly[tc.Function.Name] {
 			action = NewExitAction()
 		}
-
 		toolMsg, err := tn.executeOne(ctx, tc)
 		if err != nil {
 			return nil, action, fmt.Errorf("tool '%s': %w", tc.Function.Name, err)
 		}
-		results = append(results, toolMsg)
+		return []M{toolMsg}, action, nil
 	}
 
-	return results, action, nil
+	// Concurrent path: execute multiple tool calls in parallel.
+	const maxConcurrency = 10
+	sem := make(chan struct{}, maxConcurrency)
+	var mu sync.Mutex
+	results := make([]M, len(toolCalls))
+	var action *AgentAction
+	var firstErr error
+	var wg sync.WaitGroup
+
+	for i, tc := range toolCalls {
+		if tn.config.ReturnDirectly != nil && tn.config.ReturnDirectly[tc.Function.Name] {
+			mu.Lock()
+			action = NewExitAction()
+			mu.Unlock()
+		}
+
+		wg.Add(1)
+		go func(idx int, call schema.ToolCall) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			toolMsg, err := tn.executeOne(ctx, call)
+			mu.Lock()
+			defer mu.Unlock()
+			if err != nil && firstErr == nil {
+				firstErr = fmt.Errorf("tool '%s': %w", call.Function.Name, err)
+				return
+			}
+			results[idx] = toolMsg
+		}(i, tc)
+	}
+	wg.Wait()
+
+	if firstErr != nil {
+		return nil, action, firstErr
+	}
+
+	// Filter out nil results (from failed tools).
+	filtered := results[:0]
+	for _, r := range results {
+		if !isNilMessage(r) {
+			filtered = append(filtered, r)
+		}
+	}
+	return filtered, action, nil
 }
 
 func (tn *ToolsNode[M]) executeOne(ctx context.Context, tc schema.ToolCall) (M, error) {

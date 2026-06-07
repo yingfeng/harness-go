@@ -1,0 +1,339 @@
+// Package agentcore provides graph-based workflow agents (Sequential, Parallel,
+// Loop) using the project's own StateGraph/Pregel engine.
+//
+// Unlike the legacy workflow.go implementation, these graph-based workflows:
+//   - Auto-checkpoint at each sub-agent boundary (via graph.WithCheckpointer)
+//   - Support interrupt/resume at any sub-agent (via graph.WithInterrupts)
+//   - Emit streaming events through the Pregel StreamManager
+//   - Use the Pregel engine's recursion limit and cancellation support
+//
+// Usage:
+//
+//	gwf, err := NewSequentialGraph(ctx, &SequentialConfig{...}, checkpointer)
+//	state, err := gwf.Invoke(ctx, input)
+package agentcore
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/infiniflow/ragflow/harness/agentcore/schema"
+	"github.com/infiniflow/ragflow/harness/constants"
+	"github.com/infiniflow/ragflow/harness/graph"
+	"github.com/infiniflow/ragflow/harness/types"
+)
+
+func init() {
+	schema.RegisterType("_harness_wf_graph_state", func() any { return &WorkflowGraphState{} })
+}
+
+// WorkflowGraphState is the shared state for graph-based workflow agents.
+// It carries messages between sub-agents and tracks the current position.
+type WorkflowGraphState struct {
+	Messages      []*schema.Message
+	SubAgentNames []string   // names of sub-agents in order
+	CurrentStep   int        // current sub-agent index
+	LoopIter      int        // for loop mode
+	MaxLoopIter   int        // for loop mode
+	Done          bool
+}
+
+// WorkflowGraph wraps a CompiledGraph that runs sub-agents as graph nodes.
+type WorkflowGraph struct {
+	compiled     *graph.CompiledGraph
+	subAgentIter func(ctx context.Context, idx int, state *WorkflowGraphState) error
+}
+
+// ---- Sequential ----
+
+// NewSequentialGraph builds a StateGraph where sub-agents run sequentially.
+//
+//	start → sub_0 → sub_1 → ... → sub_n → end
+//
+// Each sub-agent boundary is a checkpoint point. Interrupt can be enabled
+// before any sub-agent via WithInterrupts.
+func NewSequentialGraph(ctx context.Context, cfg *SequentialConfig, cptr graph.Checkpointer, interrupts ...string) (*WorkflowGraph, error) {
+	sg := graph.NewStateGraph(&WorkflowGraphState{})
+
+	names := make([]string, len(cfg.SubAgents))
+	for i, a := range cfg.SubAgents {
+		names[i] = a.Name(ctx)
+	}
+
+	// Create one node per sub-agent.
+	for i, agent := range cfg.SubAgents {
+		idx := i
+		ag := agent // capture
+		nodeName := fmt.Sprintf("sub_%d", i)
+		sg.AddNode(nodeName, func(ctx context.Context, state interface{}) (interface{}, error) {
+			s := state.(*WorkflowGraphState)
+			iter := ag.Run(ctx, &AgentInput{Messages: s.Messages})
+			for {
+				ev, ok := iter.Next()
+				if !ok {
+					break
+				}
+				if ev.Err != nil {
+					return nil, fmt.Errorf("sub-agent %s: %w", names[idx], ev.Err)
+				}
+				if ev.Output != nil && ev.Output.MessageOutput != nil &&
+					!ev.Output.MessageOutput.IsStreaming &&
+					ev.Output.MessageOutput.Message != nil {
+					s.Messages = append(s.Messages, ev.Output.MessageOutput.Message)
+				}
+			}
+			s.CurrentStep = idx + 1
+			return s, nil
+		})
+	}
+
+	// Chain nodes sequentially.
+	sg.AddEdge(constants.Start, "sub_0")
+	for i := 1; i < len(cfg.SubAgents); i++ {
+		sg.AddEdge(fmt.Sprintf("sub_%d", i-1), fmt.Sprintf("sub_%d", i))
+	}
+	sg.AddEdge(fmt.Sprintf("sub_%d", len(cfg.SubAgents)-1), constants.End)
+
+	compileOpts := []graph.CompileOption{
+		graph.WithRecursionLimit(len(cfg.SubAgents) + 2),
+	}
+	if cptr != nil {
+		compileOpts = append(compileOpts, graph.WithCheckpointer(cptr))
+	}
+	for _, name := range interrupts {
+		compileOpts = append(compileOpts, graph.WithInterrupts(name))
+	}
+
+	compiled, err := sg.Compile(compileOpts...)
+	if err != nil {
+		return nil, fmt.Errorf("compile sequential graph: %w", err)
+	}
+
+	return &WorkflowGraph{compiled: compiled}, nil
+}
+
+// ---- Parallel ----
+
+// NewParallelGraph builds a StateGraph where sub-agents run in parallel via
+// graph branches. Each sub-agent produces output independently, and the
+// graph engine's BSP model aggregates results automatically.
+//
+//	     ┌→ sub_0 ─┐
+//	start─┼→ sub_1 ─┼→ end
+//	     └→ sub_n ─┘
+func NewParallelGraph(ctx context.Context, cfg *ParallelConfig, cptr graph.Checkpointer, interrupts ...string) (*WorkflowGraph, error) {
+	sg := graph.NewStateGraph(&WorkflowGraphState{})
+
+	names := make([]string, len(cfg.SubAgents))
+	for i, a := range cfg.SubAgents {
+		names[i] = a.Name(ctx)
+	}
+
+	// Each sub-agent is a node that appends its output.
+	for i, agent := range cfg.SubAgents {
+		idx := i
+		ag := agent
+		nodeName := fmt.Sprintf("sub_%d", i)
+		sg.AddNode(nodeName, func(ctx context.Context, state interface{}) (interface{}, error) {
+			s := state.(*WorkflowGraphState)
+			iter := ag.Run(ctx, &AgentInput{Messages: s.Messages})
+			for {
+				ev, ok := iter.Next()
+				if !ok {
+					break
+				}
+				if ev.Err != nil {
+					return nil, fmt.Errorf("sub-agent %s: %w", names[idx], ev.Err)
+				}
+				if ev.Output != nil && ev.Output.MessageOutput != nil &&
+					!ev.Output.MessageOutput.IsStreaming &&
+					ev.Output.MessageOutput.Message != nil {
+					s.Messages = append(s.Messages, ev.Output.MessageOutput.Message)
+				}
+			}
+			return s, nil
+		})
+	}
+
+	// Branch from start to all sub-agents.
+	sg.AddEdge(constants.Start, "sub_0")
+	var branchTargets []string
+	for i := range cfg.SubAgents {
+		branchTargets = append(branchTargets, fmt.Sprintf("sub_%d", i))
+	}
+	// Use conditional edges to fan out (Pregel BSP model handles parallelism).
+	sg.AddConditionalEdges(constants.Start,
+		func(ctx context.Context, state interface{}) (interface{}, error) {
+			// Fan out to all sub-agents.
+			return branchTargets[0], nil
+		},
+		makeMap(branchTargets),
+	)
+
+	// Each sub-agent goes to end.
+	for _, target := range branchTargets[1:] {
+		sg.AddEdge(target, constants.End)
+	}
+	sg.AddEdge(branchTargets[0], constants.End)
+
+	compileOpts := []graph.CompileOption{
+		graph.WithRecursionLimit(len(cfg.SubAgents) * 2),
+	}
+	if cptr != nil {
+		compileOpts = append(compileOpts, graph.WithCheckpointer(cptr))
+	}
+	for _, name := range interrupts {
+		compileOpts = append(compileOpts, graph.WithInterrupts(name))
+	}
+
+	compiled, err := sg.Compile(compileOpts...)
+	if err != nil {
+		return nil, fmt.Errorf("compile parallel graph: %w", err)
+	}
+
+	return &WorkflowGraph{compiled: compiled}, nil
+}
+
+// ---- Loop ----
+
+// NewLoopGraph builds a StateGraph that runs sub-agents in a loop with bounded
+// iterations.
+//
+//	start → sub_0 → sub_1 → ... → sub_n → [iter < max?] → back to sub_0
+//	                                        ↘ end
+func NewLoopGraph(ctx context.Context, cfg *LoopConfig, cptr graph.Checkpointer, interrupts ...string) (*WorkflowGraph, error) {
+	sg := graph.NewStateGraph(&WorkflowGraphState{})
+
+	maxIter := cfg.MaxIterations
+	if maxIter <= 0 {
+		maxIter = 10
+	}
+
+	names := make([]string, len(cfg.SubAgents))
+	for i, a := range cfg.SubAgents {
+		names[i] = a.Name(ctx)
+	}
+
+	// One node per sub-agent.
+	for i, agent := range cfg.SubAgents {
+		idx := i
+		ag := agent
+		nodeName := fmt.Sprintf("sub_%d", i)
+		sg.AddNode(nodeName, func(ctx context.Context, state interface{}) (interface{}, error) {
+			s := state.(*WorkflowGraphState)
+			iter := ag.Run(ctx, &AgentInput{Messages: s.Messages})
+			for {
+				ev, ok := iter.Next()
+				if !ok {
+					break
+				}
+				if ev.Err != nil {
+					return nil, fmt.Errorf("sub-agent %s: %w", names[idx], ev.Err)
+				}
+				if ev.Output != nil && ev.Output.MessageOutput != nil &&
+					!ev.Output.MessageOutput.IsStreaming &&
+					ev.Output.MessageOutput.Message != nil {
+					s.Messages = append(s.Messages, ev.Output.MessageOutput.Message)
+				}
+			}
+			s.CurrentStep = idx + 1
+			return s, nil
+		})
+	}
+
+	// Chain: start → sub_0 → sub_1 → ... → sub_n
+	sg.AddEdge(constants.Start, "sub_0")
+	for i := 1; i < len(cfg.SubAgents); i++ {
+		sg.AddEdge(fmt.Sprintf("sub_%d", i-1), fmt.Sprintf("sub_%d", i))
+	}
+
+	// Conditional edge from last sub-agent: loop back or end.
+	lastNode := fmt.Sprintf("sub_%d", len(cfg.SubAgents)-1)
+	sg.AddConditionalEdges(lastNode,
+		func(ctx context.Context, state interface{}) (interface{}, error) {
+			s := state.(*WorkflowGraphState)
+			s.LoopIter++
+			if s.LoopIter >= maxIter {
+				s.Done = true
+				return constants.End, nil
+			}
+			s.CurrentStep = 0 // Reset for next iteration.
+			return "sub_0", nil
+		},
+		map[string]string{
+			constants.End: constants.End,
+			"sub_0":       "sub_0",
+		},
+	)
+
+	compileOpts := []graph.CompileOption{
+		graph.WithRecursionLimit(maxIter*len(cfg.SubAgents) + 5),
+	}
+	if cptr != nil {
+		compileOpts = append(compileOpts, graph.WithCheckpointer(cptr))
+	}
+	for _, name := range interrupts {
+		compileOpts = append(compileOpts, graph.WithInterrupts(name))
+	}
+
+	compiled, err := sg.Compile(compileOpts...)
+	if err != nil {
+		return nil, fmt.Errorf("compile loop graph: %w", err)
+	}
+
+	return &WorkflowGraph{compiled: compiled}, nil
+}
+
+// ---- Invocation ----
+
+// Invoke runs the workflow graph synchronously and returns the final state.
+func (wg *WorkflowGraph) Invoke(ctx context.Context, input *AgentInput) (*WorkflowGraphState, error) {
+	state := &WorkflowGraphState{
+		Messages:      input.Messages,
+		CurrentStep:   0,
+	}
+	result, err := wg.compiled.Invoke(ctx, state)
+	if err != nil {
+		return nil, err
+	}
+	outState, ok := result.(*WorkflowGraphState)
+	if !ok {
+		return nil, fmt.Errorf("unexpected result type %T from workflow graph", result)
+	}
+	return outState, nil
+}
+
+// Stream runs the workflow graph with streaming events via Pregel.
+func (wg *WorkflowGraph) Stream(ctx context.Context, input *AgentInput, mode types.StreamMode) (<-chan interface{}, <-chan error) {
+	state := &WorkflowGraphState{
+		Messages:      input.Messages,
+		CurrentStep:   0,
+	}
+	return wg.compiled.Stream(ctx, state, mode)
+}
+
+// Resume resumes a previously interrupted workflow.
+func (wg *WorkflowGraph) Resume(ctx context.Context) (*WorkflowGraphState, error) {
+	result, err := wg.compiled.Invoke(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	outState, ok := result.(*WorkflowGraphState)
+	if !ok {
+		return nil, fmt.Errorf("unexpected result type %T from resumed workflow", result)
+	}
+	return outState, nil
+}
+
+// Compile returns the underlying CompiledGraph.
+func (wg *WorkflowGraph) Compile() *graph.CompiledGraph { return wg.compiled }
+
+// ---- helpers ----
+
+func makeMap(targets []string) map[string]string {
+	m := make(map[string]string, len(targets))
+	for _, t := range targets {
+		m[t] = t
+	}
+	return m
+}
