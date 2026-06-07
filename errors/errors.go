@@ -36,9 +36,10 @@ const (
 )
 
 // CreateErrorMessage creates an error message with troubleshooting information.
+// The URL points to the Harness-Go documentation (not the Python LangGraph docs).
 func CreateErrorMessage(message string, errorCode ErrorCode) string {
 	return fmt.Sprintf(
-		"%s\nFor troubleshooting, visit: https://docs.langchain.com/oss/python/langgraph/errors/%s",
+		"%s\nFor troubleshooting, visit: https://github.com/infiniflow/ragflow/harness/docs/errors/%s",
 		message,
 		errorCode,
 	)

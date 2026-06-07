@@ -3,6 +3,7 @@ package channels
 
 import (
 	"fmt"
+	"sync/atomic"
 
 	"github.com/infiniflow/ragflow/harness/errors"
 )
@@ -52,13 +53,17 @@ type Channel interface {
 	// Finish notifies the channel that the Pregel run is finishing.
 	// Returns true if the channel was updated.
 	Finish() bool
+	// GetVersion returns the current version number of this channel.
+	// Returns -1 if the channel does not support version tracking.
+	GetVersion() int
 }
 
 // BaseChannel provides a base implementation of Channel.
 // Embed this struct in your channel implementations.
 type BaseChannel struct {
-	Key string
-	Typ interface{}
+	Key     string
+	Typ     interface{}
+	Version int64 // atomic: channel version for change detection (thread-safe)
 }
 
 // GetKey returns the channel key.
@@ -79,6 +84,17 @@ func (c *BaseChannel) Consume() bool {
 // Finish is a no-op by default.
 func (c *BaseChannel) Finish() bool {
 	return false
+}
+
+// GetVersion returns the current version of this channel using atomic read.
+// Returns -1 for channels that do not use version tracking.
+func (c *BaseChannel) GetVersion() int {
+	return int(atomic.LoadInt64(&c.Version))
+}
+
+// SetVersion sets the channel version atomically (used by the engine after applying writes).
+func (c *BaseChannel) SetVersion(v int) {
+	atomic.StoreInt64(&c.Version, int64(v))
 }
 
 // Registry is a registry of channel types.

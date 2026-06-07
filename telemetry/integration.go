@@ -203,23 +203,25 @@ func (rt *RunnableTracer) TraceCheckpoint(operation string, fn func(context.Cont
 // TraceCache wraps cache operations with instrumentation.
 func (rt *RunnableTracer) TraceCache(operation string, fn func(context.Context) (interface{}, error)) func(context.Context) (interface{}, error) {
 	return func(ctx context.Context) (interface{}, error) {
-		_ = time.Now() // startTime placeholder for future use
-		
+		startTime := time.Now()
+
 		var span trace.Span
 		if rt.enableTracing {
 			ctx, span = rt.provider.TracerProvider.StartCacheSpan(ctx, operation)
 		}
-		
+
 		result, err := fn(ctx)
-		
+
 		if rt.enableMetrics {
+			duration := time.Since(startTime)
 			if err == nil {
 				rt.provider.Metrics.RecordCacheHit(ctx, operation)
 			} else {
 				rt.provider.Metrics.RecordCacheMiss(ctx, operation)
 			}
+			_ = duration // available for future cache latency metrics
 		}
-		
+
 		if rt.enableTracing && span.IsRecording() {
 			if err != nil {
 				SetSpanError(span, err)

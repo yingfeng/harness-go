@@ -242,6 +242,51 @@ func TestNamedBarrierValue(t *testing.T) {
 	}
 }
 
+func TestNamedBarrierValueAfterFinish(t *testing.T) {
+	ch := NewNamedBarrierValueAfterFinish(nil, []string{"a", "b"})
+	ch.SetKey("barrier_finish")
+
+	// Initially not available (finished=false).
+	if ch.IsAvailable() {
+		t.Error("barrier should not be available initially (finished=false)")
+	}
+
+	// Add nodes but not yet finished.
+	ch.Update([]interface{}{"a"})
+	ch.Update([]interface{}{"b"})
+	if ch.IsAvailable() {
+		t.Error("barrier should not be available before Finish is called")
+	}
+
+	// Finish should trigger availability.
+	finished := ch.Finish()
+	if !finished {
+		t.Error("Finish should return true")
+	}
+	if !ch.IsAvailable() {
+		t.Error("barrier should be available after Finish + all names seen")
+	}
+}
+
+func TestBaseChannelGetVersion(t *testing.T) {
+	ch := NewLastValue("")
+	if v := ch.GetVersion(); v != 0 {
+		t.Errorf("new channel version should be 0, got %d", v)
+	}
+	ch.SetVersion(42)
+	if v := ch.GetVersion(); v != 42 {
+		t.Errorf("expected version 42, got %d", v)
+	}
+	// Concurrent read/write should not race (atomic).
+	done := make(chan struct{})
+	go func() {
+		for i := 0; i < 100; i++ { ch.SetVersion(i) }
+		close(done)
+	}()
+	for i := 0; i < 100; i++ { _ = ch.GetVersion() }
+	<-done
+}
+
 func TestRegistry(t *testing.T) {
 	reg := NewRegistry()
 

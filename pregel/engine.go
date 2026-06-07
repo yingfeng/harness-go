@@ -180,27 +180,34 @@ func (e *Engine) Run(ctx context.Context, input interface{}, mode types.StreamMo
 	errCh := make(chan error, 1)
 	
 	go func() {
-		defer close(outputCh)
 		defer close(errCh)
-		
+
 		// Create stream manager for event streaming
 		streamManager := NewStreamManager(mode, 100)
-		defer streamManager.Close()
-		
-		done := make(chan struct{})
-		defer close(done)
-		
+
+		// WaitGroup ensures the forward goroutine exits before we close outputCh,
+		// preventing a data race between close(outputCh) and outputCh <- event.
+		var fwWg sync.WaitGroup
+		fwWg.Add(1)
+
 		// Forward stream events to output channel
 		go func() {
+			defer fwWg.Done()
 			for event := range streamManager.Events() {
 				select {
 				case outputCh <- event:
-				case <-done:
-					return
 				case <-ctx.Done():
 					return
 				}
 			}
+		}()
+
+		// Deferred cleanup: close streamManager first (unblocks forward goroutine),
+		// then wait for forward goroutine to exit, then close outputCh.
+		defer func() {
+			streamManager.Close()
+			fwWg.Wait()
+			close(outputCh)
 		}()
 		
 		// Create async pipeline for concurrent task execution
@@ -603,8 +610,13 @@ func (e *Engine) applyWrites(
 			if updated && ch.IsAvailable() {
 				updatedChannels[channelName] = struct{}{}
 
-				// Increment channel version
+				// Increment channel version (engine-level tracking).
 				e.channelVersions[channelName]++
+
+				// Also bump the version on the channel itself for ChannelChangedTrigger.
+				if vc, ok := ch.(interface{ SetVersion(int) }); ok {
+					vc.SetVersion(e.channelVersions[channelName])
+				}
 
 				// Update checkpoint if available
 				if e.currentCheckpoint != nil {

@@ -40,7 +40,7 @@ func TestCreateErrorMessage(t *testing.T) {
 
 	result := CreateErrorMessage(message, code)
 
-	expected := "Test error message\nFor troubleshooting, visit: https://docs.langchain.com/oss/python/langgraph/errors/GRAPH_RECURSION_LIMIT"
+	expected := "Test error message\nFor troubleshooting, visit: https://github.com/infiniflow/ragflow/harness/docs/errors/GRAPH_RECURSION_LIMIT"
 	if result != expected {
 		t.Errorf("Expected:\n%s\n\nGot:\n%s", expected, result)
 	}

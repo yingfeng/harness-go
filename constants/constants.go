@@ -73,9 +73,9 @@ const (
 	Push = "__pregel_push"
 	// Pull denotes pull-style tasks, ie. those triggered by edges.
 	Pull = "__pregel_pull"
-	// NSSep separates each level for checkpoint_ns.
+	// NSSep separates each level of a checkpoint namespace hierarchy (e.g. "parent|child").
 	NSSep = "|"
-	// NSEnd separates the namespace from the task_id for each level.
+	// NSEnd separates the namespace from the task_id within each level (e.g. "ns:task_id").
 	NSEnd = ":"
 	// Conf is the key for the configurable dict in RunnableConfig.
 	Conf = "configurable"
@@ -83,6 +83,12 @@ const (
 	NullTaskID = "00000000-0000-0000-0000-000000000000"
 	// Overwrite is the dict key for the overwrite value.
 	Overwrite = "__overwrite__"
+	// DefaultCheckpointMaxVersions is the default maximum number of checkpoint versions retained.
+	DefaultCheckpointMaxVersions = 100
+	// DefaultCheckpointListLimit is the default page size for listing checkpoints.
+	DefaultCheckpointListLimit = 10
+	// DefaultRecursionLimit is the default maximum Pregel superstep count.
+	DefaultRecursionLimit = 50
 )
 
 // Public constants.
@@ -107,13 +113,20 @@ var Reserved = map[string]bool{
 	NoWrites:               true,
 	ConfigKeySend:          true,
 	ConfigKeyRead:          true,
+	ConfigKeyCall:          true,
 	ConfigKeyCheckpointer:  true,
 	ConfigKeyStream:        true,
+	ConfigKeyCache:         true,
 	ConfigKeyCheckpointMap: true,
 	ConfigKeyResuming:      true,
 	ConfigKeyTaskID:        true,
 	ConfigKeyCheckpointID:  true,
 	ConfigKeyCheckpointNS:  true,
+	ConfigKeyNodeFinished:  true,
+	ConfigKeyScratchpad:    true,
+	ConfigKeyRunnerSubmit:  true,
+	ConfigKeyDurability:    true,
+	ConfigKeyRuntime:       true,
 	ConfigKeyResumeMap:     true,
 	Push:                   true,
 	Pull:                   true,

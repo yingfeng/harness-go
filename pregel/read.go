@@ -353,7 +353,7 @@ func (t *AllAvailableTrigger) ShouldTrigger(registry *channels.Registry) bool {
 // ChannelChangedTrigger triggers when a specific channel's value changes.
 type ChannelChangedTrigger struct {
 	channel     string
-	lastVersion int
+	lastVersion int64
 }
 
 // NewChannelChangedTrigger creates a trigger that fires when a channel changes.
@@ -366,8 +366,16 @@ func NewChannelChangedTrigger(channel string) *ChannelChangedTrigger {
 
 func (t *ChannelChangedTrigger) ShouldTrigger(registry *channels.Registry) bool {
 	if ch, ok := registry.Get(t.channel); ok {
-		// This is a simplified version - actual implementation would need version tracking
-		return ch.IsAvailable()
+		// Track the channel version to detect actual changes (not just availability).
+		// GetVersion returns -1 if the channel does not support versioning, in which
+		// case we fall back to IsAvailable() for backward compatibility.
+		version := int64(ch.GetVersion())
+		if version >= 0 && version != t.lastVersion {
+			t.lastVersion = version
+			return true
+		}
+		// Fallback for channels without version tracking.
+		return version < 0 && ch.IsAvailable()
 	}
 	return false
 }

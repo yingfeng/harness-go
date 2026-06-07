@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/infiniflow/ragflow/harness/constants"
 	"github.com/infiniflow/ragflow/harness/types"
 )
 
@@ -476,7 +477,7 @@ type CheckpointManager struct {
 // NewCheckpointManager creates a new checkpoint manager.
 func NewCheckpointManager(maxVersions int) *CheckpointManager {
 	if maxVersions <= 0 {
-		maxVersions = 100 // Default max versions
+		maxVersions = constants.DefaultCheckpointMaxVersions
 	}
 
 	return &CheckpointManager{
@@ -484,6 +485,21 @@ func NewCheckpointManager(maxVersions int) *CheckpointManager {
 		maxVersions:  maxVersions,
 		activeWrites: make(map[string]*PutWrites),
 	}
+}
+
+// RunnableConfigToMap converts a types.RunnableConfig to the map[string]interface{}
+// format used by BaseCheckpointer implementations. This provides a single adaptation
+// point so callers do not need to manually construct config maps.
+func RunnableConfigToMap(cfg *types.RunnableConfig) map[string]interface{} {
+	if cfg == nil {
+		return map[string]interface{}{}
+	}
+	result := map[string]interface{}{
+		"thread_id":     cfg.ThreadID,
+		"checkpoint_id": cfg.GetOrEmpty("checkpoint_id"),
+		"checkpoint_ns": cfg.GetOrEmpty("checkpoint_ns"),
+	}
+	return result
 }
 
 // Save saves a checkpoint with version conflict detection.

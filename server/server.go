@@ -1394,7 +1394,7 @@ func (s *Server) handleStoreDetail(w http.ResponseWriter, r *http.Request) {
 // handleGetStoreItem gets a store item.
 func (s *Server) handleGetStoreItem(w http.ResponseWriter, r *http.Request) {
 	if s.store == nil {
-		s.writeError(w, http.StatusNotImplemented, "Store not configured")
+		s.writeError(w, http.StatusNotImplemented, "Store not configured. Provide a Store implementation via ServerConfig.Store.")
 		return
 	}
 

@@ -136,6 +136,20 @@ func (c *RunnableConfig) WithDurability(durability Durability) *RunnableConfig {
 	return c
 }
 
+// GetOrEmpty returns the string value for a configurable key, or "" if not present.
+// This is a convenience for checkpoint config map construction.
+func (c *RunnableConfig) GetOrEmpty(key string) string {
+	if c.Configurable == nil {
+		return ""
+	}
+	v, ok := c.Configurable[key]
+	if !ok {
+		return ""
+	}
+	s, _ := v.(string)
+	return s
+}
+
 // ConfigPatcher is a function that patches a config.
 type ConfigPatcher func(*RunnableConfig) *RunnableConfig
 
