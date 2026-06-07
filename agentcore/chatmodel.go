@@ -9,6 +9,7 @@ import (
 
 	"github.com/infiniflow/ragflow/harness/agentcore/schema"
 	"github.com/infiniflow/ragflow/harness/agentcore/internal"
+	"github.com/infiniflow/ragflow/harness/graph"
 )
 
 // ChatModelConfig holds configuration for TypedChatModelAgent.
@@ -26,6 +27,18 @@ type ChatModelConfig[M MessageType] struct {
 	StateModifier      StateModifier[M]
 	ToolsConfig        *ToolsNodeConfig
 	EmitInternalEvents bool
+	// GraphReAct enables graph-based ReAct execution using the project's own
+	// StateGraph/Pregel engine. When true, each ReAct iteration runs as a graph
+	// node, providing automatic checkpoint, interrupt, and resume via the engine.
+	// Default: false (uses the simple for-loop in chatmodel_react.go).
+	GraphReAct bool
+	// GraphReActCheckpointer is the checkpointer used when GraphReAct is enabled.
+	// If nil, no checkpointing is performed (but interrupt is still available
+	// via WithInterrupts).
+	GraphReActCheckpointer graph.Checkpointer
+	// GraphReActInterruptBefore lists node names to interrupt before.
+	// Default: ["execute_tools"] (pause before tool execution for human approval).
+	GraphReActInterruptBefore []string
 }
 
 func DefaultChatModelConfig[M MessageType]() *ChatModelConfig[M] {
@@ -193,9 +206,14 @@ func (a *TypedChatModelAgent[M]) buildRunFunc(ctx context.Context) typedRunFunc[
 		ec, err := a.prepareExecContext(ctx)
 		if err != nil { onceRun = func(_ context.Context, _ *typedRunParams[M]) {}; a.run = onceRun; return }
 		a.exeCtx = ec
-		if len(a.config.Tools) > 0 || (a.config.ToolsConfig != nil && len(a.config.ToolsConfig.Tools) > 0) {
+		hasTools := len(a.config.Tools) > 0 || (a.config.ToolsConfig != nil && len(a.config.ToolsConfig.Tools) > 0)
+		if !hasTools {
+			onceRun = a.buildNoToolsRunFunc()
+		} else if a.config.GraphReAct {
+			onceRun = a.buildGraphReActRunFunc()
+		} else {
 			onceRun = a.buildReActRunFunc()
-		} else { onceRun = a.buildNoToolsRunFunc() }
+		}
 		a.run = onceRun
 	})
 	if a.run != nil { return a.run }
@@ -440,3 +458,105 @@ const CheckpointDataV1 CheckpointDataVersion = 1
 
 // preprocessCheckpointData performs forward-compatible migration on resume data.
 func preprocessCheckpointData(data any) any { return data }
+
+// WithGraphReAct enables the graph-based ReAct execution engine for a ChatModelConfig.
+// When enabled, each ReAct iteration runs as a StateGraph node with the Pregel engine,
+// providing automatic checkpoint, interrupt before tool execution, and resume support.
+//
+// Usage:
+//
+//	cfg := DefaultChatModelConfig[*schema.Message]()
+//	cfg.GraphReAct = true
+//	cfg.GraphReActCheckpointer = checkpoint.NewMemorySaver()  // optional
+func WithGraphReAct[M MessageType](cfg *ChatModelConfig[M], cptr graph.Checkpointer) {
+	cfg.GraphReAct = true
+	cfg.GraphReActCheckpointer = cptr
+}
+
+// WithGraphReActInterrupt sets which graph nodes to interrupt before.
+// Default: ["execute_tools"]. Use this to customize interrupt behavior.
+func WithGraphReActInterrupt[M MessageType](cfg *ChatModelConfig[M], interruptBefore ...string) {
+	cfg.GraphReActInterruptBefore = interruptBefore
+}
+
+// ---- Graph-based ReAct run function ----
+//
+// When GraphReAct is enabled, the ReAct loop runs as a StateGraph with the
+// Pregel engine. Each iteration is a superstep, providing:
+//   - Automatic checkpoint at every node boundary (via graph.WithCheckpointer)
+//   - Interrupt before tool execution (via graph.WithInterrupts)
+//   - Resume from checkpoint on restart (via graph.Invoke with same config)
+//   - Streaming events via pregel.StreamManager
+
+func (a *TypedChatModelAgent[M]) buildGraphReActRunFunc() typedRunFunc[M] {
+	return func(ctx context.Context, p *typedRunParams[M]) {
+		// Graph-based ReAct currently supports *schema.Message only.
+		// For AgenticMessage, fall back to the simple for-loop.
+		var zero M
+		_, isMessage := any(zero).(*schema.Message)
+		if !isMessage {
+			// Fallback: use standard for-loop for non-Message types.
+			a.buildReActRunFunc()(ctx, p)
+			return
+		}
+
+		// Build graph config from agent config.
+		graphCfg := &ReActGraphConfig{
+			Checkpointer:    a.config.GraphReActCheckpointer,
+			InterruptBefore: a.config.GraphReActInterruptBefore,
+			RecursionLimit:  a.config.MaxIterations * 2, // each iter = 2 nodes, so allow extra
+		}
+
+		// Type-assert the agent to *TypedChatModelAgent[*schema.Message].
+		msgAgent, ok := any(a).(*TypedChatModelAgent[*schema.Message])
+		if !ok {
+			p.generator.Send(&TypedAgentEvent[M]{Err: fmt.Errorf("graph ReAct: agent type assertion failed")})
+			return
+		}
+
+		rg, err := NewReActGraph(msgAgent, graphCfg)
+		if err != nil {
+			p.generator.Send(&TypedAgentEvent[M]{Err: fmt.Errorf("NewReActGraph: %w", err)})
+			return
+		}
+
+		// Build agent input.
+		input := &AgentInput{Messages: messageSliceToAny2(p.input.Messages)}
+
+		// Run the graph (synchronous invoke or streaming).
+		state, err := rg.Invoke(ctx, input, nil)
+		if err != nil {
+			p.generator.Send(&TypedAgentEvent[M]{Err: err})
+			return
+		}
+
+		// Emit the final model response as an event.
+		if len(state.Messages) > 0 {
+			last := state.Messages[len(state.Messages)-1]
+			if !isNilMessage(last) {
+				p.generator.Send(any(typedModelOutputEvent(last, nil)).(*TypedAgentEvent[M]))
+			}
+		}
+
+		// Emit afterToolCallsHook if configured.
+		if p.afterToolCallsHook != nil {
+			if err := p.afterToolCallsHook(ctx); err != nil {
+				p.generator.Send(&TypedAgentEvent[M]{Err: fmt.Errorf("after_tool_calls_hook: %w", err)})
+			}
+		}
+	}
+}
+
+// messageSliceToAny2 converts a []M (MessageType) to []*schema.Message for graph ReAct.
+func messageSliceToAny2[M MessageType](msgs []M) []*schema.Message {
+	r := make([]*schema.Message, len(msgs))
+	for i, m := range msgs {
+		if msg, ok := any(m).(*schema.Message); ok {
+			r[i] = msg
+		} else {
+			// Fallback: skip non-Message items.
+			r[i] = nil
+		}
+	}
+	return r
+}
