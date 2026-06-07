@@ -134,6 +134,8 @@ type StateGraph struct {
 	inputSchema interface{}
 	// Output schema type
 	outputSchema interface{}
+	// NodeTriggerMode controls how nodes are triggered for execution.
+	NodeTriggerMode types.NodeTriggerMode
 }
 
 // NewStateGraph creates a new StateGraph with the given state schema.
@@ -479,17 +481,21 @@ func (g *StateGraph) Compile(opts ...CompileOption) (*CompiledGraph, error) {
 	}
 	
 	cg := &CompiledGraph{
-		graph:         g,
-		checkpointer:  nil,
-		interrupts:    make(map[string]bool),
-		recursionLimit: constants.DefaultRecursionLimit,
-		debug:          false,
+		graph:           g,
+		checkpointer:    nil,
+		interrupts:      make(map[string]bool),
+		recursionLimit:  constants.DefaultRecursionLimit,
+		debug:           false,
+		nodeTriggerMode: types.NodeTriggerAnyPredecessor,
 	}
 	
 	for _, opt := range opts {
 		opt(cg)
 	}
 	
+	// Propagate node trigger mode to the graph for the engine to access.
+	g.NodeTriggerMode = cg.nodeTriggerMode
+
 	return cg, nil
 }
 
@@ -533,6 +539,17 @@ func WithDebug(debug bool) CompileOption {
 	}
 }
 
+// WithNodeTriggerMode sets the node trigger mode for graph execution.
+//   - NodeTriggerAnyPredecessor (default): Pregel/BSP mode, triggers when any
+//     predecessor completes. Supports cycles and loops.
+//   - NodeTriggerAllPredecessor: DAG mode, triggers only when ALL predecessors have
+//     completed. Required for fan-in/convergence patterns. Does not support cycles.
+func WithNodeTriggerMode(mode types.NodeTriggerMode) CompileOption {
+	return func(cg *CompiledGraph) {
+		cg.nodeTriggerMode = mode
+	}
+}
+
 // Checkpointer is the interface for checkpoint persistence.
 // It is a type alias for checkpoint.BaseCheckpointer.
 type Checkpointer = checkpoint.BaseCheckpointer
@@ -569,11 +586,12 @@ func SetPregelRunFunc(fn func(ctx context.Context, cg *CompiledGraph, input inte
 //	cg, err := sg.Compile(graph.WithCheckpointer(memSaver))
 //	result, err := cg.Invoke(ctx, MyState{Messages: []string{"hello"}})
 type CompiledGraph struct {
-	graph          *StateGraph
-	checkpointer   Checkpointer
-	interrupts     map[string]bool
-	recursionLimit int
-	debug          bool
+	graph            *StateGraph
+	checkpointer     Checkpointer
+	interrupts       map[string]bool
+	recursionLimit   int
+	debug            bool
+	nodeTriggerMode  types.NodeTriggerMode
 }
 
 // Invoke executes the graph synchronously. It applies input to the state

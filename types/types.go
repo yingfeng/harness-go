@@ -8,6 +8,20 @@ import (
 	"time"
 )
 
+// NodeTriggerMode controls when a graph node is triggered for execution.
+type NodeTriggerMode string
+
+const (
+	// NodeTriggerAnyPredecessor is the default Pregel/BSP mode: a node is triggered
+	// when any of its incoming edges' source nodes complete. Supports cycles/loops.
+	NodeTriggerAnyPredecessor NodeTriggerMode = "any"
+
+	// NodeTriggerAllPredecessor is DAG mode: a node is triggered only when ALL of
+	// its incoming edges' source nodes have completed. Does not support cycles.
+	// This is the correct mode for fan-in/convergence patterns.
+	NodeTriggerAllPredecessor NodeTriggerMode = "all"
+)
+
 // StreamMode defines how the stream method should emit outputs.
 type StreamMode string
 

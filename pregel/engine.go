@@ -431,6 +431,10 @@ func (e *Engine) prepareNextTasks(
 // prepareNextTasksWithMode determines which tasks to execute next with for_execution mode.
 // When forExecution is true, tasks are prepared for actual execution.
 // When forExecution is false, only task information is prepared (for inspection/planning).
+//
+// In AllPredecessor (DAG) mode, a node is triggered only when ALL of its incoming edges'
+// source nodes have completed. In AnyPredecessor (Pregel/BSP) mode (default), a node is
+// triggered when any predecessor completes. AllPredecessor does not support cycles.
 func (e *Engine) prepareNextTasksWithMode(
 	registry *channels.Registry,
 	completedTasks map[string]bool,
@@ -459,7 +463,14 @@ func (e *Engine) prepareNextTasksWithMode(
 		return tasks, triggerToNodes, nil
 	}
 	
-	// Determine next nodes based on edges from last completed node
+	// AllPredecessor (DAG) mode: scan all uncompleted nodes and check if
+	// ALL of their incoming-edge source nodes have completed.
+	if e.graph.NodeTriggerMode == types.NodeTriggerAllPredecessor {
+		return e.prepareNextTasksDAG(completedTasks, currentState, forExecution)
+	}
+	
+	// AnyPredecessor (Pregel/BSP) mode: determine next nodes from the
+	// last completed node's outgoing edges.
 	nextNodes := e.getNextNodes(lastCompletedNode, currentState)
 	
 	for nodeName := range nextNodes {
@@ -475,10 +486,8 @@ func (e *Engine) prepareNextTasksWithMode(
 		if !completedTasks[nodeName] {
 			var task *Task
 			if forExecution {
-				// Prepare task for actual execution
 				task = e.createTask(node, currentState, triggers, []string{})
 			} else {
-				// Prepare task info only (for inspection/planning)
 				task = e.createTaskInfo(node, currentState, triggers, []string{})
 			}
 			tasks = append(tasks, task)
@@ -491,6 +500,69 @@ func (e *Engine) prepareNextTasksWithMode(
 	}
 	
 	return tasks, triggerToNodes, nil
+}
+
+// prepareNextTasksDAG prepares tasks in DAG (AllPredecessor) mode.
+// It scans all nodes and schedules those whose incoming-edge sources
+// have all completed. This is O(n) per call but correct for fan-in patterns.
+func (e *Engine) prepareNextTasksDAG(
+	completedTasks map[string]bool,
+	currentState interface{},
+	forExecution bool,
+) ([]*Task, map[string]struct{}, error) {
+	tasks := make([]*Task, 0)
+	triggerToNodes := make(map[string]struct{})
+
+	// Build reverse adjacency: for each node, which nodes have edges TO it.
+	incomingEdges := e.buildIncomingEdges()
+
+	for _, node := range e.graph.GetNodes() {
+		n := e.getNode(node.Name)
+		if n == nil {
+			continue
+		}
+		if completedTasks[node.Name] {
+			continue
+		}
+
+		// Check if all incoming-edge sources have completed.
+		predecessors := incomingEdges[node.Name]
+		allDone := true
+		for _, pred := range predecessors {
+			if !completedTasks[pred] {
+				allDone = false
+				break
+			}
+		}
+		// Nodes with no incoming edges (beyond start) can run.
+		if !allDone {
+			continue
+		}
+
+		triggers := e.getTriggers(n)
+		var task *Task
+		if forExecution {
+			task = e.createTask(n, currentState, triggers, []string{})
+		} else {
+			task = e.createTaskInfo(n, currentState, triggers, []string{})
+		}
+		tasks = append(tasks, task)
+		for _, trigger := range triggers {
+			triggerToNodes[trigger] = struct{}{}
+		}
+	}
+
+	// No tasks means all reachable nodes are done.
+	return tasks, triggerToNodes, nil
+}
+
+// buildIncomingEdges builds a reverse-adjacency map: node → list of nodes with edges TO it.
+func (e *Engine) buildIncomingEdges() map[string][]string {
+	adj := make(map[string][]string)
+	for _, edge := range e.graph.GetEdges() {
+		adj[edge.To] = append(adj[edge.To], edge.From)
+	}
+	return adj
 }
 
 // shouldInterrupt checks if graph should be interrupted.
