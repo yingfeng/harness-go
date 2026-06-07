@@ -169,32 +169,31 @@ func (c *BinaryOperatorAggregate) FromCheckpoint(checkpoint interface{}) Channel
 }
 
 // String concatenation operator for BinaryOperatorAggregate.
-// Panics if either argument is not convertible to string.
 func StringConcat(a, b interface{}) interface{} {
 	sa, ok1 := a.(string)
 	sb, ok2 := b.(string)
 	if !ok1 || !ok2 {
-		panic(fmt.Sprintf("StringConcat: expected (string, string), got (%T, %T)", a, b))
+		// Gracefully degrade: concatenate via fmt.Sprint.
+		return fmt.Sprint(a) + fmt.Sprint(b)
 	}
 	return sa + sb
 }
 
 // IntAdd is an integer addition operator for BinaryOperatorAggregate.
-// Supports int and float64. Returns a on type mismatch.
+// Supports int and float64. On type mismatch, returns a unchanged (graceful degradation).
 func IntAdd(a, b interface{}) interface{} {
 	if ai, ok := a.(int); ok {
 		if bi, ok := b.(int); ok {
 			return ai + bi
 		}
-		panic(fmt.Sprintf("IntAdd: expected (int, int), got (%T, %T)", a, b))
 	}
 	if af, ok := a.(float64); ok {
 		if bf, ok := b.(float64); ok {
 			return af + bf
 		}
-		panic(fmt.Sprintf("IntAdd: expected (float64, float64), got (%T, %T)", a, b))
 	}
-	panic(fmt.Sprintf("IntAdd: unsupported types (%T, %T)", a, b))
+	// Graceful degradation: return a unchanged.
+	return a
 }
 
 // ListAppend appends two lists for BinaryOperatorAggregate.

@@ -636,6 +636,11 @@ func (e *Engine) applyWrites(
 			return nil, fmt.Errorf("failed to convert output to map: %w", err)
 		}
 
+		// Apply FieldMapping if the node has field-level routing configured.
+		if node := e.getNode(result.Name); node != nil && len(node.FieldMapping) > 0 {
+			outputMap = applyFieldMapping(outputMap, node.FieldMapping)
+		}
+
 		for key, value := range outputMap {
 			// Skip nil values
 			if value == nil {
@@ -1319,4 +1324,66 @@ func (e *Engine) RunSync(ctx context.Context, input interface{}) (interface{}, e
 			return nil, ctx.Err()
 		}
 	}
+}
+
+// applyFieldMapping filters and remaps an output map according to FieldMapping rules.
+// If no mappings are specified, the entire output map is passed through unchanged.
+// Each mapping specifies a source field path (From) and a target field path (To).
+func applyFieldMapping(output map[string]interface{}, mappings []graph.FieldMapping) map[string]interface{} {
+	if len(mappings) == 0 {
+		return output
+	}
+	result := make(map[string]interface{}, len(mappings))
+	for _, m := range mappings {
+		val := getNestedField(output, m.From)
+		if val != nil {
+			setNestedField(result, m.To, val)
+		}
+	}
+	return result
+}
+
+// getNestedField retrieves a value from a nested map using a dot-separated path.
+func getNestedField(m map[string]interface{}, path string) interface{} {
+	if path == "" {
+		return m // return entire map
+	}
+	parts := strings.Split(path, ".")
+	var cur interface{} = m
+	for _, part := range parts {
+		cm, ok := cur.(map[string]interface{})
+		if !ok {
+			return nil
+		}
+		cur = cm[part]
+		if cur == nil {
+			return nil
+		}
+	}
+	return cur
+}
+
+// setNestedField sets a value in a nested map using a dot-separated path.
+func setNestedField(m map[string]interface{}, path string, val interface{}) {
+	if path == "" {
+		for k, v := range val.(map[string]interface{}) {
+			m[k] = v
+		}
+		return
+	}
+	parts := strings.Split(path, ".")
+	for i := 0; i < len(parts)-1; i++ {
+		sub, ok := m[parts[i]]
+		if !ok {
+			sub = make(map[string]interface{})
+			m[parts[i]] = sub
+		}
+		var ok2 bool
+		m, ok2 = sub.(map[string]interface{})
+		if !ok2 {
+			nm := make(map[string]interface{})
+			m = nm
+		}
+	}
+	m[parts[len(parts)-1]] = val
 }

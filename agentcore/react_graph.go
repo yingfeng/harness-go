@@ -300,19 +300,20 @@ func NewReActGraph(agent *TypedChatModelAgent[*schema.Message], cfg *ReActGraphC
 	sg.AddEdge(constants.Start, "prepare_input")
 	sg.AddEdge("prepare_input", "model_generate")
 
-	// Conditional: if has tool calls → execute_tools, else → end
+	// Conditional: if no tool calls → check_done (which goes to end), else → execute_tools
 	sg.AddConditionalEdges("model_generate", func(ctx context.Context, state interface{}) (interface{}, error) {
 		s := state.(*ReActGraphState)
 		if s.IterationsLeft <= 0 || !s.HasToolCall {
-			return constants.End, nil
+			return "check_done", nil
 		}
 		return "execute_tools", nil
 	}, map[string]string{
-		constants.End: constants.End,
+		"check_done":    "check_done",
 		"execute_tools": "execute_tools",
 	})
 
 	sg.AddEdge("execute_tools", "model_generate") // loop back for next iteration
+	sg.AddEdge("check_done", constants.End)       // terminal node
 
 	// --- Compile with checkpoint and interrupt ---
 	interrupts := cfg.InterruptBefore

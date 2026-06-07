@@ -33,6 +33,9 @@ type Node struct {
 	Tags []string
 	// Metadata holds arbitrary key-value pairs for tooling.
 	Metadata map[string]interface{}
+	// FieldMapping specifies field-level routing for this node's output.
+	// Used by the engine to route only specific fields through data edges.
+	FieldMapping []FieldMapping
 }
 
 // Edge is a directed connection between two nodes. After the From node
@@ -46,6 +49,27 @@ type Node struct {
 type Edge struct {
 	From string
 	To   string
+}
+
+// FieldMapping specifies how a field from a source node's output is mapped
+// to a target node's input. Supports dotted paths like "a.b.c" for nested access.
+//
+// Example:
+//
+//	FieldMapping{From: "response.text", To: "input.query"}
+type FieldMapping struct {
+	From string // source field path (dotted notation, empty = pass entire state)
+	To   string // target field path (dotted notation, empty = set at root)
+}
+
+// DataEdge is a directed data-flow connection with field-level mapping.
+// It allows fine-grained control over which fields flow between nodes.
+// Unlike Edge (control flow), DataEdge only routes data without affecting
+// execution order. Control flow is determined by Edge/conditionalEdge alone.
+type DataEdge struct {
+	From    string
+	To      string
+	Mapping []FieldMapping
 }
 
 // ConditionalEdge allows routing to different nodes based on a condition
@@ -116,6 +140,8 @@ type StateGraph struct {
 	nodes map[string]*Node
 	// Edges between nodes
 	edges []*Edge
+	// Data edges for field-level routing
+	dataEdges []*DataEdge
 	// Conditional edges
 	conditionalEdges []*ConditionalEdge
 	// Branches
@@ -183,6 +209,33 @@ func (g *StateGraph) AddNode(name string, fn types.NodeFunc) *Node {
 
 // AddNodeWithOptions adds a node with options.
 func (g *StateGraph) AddNodeWithOptions(name string, fn types.NodeFunc, opts NodeOptions) *Node {
+	// Apply StatePre/StatePost wrappers around the node function.
+	if opts.StatePre != nil || opts.StatePost != nil {
+		orig := fn
+		pre := opts.StatePre
+		post := opts.StatePost
+		fn = func(ctx context.Context, state interface{}) (interface{}, error) {
+			if pre != nil {
+				var err error
+				state, err = pre(ctx, state)
+				if err != nil {
+					return nil, fmt.Errorf("state pre-handler for '%s': %w", name, err)
+				}
+			}
+			out, err := orig(ctx, state)
+			if err != nil {
+				return nil, err
+			}
+			if post != nil {
+				out, err = post(ctx, out)
+				if err != nil {
+					return nil, fmt.Errorf("state post-handler for '%s': %w", name, err)
+				}
+			}
+			return out, nil
+		}
+	}
+
 	node := g.AddNode(name, fn)
 	if opts.RetryPolicy != nil {
 		node.RetryPolicy = opts.RetryPolicy
@@ -201,16 +254,49 @@ func (g *StateGraph) AddNodeWithOptions(name string, fn types.NodeFunc, opts Nod
 	if len(opts.Writes) > 0 {
 		node.Writes = append(node.Writes, opts.Writes...)
 	}
+	if len(opts.FieldMapping) > 0 {
+		node.FieldMapping = append(node.FieldMapping, opts.FieldMapping...)
+	}
 	return node
 }
 
 // NodeOptions contains options for adding a node.
 type NodeOptions struct {
-	RetryPolicy *types.RetryPolicy
-	Tags        []string
-	Metadata    map[string]interface{}
-	Triggers    []string
-	Writes      []string
+	RetryPolicy  *types.RetryPolicy
+	Tags         []string
+	Metadata     map[string]interface{}
+	Triggers     []string
+	Writes       []string
+	FieldMapping []FieldMapping          // field-level routing for this node's output
+	StatePre     types.NodeFunc          // transforms state BEFORE node execution
+	StatePost    types.NodeFunc          // transforms state AFTER node execution
+}
+
+// WithStatePreHandler wraps the node with a pre-execution state transform.
+// The handler receives the incoming state and can modify it before the node runs.
+func WithStatePreHandler(fn types.NodeFunc) func(*NodeOptions) {
+	return func(opts *NodeOptions) { opts.StatePre = fn }
+}
+
+// WithStatePostHandler wraps the node with a post-execution state transform.
+// The handler receives the node's output state and can modify it before it flows downstream.
+func WithStatePostHandler(fn types.NodeFunc) func(*NodeOptions) {
+	return func(opts *NodeOptions) { opts.StatePost = fn }
+}
+
+// WithFieldMapping sets field-level routing for this node's output.
+func WithFieldMapping(mappings ...FieldMapping) func(*NodeOptions) {
+	return func(opts *NodeOptions) { opts.FieldMapping = append(opts.FieldMapping, mappings...) }
+}
+
+// MapFields is a convenience function to create a FieldMapping from a source path to a target path.
+func MapFields(from, to string) FieldMapping {
+	return FieldMapping{From: from, To: to}
+}
+
+// MapTo is a convenience function to create a FieldMapping that maps the entire output to a target path.
+func MapTo(to string) FieldMapping {
+	return FieldMapping{To: to}
 }
 
 // AddEdge adds an edge between two nodes.
@@ -279,6 +365,24 @@ func (g *StateGraph) AddBranch(from string, condition types.EdgeFunc, then func(
 		Then:      then,
 	})
 	return nil
+}
+
+// AddDataEdge adds a data-flow edge with optional field-level mappings between two nodes.
+// Unlike AddEdge (control flow), AddDataEdge only routes data without affecting execution order.
+func (g *StateGraph) AddDataEdge(from, to string, mappings ...FieldMapping) error {
+	if _, ok := g.nodes[from]; !ok && from != constants.Start {
+		return &errors.NodeNotFoundError{NodeName: from}
+	}
+	if _, ok := g.nodes[to]; !ok && to != constants.End {
+		return &errors.NodeNotFoundError{NodeName: to}
+	}
+	g.dataEdges = append(g.dataEdges, &DataEdge{From: from, To: to, Mapping: mappings})
+	return nil
+}
+
+// GetDataEdges returns all data edges in the graph.
+func (g *StateGraph) GetDataEdges() []*DataEdge {
+	return g.dataEdges
 }
 
 // SetEntryPoint sets the entry point of the graph.
