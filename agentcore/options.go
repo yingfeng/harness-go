@@ -1,6 +1,10 @@
 package agentcore
 
-import "context"
+import (
+	"context"
+
+	"github.com/infiniflow/ragflow/harness/agentcore/internal"
+)
 
 // RunOption configures an agent run.
 type RunOption interface{ apply(*runOptions) }
@@ -130,3 +134,13 @@ func WithCancel() (RunOption, AgentCancelFunc) {
 	opt := WrapImplSpecificOptFn(func(o *runOptions) { o.cancelCtx = cc })
 	return opt, cc.buildCancelFunc()
 }
+
+// ---- Configuration ----
+
+// SetLanguage sets the language for agent prompts.
+func SetLanguage(lang internal.Language) { internal.SetLanguage(lang) }
+
+const (
+	LanguageEnglish = internal.LanguageEnglish
+	LanguageChinese = internal.LanguageChinese
+)

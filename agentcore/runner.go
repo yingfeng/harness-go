@@ -183,3 +183,10 @@ func handleIter[M MessageType](streaming bool, store CheckPointStore, ctx contex
 		gen.Send(ev)
 	}
 }
+
+// ResumeWithData creates a ResumeInfo with custom resume data.
+// Use this to pass ReActAgentResumeData (e.g., HistoryModifier)
+// when resuming an interrupted agent.
+func ResumeWithData(data any) *ResumeInfo {
+	return &ResumeInfo{ResumeData: data}
+}
