@@ -85,6 +85,24 @@ func WithAfterToolCallsHook(fn func(ctx context.Context) error) RunOption {
 	return runOptFn(func(o *runOptions) { o.afterToolCallsHook = fn })
 }
 
+// ---- Agent callbacks (scoped per agent name) ----
+
+// WithAgentErrorCallback registers an error callback for the agent run.
+// It fires when an agent encounters a non-recoverable error during execution.
+func WithAgentErrorCallback(fn func(ctx context.Context, err error)) RunOption {
+	return WrapImplSpecificOptFn(func(o *runOptions) {
+		o.callbacks = append(o.callbacks, callbackHandler{onError: fn})
+	})
+}
+
+// WithAgentInterruptCallback registers an interrupt callback for the agent run.
+// It fires when the agent execution is interrupted (e.g., for human-in-the-loop).
+func WithAgentInterruptCallback(fn func(ctx context.Context, info *InterruptInfo)) RunOption {
+	return WrapImplSpecificOptFn(func(o *runOptions) {
+		o.callbacks = append(o.callbacks, callbackHandler{onInterrupt: fn})
+	})
+}
+
 // ---- Cancel option ----
 
 func WithCancel() (RunOption, AgentCancelFunc) {

@@ -390,16 +390,15 @@ func (tp *TaskPriority) Compare(other *TaskPriority) int {
 }
 
 // OptimizedRun executes the graph with optimizations enabled.
+// It delegates to the base Engine's RunSync, which applies the full Pregel execution
+// loop with async pipeline, streaming, checkpoint, and interrupt support.
+// BumpStep, FinishNotification, and other optimized methods are available for
+// callers to integrate into custom execution flows.
 func (e *PregelOptimizedEngine) OptimizedRun(
 	ctx context.Context,
 	input interface{},
 ) (interface{}, error) {
-	// This is a placeholder for the optimized execution logic
-	// In practice, this would integrate with the Engine's Run method
-	// and apply the bump_step and finish_notification optimizations
-	
-	// For now, return the input as a placeholder
-	return input, nil
+	return e.RunSync(ctx, input)
 }
 
 // ExecuteTaskWithPriority executes a task with priority queue support.
@@ -562,11 +561,20 @@ func (e *PregelOptimizedEngine) hasSeenChannel(taskName, channel string) bool {
 
 // getTriggersForNode returns triggers for a node.
 func (e *PregelOptimizedEngine) getTriggersForNode(nodeName string) map[string]struct{} {
-	e.mu.RLock()
-	defer e.mu.RUnlock()
-	
-	// Simplified placeholder - in practice would return actual triggers
-	return make(map[string]struct{})
+	// Guard against uninitialized engine (e.g., in tests).
+	if e.Engine == nil || e.Engine.graph == nil {
+		return make(map[string]struct{})
+	}
+	node := e.getNode(nodeName)
+	if node == nil {
+		return make(map[string]struct{})
+	}
+	triggers := e.getTriggers(node)
+	result := make(map[string]struct{}, len(triggers))
+	for _, t := range triggers {
+		result[t] = struct{}{}
+	}
+	return result
 }
 
 // getCurrentNamespace returns the current namespace.
@@ -586,6 +594,8 @@ func (e *PregelOptimizedEngine) getCurrentNamespace() string {
 }
 
 // PrepareNextTasksOptimized prepares next tasks with optimization.
+// It delegates to the base Engine's prepareNextTasks for standard task discovery,
+// which handles entry points, conditional edges, regular edges, and branches.
 func (e *PregelOptimizedEngine) PrepareNextTasksOptimized(
 	ctx context.Context,
 	registry interface{},
@@ -593,6 +603,12 @@ func (e *PregelOptimizedEngine) PrepareNextTasksOptimized(
 	trigger string,
 	currentState interface{},
 ) ([]*Task, map[string]struct{}, error) {
-	// Simplified placeholder - in practice would implement optimized task preparation
-	return []*Task{}, make(map[string]struct{}), nil
+	if e.Engine == nil || e.Engine.graph == nil {
+		return nil, nil, fmt.Errorf("PrepareNextTasksOptimized: engine not initialized")
+	}
+	reg, ok := registry.(*channels.Registry)
+	if !ok {
+		return nil, nil, fmt.Errorf("PrepareNextTasksOptimized: invalid registry type %T", registry)
+	}
+	return e.prepareNextTasks(reg, visited, trigger, currentState)
 }

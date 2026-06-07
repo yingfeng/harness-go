@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/infiniflow/ragflow/harness/channels"
 	"github.com/infiniflow/ragflow/harness/constants"
+	"github.com/infiniflow/ragflow/harness/graph"
 	"github.com/infiniflow/ragflow/harness/types"
 )
 
@@ -51,12 +52,28 @@ func (m *SubgraphManager) CreateSubgraph(config *SubgraphConfig) (*Engine, error
 		return nil, fmt.Errorf("subgraph '%s' already exists", config.Name)
 	}
 
-	// Create new engine for subgraph
-	// Note: We can't directly create an Engine with custom fields
-	// So we'll return the parent's engine with namespace tracking
-	m.subgraphs[config.Name] = m.parentEngine
-	
-	return m.parentEngine, nil
+	// Try to create an independent engine from the graph if provided.
+	var subgraphEngine *Engine
+	if config.Graph != nil {
+		if sg, ok := config.Graph.(*graph.StateGraph); ok {
+			var opts []EngineOption
+			if m.parentEngine.checkpointer != nil {
+				opts = append(opts, WithCheckpointer(m.parentEngine.checkpointer))
+			}
+			if m.parentEngine.config != nil {
+				opts = append(opts, WithConfig(m.parentEngine.config))
+			}
+			subgraphEngine = NewEngine(sg, opts...)
+		}
+	}
+
+	// Fallback: no valid graph — use parent engine with namespace tracking.
+	if subgraphEngine == nil {
+		subgraphEngine = m.parentEngine
+	}
+	m.subgraphs[config.Name] = subgraphEngine
+
+	return subgraphEngine, nil
 }
 
 // GetSubgraph retrieves a subgraph by name.
@@ -93,9 +110,12 @@ func (m *SubgraphManager) ExecuteInSubgraph(
 		return nil, fmt.Errorf("node '%s' not found in subgraph '%s'", nodeName, subgraphName)
 	}
 
-	// Node is interface{}, need to handle properly
-	// For now, return the input as a placeholder
-	return input, nil
+	if node.Function == nil {
+		return nil, fmt.Errorf("node '%s' in subgraph '%s' has no executable function", nodeName, subgraphName)
+	}
+
+	// Execute the node's function with the provided input.
+	return node.Function(ctx, input)
 }
 
 // PushNamespace pushes a namespace onto the stack.

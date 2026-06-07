@@ -541,9 +541,7 @@ func (s *PostgresSaver) GetTuple(ctx context.Context, config *types.RunnableConf
 	if checkpointID != "" {
 		query = `
 			SELECT 
-				checkpoint, metadata, parent_checkpoint_id,
-				created_at, version, channel_versions, versions_seen,
-				updated_channels, channel_values, pending_writes
+				checkpoint, metadata, parent_checkpoint_id
 			FROM checkpoints
 			WHERE thread_id = $1 AND checkpoint_ns = $2 AND id = $3
 		`
@@ -551,9 +549,7 @@ func (s *PostgresSaver) GetTuple(ctx context.Context, config *types.RunnableConf
 	} else {
 		query = `
 			SELECT 
-				checkpoint, metadata, parent_checkpoint_id,
-				created_at, version, channel_versions, versions_seen,
-				updated_channels, channel_values, pending_writes
+				checkpoint, metadata, parent_checkpoint_id
 			FROM checkpoints
 			WHERE thread_id = $1 AND checkpoint_ns = $2
 			ORDER BY created_at DESC
@@ -571,19 +567,9 @@ func (s *PostgresSaver) GetTuple(ctx context.Context, config *types.RunnableConf
 	var checkpointData []byte
 	var metadataData []byte
 	var parentID sql.NullString
-	var createdAt time.Time
-	var version int
-	var channelVersionsData []byte
-	var versionsSeenData []byte
-	var updatedChannelsData []byte
-	var channelValuesData []byte
-	var pendingWritesData []byte
 
 	err = conn.QueryRow(ctx, query, args...).Scan(
 		&checkpointData, &metadataData, &parentID,
-		&createdAt, &version, &channelVersionsData,
-		&versionsSeenData, &updatedChannelsData,
-		&channelValuesData, &pendingWritesData,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {

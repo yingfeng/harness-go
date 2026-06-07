@@ -264,6 +264,14 @@ func (e *Engine) Run(ctx context.Context, input interface{}, mode types.StreamMo
 		lastState := input
 		
 		for {
+			// Check context cancellation at each superstep.
+			select {
+			case <-ctx.Done():
+				errCh <- ctx.Err()
+				return
+			default:
+			}
+
 			// Check recursion limit
 			if step >= e.recursionLimit {
 				errCh <- &errors.GraphRecursionError{Limit: e.recursionLimit}

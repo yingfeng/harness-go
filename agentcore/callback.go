@@ -30,8 +30,10 @@ type TypedAgentCallbackOutput[M MessageType] struct {
 
 // callbackHandler holds registered callback functions.
 type callbackHandler struct {
-	onStart func(ctx context.Context, input *AgentCallbackInput)
-	onEnd   func(ctx context.Context, output *AgentCallbackOutput)
+	onStart     func(ctx context.Context, input *AgentCallbackInput)
+	onEnd       func(ctx context.Context, output *AgentCallbackOutput)
+	onError     func(ctx context.Context, err error)
+	onInterrupt func(ctx context.Context, info *InterruptInfo)
 }
 
 type callbackKey struct{}
@@ -52,7 +54,7 @@ func propagateCallbacks(ctx context.Context, opts []RunOption) []RunOption {
 	cbOpts := make([]RunOption, 0, len(cbs))
 	for _, cb := range cbs {
 		handler := cb
-		wrapped := callbackHandler{onStart: handler.onStart, onEnd: handler.onEnd}
+		wrapped := callbackHandler{onStart: handler.onStart, onEnd: handler.onEnd, onError: handler.onError, onInterrupt: handler.onInterrupt}
 		cbOpts = append(cbOpts, WrapImplSpecificOptFn(func(o *runOptions) {
 			o.callbacks = append(o.callbacks, wrapped)
 		}))

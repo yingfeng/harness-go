@@ -39,15 +39,7 @@ func (a *TypedChatModelAgent[M]) buildReActRunFunc() typedRunFunc[M] {
 
 		// BeforeAgent middlewares
 		rc := &ChatModelAgentContext{Instruction: a.exeCtx.instruction, Tools: a.config.Tools, ReturnDirectly: a.exeCtx.returnDirectly, ToolSearchTool: a.exeCtx.toolSearchTool}
-		for _, mw := range a.config.Middlewares {
-			if mw == nil { continue }
-			var err error
-			ctx, rc, err = mw.BeforeAgent(ctx, rc)
-			if err != nil {
-				p.generator.Send(&TypedAgentEvent[M]{Err: fmt.Errorf("BeforeAgent: %w", err)})
-				return
-			}
-		}
+		if err := a.runBeforeAgent(&ctx, rc, p.generator); err != nil { return }
 
 		model := BuildModelWrapperChain(a.config.Model, nil, a.config)
 
@@ -58,15 +50,7 @@ func (a *TypedChatModelAgent[M]) buildReActRunFunc() typedRunFunc[M] {
 			state.RemainingIterations--
 
 			mc := &TypedModelContext[M]{Tools: state.ToolInfos, DeferredToolInfos: state.DeferredToolInfos, ModelRetryConfig: a.config.RetryConfig, ModelFailoverConfig: a.config.FailoverConfig}
-			for _, mw := range a.config.Middlewares {
-				if mw == nil { continue }
-				var err error
-				ctx, state, err = mw.BeforeModelRewrite(ctx, state, mc)
-				if err != nil {
-					p.generator.Send(&TypedAgentEvent[M]{Err: fmt.Errorf("BeforeModelRewrite: %w", err)})
-					return
-				}
-			}
+			if err := a.runBeforeModelRewrite(&ctx, &state, mc, p.generator); err != nil { return }
 
 			var modelMsgs []M
 		if a.config.StateModifier != nil {
@@ -89,15 +73,7 @@ func (a *TypedChatModelAgent[M]) buildReActRunFunc() typedRunFunc[M] {
 			p.generator.Send(typedModelOutputEvent(resp, nil))
 			state.Messages = append(state.Messages, resp)
 
-			for _, mw := range a.config.Middlewares {
-				if mw == nil { continue }
-				var err error
-				ctx, state, err = mw.AfterModelRewrite(ctx, state, mc)
-				if err != nil {
-					p.generator.Send(&TypedAgentEvent[M]{Err: fmt.Errorf("AfterModelRewrite: %w", err)})
-					return
-				}
-			}
+			if err := a.runAfterModelRewrite(&ctx, &state, mc, p.generator); err != nil { return }
 
 			toolCalls := extractToolCalls(resp)
 			if len(toolCalls) == 0 { break }
@@ -128,15 +104,7 @@ func (a *TypedChatModelAgent[M]) buildReActRunFunc() typedRunFunc[M] {
 				p.generator.Send(&TypedAgentEvent[M]{Err: fmt.Errorf("after_tool_calls_hook: %w", err)})
 			}
 		}
-		for _, mw := range a.config.Middlewares {
-			if mw == nil { continue }
-			var err error
-			ctx, err = mw.AfterAgent(ctx, state)
-			if err != nil {
-				p.generator.Send(&TypedAgentEvent[M]{Err: fmt.Errorf("AfterAgent: %w", err)})
-				return
-			}
-		}
+		a.runAfterAgent(&ctx, state, p.generator)
 	}
 }
 

@@ -216,30 +216,14 @@ func (a *TypedChatModelAgent[M]) buildNoToolsRunFunc() typedRunFunc[M] {
 	return func(ctx context.Context, p *typedRunParams[M]) {
 		// BeforeAgent middleware
 		rc := &ChatModelAgentContext{Instruction: a.exeCtx.instruction, Tools: a.config.Tools, ReturnDirectly: a.exeCtx.returnDirectly}
-		for _, mw := range a.config.Middlewares {
-			if mw == nil { continue }
-			var err error
-			ctx, rc, err = mw.BeforeAgent(ctx, rc)
-			if err != nil {
-				p.generator.Send(&TypedAgentEvent[M]{Err: fmt.Errorf("BeforeAgent: %w", err)})
-				return
-			}
-		}
+		if err := a.runBeforeAgent(&ctx, rc, p.generator); err != nil { return }
 
 		model := BuildModelWrapperChain(a.config.Model, nil, a.config)
 		state := NewChatModelAgentState(p.input.Messages, a.exeCtx.toolInfos, a.config.MaxIterations)
 
 		// BeforeModelRewrite middleware
 		mc := &TypedModelContext[M]{Tools: state.ToolInfos, ModelRetryConfig: a.config.RetryConfig, ModelFailoverConfig: a.config.FailoverConfig}
-		for _, mw := range a.config.Middlewares {
-			if mw == nil { continue }
-			var err error
-			ctx, state, err = mw.BeforeModelRewrite(ctx, state, mc)
-			if err != nil {
-				p.generator.Send(&TypedAgentEvent[M]{Err: fmt.Errorf("BeforeModelRewrite: %w", err)})
-				return
-			}
-		}
+		if err := a.runBeforeModelRewrite(&ctx, &state, mc, p.generator); err != nil { return }
 
 		if a.config.StateModifier != nil {
 			var err error
@@ -254,27 +238,67 @@ func (a *TypedChatModelAgent[M]) buildNoToolsRunFunc() typedRunFunc[M] {
 		state.Messages = append(state.Messages, resp)
 
 		// AfterModelRewrite middleware
-		for _, mw := range a.config.Middlewares {
-			if mw == nil { continue }
-			var err error
-			ctx, state, err = mw.AfterModelRewrite(ctx, state, mc)
-			if err != nil {
-				p.generator.Send(&TypedAgentEvent[M]{Err: fmt.Errorf("AfterModelRewrite: %w", err)})
-				return
-			}
-		}
+		if err := a.runAfterModelRewrite(&ctx, &state, mc, p.generator); err != nil { return }
 
 		if a.config.OutputKey != "" && !isNilMessage(resp) { setOutputToSession(ctx, resp, a.config.OutputKey) }
 
 		// AfterAgent middleware
-		for _, mw := range a.config.Middlewares {
-			if mw == nil { continue }
-			var err2 error
-			ctx, err2 = mw.AfterAgent(ctx, state)
-			if err2 != nil {
-				p.generator.Send(&TypedAgentEvent[M]{Err: err2})
-				return
-			}
+		a.runAfterAgent(&ctx, state, p.generator)
+	}
+}
+
+// runBeforeAgent executes the BeforeAgent middleware chain.
+// Returns a non-nil error if any middleware signals termination.
+func (a *TypedChatModelAgent[M]) runBeforeAgent(ctx *context.Context, rc *ChatModelAgentContext, gen *AsyncGenerator[*TypedAgentEvent[M]]) error {
+	for _, mw := range a.config.Middlewares {
+		if mw == nil { continue }
+		var err error
+		*ctx, rc, err = mw.BeforeAgent(*ctx, rc)
+		if err != nil {
+			gen.Send(&TypedAgentEvent[M]{Err: fmt.Errorf("BeforeAgent: %w", err)})
+			return err
+		}
+	}
+	return nil
+}
+
+// runBeforeModelRewrite executes the BeforeModelRewrite middleware chain.
+func (a *TypedChatModelAgent[M]) runBeforeModelRewrite(ctx *context.Context, state **TypedChatModelAgentState[M], mc *TypedModelContext[M], gen *AsyncGenerator[*TypedAgentEvent[M]]) error {
+	for _, mw := range a.config.Middlewares {
+		if mw == nil { continue }
+		var err error
+		*ctx, *state, err = mw.BeforeModelRewrite(*ctx, *state, mc)
+		if err != nil {
+			gen.Send(&TypedAgentEvent[M]{Err: fmt.Errorf("BeforeModelRewrite: %w", err)})
+			return err
+		}
+	}
+	return nil
+}
+
+// runAfterModelRewrite executes the AfterModelRewrite middleware chain.
+func (a *TypedChatModelAgent[M]) runAfterModelRewrite(ctx *context.Context, state **TypedChatModelAgentState[M], mc *TypedModelContext[M], gen *AsyncGenerator[*TypedAgentEvent[M]]) error {
+	for _, mw := range a.config.Middlewares {
+		if mw == nil { continue }
+		var err error
+		*ctx, *state, err = mw.AfterModelRewrite(*ctx, *state, mc)
+		if err != nil {
+			gen.Send(&TypedAgentEvent[M]{Err: fmt.Errorf("AfterModelRewrite: %w", err)})
+			return err
+		}
+	}
+	return nil
+}
+
+// runAfterAgent executes the AfterAgent middleware chain.
+func (a *TypedChatModelAgent[M]) runAfterAgent(ctx *context.Context, state *TypedChatModelAgentState[M], gen *AsyncGenerator[*TypedAgentEvent[M]]) {
+	for _, mw := range a.config.Middlewares {
+		if mw == nil { continue }
+		var err error
+		*ctx, err = mw.AfterAgent(*ctx, state)
+		if err != nil {
+			gen.Send(&TypedAgentEvent[M]{Err: fmt.Errorf("AfterAgent: %w", err)})
+			return
 		}
 	}
 }

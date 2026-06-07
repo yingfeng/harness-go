@@ -82,6 +82,11 @@ func (w *callbackModelWrapper[M]) Generate(ctx context.Context, msgs []M, opts .
 	}
 	resp, err := w.inner.Generate(ctx, msgs, opts...)
 	if len(cbs) > 0 {
+		if err != nil {
+			for _, cb := range cbs {
+				if cb.onError != nil { cb.onError(ctx, err) }
+			}
+		}
 		evIter, evGen := NewAsyncIteratorPair[*AgentEvent]()
 		if err == nil {
 			evGen.Send(&AgentEvent{
@@ -113,6 +118,9 @@ func (w *callbackModelWrapper[M]) Stream(ctx context.Context, msgs []M, opts ...
 	s, err := w.inner.Stream(ctx, msgs, opts...)
 	if err != nil {
 		if len(cbs) > 0 {
+			for _, cb := range cbs {
+				if cb.onError != nil { cb.onError(ctx, err) }
+			}
 			evIter, evGen := NewAsyncIteratorPair[*AgentEvent]()
 			evGen.Send(&AgentEvent{Err: err})
 			evGen.Close()

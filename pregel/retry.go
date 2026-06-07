@@ -4,7 +4,6 @@ package pregel
 import (
 	"context"
 	"fmt"
-	"math/rand"
 	"time"
 
 	"github.com/infiniflow/ragflow/harness/types"
@@ -70,32 +69,13 @@ func (e *RetryExecutor) Execute(ctx context.Context, name string, fn func(contex
 }
 
 // calculateBackoff calculates the backoff duration with optional jitter.
+// Delegates to the shared RetryPolicy.CalculateBackoff method.
 func (e *RetryExecutor) calculateBackoff(attempt int) time.Duration {
-	// Calculate exponential backoff
-	backoff := time.Duration(float64(e.policy.InitialInterval) * 
-		pow(e.policy.BackoffFactor, attempt-1))
-	
-	// Cap at max interval
-	if backoff > e.policy.MaxInterval {
-		backoff = e.policy.MaxInterval
+	if e.policy == nil {
+		defaultPolicy := types.DefaultRetryPolicy()
+		return defaultPolicy.CalculateBackoff(attempt)
 	}
-	
-	// Add jitter if enabled
-	if e.policy.Jitter {
-		jitter := float64(backoff) * 0.5 * rand.Float64()
-		backoff = time.Duration(float64(backoff) - jitter)
-	}
-	
-	return backoff
-}
-
-// pow calculates base^exponent
-func pow(base float64, exp int) float64 {
-	result := 1.0
-	for i := 0; i < exp; i++ {
-		result *= base
-	}
-	return result
+	return e.policy.CalculateBackoff(attempt)
 }
 
 // RetryExhaustedError is returned when all retry attempts are exhausted.

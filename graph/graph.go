@@ -649,6 +649,11 @@ func (cg *CompiledGraph) run(ctx context.Context, input interface{}, config *typ
 }
 
 // inlineRun is the default inline Pregel loop kept as a fallback.
+// It is only used when no PregelRunFunc has been set via SetPregelRunFunc.
+// For production use, the pregel.Engine (injected via harness.init()) provides
+// full async pipeline, streaming, and checkpoint support.
+// TODO: Consider moving this to a separate file or removing entirely once
+// all consumers use the pregel engine path.
 func (cg *CompiledGraph) inlineRun(ctx context.Context, input interface{}, config *types.RunnableConfig) (interface{}, error) {
 	g := cg.graph
 	channelRegistry := channels.NewRegistry()

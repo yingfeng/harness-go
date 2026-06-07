@@ -26,6 +26,7 @@ type asyncTask struct {
 	Name     string
 	Func     func(context.Context) (interface{}, error)
 	Context  context.Context
+	Cancel   context.CancelFunc
 	Priority int
 }
 
@@ -63,11 +64,14 @@ func NewAsyncExecutor(maxConcurrency int) *AsyncExecutor {
 func (e *AsyncExecutor) Execute(ctx context.Context, name string, fn func(context.Context) (interface{}, error)) <-chan *asyncTaskResult {
 	resultCh := make(chan *asyncTaskResult, 1)
 	
+	// Create cancellable context so Cancel() can stop running tasks.
+	taskCtx, cancel := context.WithCancel(ctx)
 	task := &asyncTask{
 		ID:      uuid.New().String(),
 		Name:    name,
 		Func:    fn,
-		Context: ctx,
+		Context: taskCtx,
+		Cancel:  cancel,
 	}
 	
 	e.mu.Lock()
@@ -174,10 +178,12 @@ func (e *AsyncExecutor) ExecuteBatch(ctx context.Context, tasks []asyncTask) <-c
 func (e *AsyncExecutor) ExecuteWithRetry(ctx context.Context, name string, fn func(context.Context) (interface{}, error), retryConfig *RetryConfig) <-chan *asyncTaskResult {
 	resultCh := make(chan *asyncTaskResult, 1)
 	
+	taskCtx, cancel := context.WithCancel(ctx)
 	task := &asyncTask{
 		ID:      uuid.New().String(),
 		Name:    name,
-		Context: ctx,
+		Context: taskCtx,
+		Cancel:  cancel,
 	}
 	
 	e.mu.Lock()
@@ -210,14 +216,17 @@ func (e *AsyncExecutor) ExecuteWithRetry(ctx context.Context, name string, fn fu
 	return resultCh
 }
 
-// Cancel cancels all active tasks.
+// Cancel cancels all active tasks by invoking their cancel functions.
 func (e *AsyncExecutor) Cancel() {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	
-	// Note: This would require storing cancellable contexts
-	// For now, we just clear the active tasks map
-	e.activeTasks = make(map[string]*asyncTask)
+	for id, task := range e.activeTasks {
+		if task.Cancel != nil {
+			task.Cancel()
+		}
+		delete(e.activeTasks, id)
+	}
 }
 
 // GetActiveTaskCount returns the number of currently active tasks.

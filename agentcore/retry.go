@@ -5,10 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math/rand"
 	"time"
 
 	"github.com/infiniflow/ragflow/harness/agentcore/schema"
+	"github.com/infiniflow/ragflow/harness/types"
 )
 
 var (
@@ -82,12 +82,13 @@ type ModelRetryConfig = TypedModelRetryConfig[*schema.Message]
 func defaultIsRetryAble(_ context.Context, err error) bool { return err != nil }
 
 func defaultBackoff(_ context.Context, attempt int) time.Duration {
-	base := 100 * time.Millisecond
-	if attempt <= 0 { return base }
-	if attempt > 7 { return 10*time.Second + time.Duration(rand.Int63n(int64(5*time.Second))) }
-	delay := base * time.Duration(1<<uint(attempt-1))
-	if delay > 10*time.Second { delay = 10 * time.Second }
-	return delay + time.Duration(rand.Int63n(int64(delay/2)))
+	p := types.RetryPolicy{
+		InitialInterval: 100 * time.Millisecond,
+		BackoffFactor:   2.0,
+		MaxInterval:     10 * time.Second,
+		Jitter:          true,
+	}
+	return p.CalculateBackoff(attempt)
 }
 
 // typedRetryModelWrapper wraps a ChatModel with retry logic.

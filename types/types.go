@@ -4,6 +4,7 @@ package types
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"time"
 )
 
@@ -68,6 +69,40 @@ func DefaultRetryPolicy() RetryPolicy {
 		Jitter:          true,
 		RetryOn:         DefaultRetryOn,
 	}
+}
+
+// CalculateBackoff computes the exponential backoff duration for the given attempt number
+// (1-indexed). It applies the BackoffFactor, caps at MaxInterval, and optionally adds jitter.
+// This is the shared backoff calculation used by both Pregel graph-node retries and
+// agent-level model-call retries.
+func (p *RetryPolicy) CalculateBackoff(attempt int) time.Duration {
+	backoff := time.Duration(float64(p.InitialInterval) * powFloat(p.BackoffFactor, attempt-1))
+	if backoff > p.MaxInterval {
+		backoff = p.MaxInterval
+	}
+	if p.Jitter {
+		// Subtract up to 50% to spread retry bursts.
+		jitter := time.Duration(float64(backoff) * 0.5 * randFloat())
+		backoff = backoff - jitter
+		if backoff < 0 {
+			backoff = 0
+		}
+	}
+	return backoff
+}
+
+// powFloat computes base^exp for float base (small int exponents).
+func powFloat(base float64, exp int) float64 {
+	result := 1.0
+	for i := 0; i < exp; i++ {
+		result *= base
+	}
+	return result
+}
+
+// randFloat returns a random float in [0,1).
+func randFloat() float64 {
+	return rand.Float64()
 }
 
 // DefaultRetryOn is the default retry condition function.

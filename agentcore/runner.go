@@ -82,24 +82,14 @@ func runImpl[M MessageType](a TypedAgent[M], streaming bool, store CheckPointSto
 		fa := toFlowAgent(ctx, ca)
 		if store != nil { fa.checkPointStore = store }
 		ci := any(input).(*AgentInput)
-		ctx = ctxWithNewTypedRunCtx(ctx, input, o.sharedParentSession)
-		AddSessionValues(ctx, o.sessionValues)
-		iter := fa.Run(ctx, ci, opts...)
-		if store == nil && o.cancelCtx == nil { return any(iter).(*AsyncIterator[*TypedAgentEvent[M]]) }
-		nit, gen := NewAsyncIteratorPair[*TypedAgentEvent[M]]()
-		go handleIter(streaming, store, ctx, any(iter).(*AsyncIterator[*TypedAgentEvent[M]]), gen, o.checkPointID, o.cancelCtx)
-		return nit
+		ctx = setupRunContext(ctx, input, o)
+		return wrapIterForStore(streaming, store, ctx, any(fa.Run(ctx, ci, opts...)).(*AsyncIterator[*TypedAgentEvent[M]]), o)
 	}
 
 	tfa := toTypedFlowAgent(a)
 	if store != nil { tfa.checkPointStore = store }
-	ctx = ctxWithNewTypedRunCtx(ctx, input, o.sharedParentSession)
-	AddSessionValues(ctx, o.sessionValues)
-	iter := tfa.Run(ctx, input, opts...)
-	if store == nil && o.cancelCtx == nil { return iter }
-	nit, gen := NewAsyncIteratorPair[*TypedAgentEvent[M]]()
-	go handleIter(streaming, store, ctx, iter, gen, o.checkPointID, o.cancelCtx)
-	return nit
+	ctx = setupRunContext(ctx, input, o)
+	return wrapIterForStore(streaming, store, ctx, tfa.Run(ctx, input, opts...), o)
 }
 
 func resumeInternal[M MessageType](a TypedAgent[M], store CheckPointStore, ctx context.Context, cid string, data map[string]any, opts ...RunOption) (*AsyncIterator[*TypedAgentEvent[M]], error) {
@@ -121,19 +111,37 @@ func resumeInternal[M MessageType](a TypedAgent[M], store CheckPointStore, ctx c
 		fa := toFlowAgent(ctx, ca)
 		ra, ok := Agent(fa).(ResumableAgent)
 		if !ok { return nil, fmt.Errorf("agent %T does not support resume", a) }
-		ai := ra.Resume(ctx, info, opts...)
-		nit, gen := NewAsyncIteratorPair[*TypedAgentEvent[M]]()
-		go handleIter(streaming, store, ctx, any(ai).(*AsyncIterator[*TypedAgentEvent[M]]), gen, &cid, o.cancelCtx)
-		return nit, nil
+		return newIterForStore(streaming, store, ctx, any(ra.Resume(ctx, info, opts...)).(*AsyncIterator[*TypedAgentEvent[M]]), &cid, o.cancelCtx), nil
 	}
 
 	tfa := toTypedFlowAgent(a)
 	ra, ok := TypedAgent[M](tfa).(TypedResumableAgent[M])
 	if !ok { return nil, fmt.Errorf("agent %T does not support resume", a) }
-	ai := ra.Resume(ctx, info, opts...)
+	return newIterForStore(streaming, store, ctx, ra.Resume(ctx, info, opts...), &cid, o.cancelCtx), nil
+}
+
+// setupRunContext initializes the run context and applies session values for a new Run.
+func setupRunContext[M MessageType](ctx context.Context, input *TypedAgentInput[M], o *runOptions) context.Context {
+	ctx = ctxWithNewTypedRunCtx(ctx, input, o.sharedParentSession)
+	AddSessionValues(ctx, o.sessionValues)
+	return ctx
+}
+
+// wrapIterForStore conditionally wraps an event iterator with handleIter when a checkpoint
+// store or cancel context is active. Returns the original iterator unchanged otherwise.
+func wrapIterForStore[M MessageType](streaming bool, store CheckPointStore, ctx context.Context, iter *AsyncIterator[*TypedAgentEvent[M]], o *runOptions) *AsyncIterator[*TypedAgentEvent[M]] {
+	if store == nil && o.cancelCtx == nil {
+		return iter
+	}
+	return newIterForStore(streaming, store, ctx, iter, o.checkPointID, o.cancelCtx)
+}
+
+// newIterForStore creates a new iterator pair backed by handleIter for checkpoint store
+// and cancel handling.
+func newIterForStore[M MessageType](streaming bool, store CheckPointStore, ctx context.Context, iter *AsyncIterator[*TypedAgentEvent[M]], cid *string, cc *cancelContext) *AsyncIterator[*TypedAgentEvent[M]] {
 	nit, gen := NewAsyncIteratorPair[*TypedAgentEvent[M]]()
-	go handleIter(streaming, store, ctx, ai, gen, &cid, o.cancelCtx)
-	return nit, nil
+	go handleIter(streaming, store, ctx, iter, gen, cid, cc)
+	return nit
 }
 
 func handleIter[M MessageType](streaming bool, store CheckPointStore, ctx context.Context, ai *AsyncIterator[*TypedAgentEvent[M]], gen *AsyncGenerator[*TypedAgentEvent[M]], cid *string, cc *cancelContext) {
