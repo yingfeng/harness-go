@@ -292,6 +292,94 @@ prepare_input → model_generate → execute_tools → check_done
 
 ---
 
+## Tool Invocation System
+
+### ToolInvocationContext (`tool_invoke.go`)
+
+Unified context object for tool invocations, replacing separate endpoint function
+signatures with a single struct:
+
+| Field | Type | Purpose |
+|---|---|---|
+| `Name` | `string` | Tool name |
+| `CallID` | `string` | LLM call identifier |
+| `Arguments` | `*schema.ToolArgument` | Structured input |
+| `Result` | `*schema.ToolResult` | Execution output |
+| `Timeout` | `time.Duration` | Per-invocation timeout |
+| `RetryConfig` | `*ToolRetryConfig` | Per-invocation retry |
+
+### ToolWrapper Chain (`tool_invoke.go`)
+
+`ToolInvokeMiddleware` chains composable behaviors:
+
+```go
+tool := ToolWrapperChain(
+    ToolToInvokeFn(myTool),
+    NewTimeoutToolMiddleware(5*time.Second),
+    NewRetryToolMiddleware(&ToolRetryConfig{MaxAttempts: 3}),
+    NewFallbackToolMiddleware(fallbackFn),
+)
+```
+
+Built-in wrappers:
+- **Timeout** — context-based deadline per invocation
+- **Retry** — exponential backoff with configurable IsRetryable predicate
+- **Fallback** — secondary function on primary failure
+
+### Approval Mechanism (`tool_invoke.go`)
+
+`ApprovalMiddleware` enables human-in-the-loop for tool calls:
+
+```go
+chain := ToolWrapperChain(
+    ToolToInvokeFn(myTool),
+    ApprovalMiddleware(func(ctx, ictx) (*ApprovalRequest, error) {
+        return &ApprovalRequest{
+            ToolName: ictx.Name,
+            ApproveChan: make(chan bool, 1),
+        }, nil
+    }),
+)
+```
+
+`AutoApprovalMiddleware()` skips approval (useful for testing).
+
+### ToolRegistry (`tool_registry.go`)
+
+Centralized tool management replacing raw `[]Tool` slices:
+
+| Method | Purpose |
+|---|---|
+| `Register(tool, opts...)` | Register with aliases and categories |
+| `Lookup(name)` | Find by name or alias |
+| `LookupByCategory(cat)` | Filter by category |
+| `AllTools()` / `ToSlice()` | List all tools |
+| `Filter(predicate)` | Create filtered subset |
+| `Merge(other)` | Combine registries |
+| `Unregister(name)` | Remove tool |
+
+Options: `WithAlias`, `WithCategory`.
+
+### Reflection Schema Generation (`tool_schema.go`)
+
+`ReflectTool[T]` creates a Tool from any function using reflection:
+
+```go
+type WeatherArgs struct {
+    City string `json:"city" description:"The city name"`
+}
+
+tool, _ := ReflectTool("get_weather", "Get current weather",
+    func(ctx context.Context, args *WeatherArgs) (string, error) {
+        return fmt.Sprintf("Weather in %s: sunny", args.City), nil
+    })
+```
+
+`GenerateToolInfo[T]` generates `*schema.ToolInfo` from struct types, reading
+`json`, `description`, and `enum` struct tags for schema metadata.
+
+---
+
 ## File Map
 
 | File | Purpose |
@@ -320,6 +408,13 @@ prepare_input → model_generate → execute_tools → check_done
 | `resume_data.go` | Resume data types |
 | `agent_handoff.go` | Deterministic agent-to-agent transfer, message ID utilities |
 | `turn_buffer.go` | AgentLoop buffer implementation |
+| `session.go` | Run context, session management, BranchEvents for parallel isolation |
+| `react_graph.go` | ReActGraph: graph-level ReAct loop with StateGraph |
+| `utils.go` | Utility functions (AsyncIterator, AsyncGenerator) |
+| `tool.go` | Tool-related helpers |
+| **`tool_invoke.go`** | ToolInvocationContext, ToolInvokeMiddleware, Timeout/Retry/Fallback wrappers, Approval mechanism |
+| **`tool_registry.go`** | ToolRegistry: aliases, categories, filtering, merge |
+| **`tool_schema.go`** | Reflection-based ToolInfo generation, ReflectTool[T] |
 | `session.go` | Run context, session management, BranchEvents for parallel isolation |
 | `react_graph.go` | ReActGraph: graph-level ReAct loop with StateGraph |
 | `utils.go` | Utility functions (AsyncIterator, AsyncGenerator) |

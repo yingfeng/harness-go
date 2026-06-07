@@ -17,8 +17,12 @@ type ToolsNodeConfig struct {
 	// ReturnDirectly specifies tool names that cause the agent to return immediately.
 	ReturnDirectly map[string]bool
 
-	// ToolCallMiddlewares are middleware wrappers applied during tool invocation.
+	// ToolCallMiddlewares are middleware wrappers applied during tool invocation (legacy path).
 	ToolCallMiddlewares []ToolCallMiddleware
+
+	// ToolInvokeMiddlewares are new-style middleware wrappers using ToolInvocationContext.
+	// When set, they replace the legacy ToolCallMiddlewares path entirely.
+	ToolInvokeMiddlewares []ToolInvokeMiddleware
 
 	// EmitInternalEvents enables forwarding internal events from AgentTool children.
 	EmitInternalEvents bool
@@ -136,12 +140,52 @@ func (tn *ToolsNode[M]) executeOne(ctx context.Context, tc schema.ToolCall) (M, 
 		return tn.makeToolMsg(errMsg, tc.ID), nil
 	}
 
-	// Determine if this is an enhanced tool
+	// New-style ToolInvokeMiddleware path takes precedence.
+	if len(tn.config.ToolInvokeMiddlewares) > 0 {
+		return tn.executeWithNewChain(ctx, tc, tool)
+	}
+
+	// Legacy ToolCallMiddleware path.
 	if et, ok := tool.(EnhancedTool); ok {
 		return tn.executeEnhanced(ctx, tc, et)
 	}
+	return tn.executeStandard(ctx, tc, tool)
+}
 
-	// Standard tool path
+func (tn *ToolsNode[M]) executeWithNewChain(ctx context.Context, tc schema.ToolCall, tool Tool) (M, error) {
+	args := &schema.ToolArgument{
+		Name:      tc.Function.Name,
+		Arguments: tc.Function.Arguments,
+		CallID:    tc.ID,
+	}
+
+	ictx := &ToolInvocationContext{
+		Name:      tc.Function.Name,
+		CallID:    tc.ID,
+		Arguments: args,
+	}
+
+	var invokeFn InvokeTool
+	if et, ok := tool.(EnhancedTool); ok {
+		invokeFn = EnhancedToolToInvokeFn(et)
+	} else {
+		invokeFn = ToolToInvokeFn(tool)
+	}
+
+	chained := ToolWrapperChain(invokeFn, tn.config.ToolInvokeMiddlewares...)
+	result, err := chained(ctx, ictx)
+	if err != nil {
+		return tn.makeToolMsg(fmt.Sprintf("Error: %v", err), tc.ID), nil
+	}
+
+	content := result.Content
+	if result.Error != "" && content == "" {
+		content = fmt.Sprintf("Error: %s", result.Error)
+	}
+	return tn.makeToolMsg(content, tc.ID), nil
+}
+
+func (tn *ToolsNode[M]) executeStandard(ctx context.Context, tc schema.ToolCall, tool Tool) (M, error) {
 	args := &schema.ToolArgument{
 		Name:      tc.Function.Name,
 		Arguments: tc.Function.Arguments,
@@ -158,11 +202,9 @@ func (tn *ToolsNode[M]) executeOne(ctx context.Context, tc schema.ToolCall) (M, 
 
 	tCtx := &ToolContext{Name: tc.Function.Name, CallID: tc.ID}
 
-	// Apply user middlewares (standard path - wrap as InvokableToolEndpoint for compat)
 	wrappedEp := ep
 	for _, mw := range tn.config.ToolCallMiddlewares {
 		if mw.Invokable == nil { continue }
-		// Adapt enhanced endpoint to standard for middleware chain
 		compatEp := wrappedEp
 		var adaptErr error
 		wrappedEp = func(ctx context.Context, args *schema.ToolArgument, opts ...ToolOption) (*schema.ToolResult, error) {
@@ -207,7 +249,6 @@ func (tn *ToolsNode[M]) executeEnhanced(ctx context.Context, tc schema.ToolCall,
 
 	tCtx := &ToolContext{Name: tc.Function.Name, CallID: tc.ID}
 
-	// Apply enhanced middleware chain
 	for _, mw := range tn.config.ToolCallMiddlewares {
 		if mw.EnhancedInvokable == nil { continue }
 		var err error

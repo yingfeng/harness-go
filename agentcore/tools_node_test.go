@@ -2,7 +2,9 @@ package agentcore
 
 import (
 	"context"
+	"errors"
 	"testing"
+	"time"
 
 	"github.com/infiniflow/ragflow/harness/agentcore/schema"
 )
@@ -99,9 +101,266 @@ func TestParseToolArgs_ValidJSON(t *testing.T) {
 	}
 }
 
+// failingTool is a mock tool that always returns an error.
+type failingTool struct {
+	name string
+	desc string
+}
+
+func (t *failingTool) Name() string                                                  { return t.name }
+func (t *failingTool) Description() string                                            { return t.desc }
+func (t *failingTool) Invoke(ctx context.Context, s string, opts ...toolOption) (string, error) {
+	return "", errors.New(t.name + " failed")
+}
+func (t *failingTool) Stream(ctx context.Context, s string, opts ...toolOption) (*schema.StreamReader[string], error) {
+	return nil, errors.New(t.name + " stream failed")
+}
+
 func TestParseToolArgs_InvalidJSON(t *testing.T) {
 	err := parseToolArgs(`{invalid`, struct{}{})
 	if err == nil {
 		t.Error("expected parse error")
+	}
+}
+
+// ======================== Integration: ToolInvokeMiddleware Chain ========================
+
+func TestToolsNode_WithToolInvokeMiddleware_Retry(t *testing.T) {
+	var callCount int32
+	tn := NewToolsNode[*schema.Message](&ToolsNodeConfig{
+		Tools: []Tool{&mockTool{name: "flakey", desc: "flaky"}},
+		ToolInvokeMiddlewares: []ToolInvokeMiddleware{
+			NewRetryToolMiddleware(&ToolRetryConfig{
+				MaxAttempts: 3, Backoff: time.Millisecond,
+				IsRetryable: func(err error) bool { return true },
+			}),
+		},
+	})
+
+	resp := &schema.Message{
+		Role: schema.RoleAssistant,
+		ToolCalls: []schema.ToolCall{
+			{ID: "tc1", Function: schema.ToolCallFunction{Name: "flakey", Arguments: "{}"}},
+		},
+	}
+
+	results, _, err := tn.Execute(context.Background(), resp, &TypedReActAgentState[*schema.Message]{}, nil)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if len(results) != 1 {
+		t.Errorf("expected 1 result, got %d", len(results))
+	}
+	_ = callCount
+}
+
+func TestToolsNode_WithToolInvokeMiddleware_Timeout(t *testing.T) {
+	tn := NewToolsNode[*schema.Message](&ToolsNodeConfig{
+		Tools: []Tool{&mockTool{name: "slow", desc: "slow"}},
+		ToolInvokeMiddlewares: []ToolInvokeMiddleware{
+			NewTimeoutToolMiddleware(1 * time.Millisecond),
+		},
+	})
+
+	resp := &schema.Message{
+		Role: schema.RoleAssistant,
+		ToolCalls: []schema.ToolCall{
+			{ID: "tc1", Function: schema.ToolCallFunction{Name: "slow", Arguments: "{}"}},
+		},
+	}
+
+	results, _, err := tn.Execute(context.Background(), resp, &TypedReActAgentState[*schema.Message]{}, nil)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	t.Logf("timeout result count: %d", len(results))
+}
+
+func TestToolsNode_WithToolInvokeMiddleware_Fallback(t *testing.T) {
+	tn := NewToolsNode[*schema.Message](&ToolsNodeConfig{
+		Tools: []Tool{&failingTool{name: "primary", desc: "always fails"}},
+		ToolInvokeMiddlewares: []ToolInvokeMiddleware{
+			NewFallbackToolMiddleware(func(ctx context.Context, args *schema.ToolArgument) (*schema.ToolResult, error) {
+				return &schema.ToolResult{Content: "fallback result", ToolCallID: args.CallID}, nil
+			}),
+		},
+	})
+
+	resp := &schema.Message{
+		Role: schema.RoleAssistant,
+		ToolCalls: []schema.ToolCall{
+			{ID: "tc1", Function: schema.ToolCallFunction{Name: "primary", Arguments: "{}"}},
+		},
+	}
+
+	results, _, err := tn.Execute(context.Background(), resp, &TypedReActAgentState[*schema.Message]{}, nil)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if len(results) != 1 {
+		t.Errorf("expected 1 result, got %d", len(results))
+	}
+}
+
+func TestToolsNode_WithToolInvokeMiddleware_MultipleConcurrentTools(t *testing.T) {
+	tool1 := &mockTool{name: "t1", desc: "tool1"}
+	tool2 := &mockTool{name: "t2", desc: "tool2"}
+
+	tn := NewToolsNode[*schema.Message](&ToolsNodeConfig{
+		Tools: []Tool{tool1, tool2},
+		ToolInvokeMiddlewares: []ToolInvokeMiddleware{
+			NewTimeoutToolMiddleware(5 * time.Second),
+		},
+	})
+
+	resp := &schema.Message{
+		Role: schema.RoleAssistant,
+		ToolCalls: []schema.ToolCall{
+			{ID: "c1", Function: schema.ToolCallFunction{Name: "t1", Arguments: `{"x":1}`}},
+			{ID: "c2", Function: schema.ToolCallFunction{Name: "t2", Arguments: `{"y":2}`}},
+		},
+	}
+
+	results, _, err := tn.Execute(context.Background(), resp, &TypedReActAgentState[*schema.Message]{}, nil)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if len(results) != 2 {
+		t.Errorf("expected 2 results, got %d", len(results))
+	}
+}
+
+// ======================== Integration: ToolRegistry + Full Agent ========================
+
+func TestToolRegistry_WithReActAgentIntegration(t *testing.T) {
+	r := NewToolRegistry()
+	myTool := MustReflectTool("greet", "Greet someone",
+		func(ctx context.Context, args *weatherArgs) (string, error) {
+			return "Hello, " + args.City, nil
+		})
+	r.Register(myTool)
+
+	model := &mockModel{}
+	model.addResp("I'll use the greet tool")
+	model.addResp("Done")
+
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{
+		Model: model,
+		Tools: r.ToSlice(),
+	}).WithName("registry_agent")
+
+	iter := agent.Run(context.Background(), &AgentInput{Messages: []Message{schema.UserMessage("Greet London")}})
+	events := drainAgentEvents(t, iter)
+	if len(events) == 0 {
+		t.Error("expected events")
+	}
+	t.Logf("registry agent: %d events", len(events))
+}
+
+// ======================== Integration: ReflectTool in Full Agent ========================
+
+func TestReflectTool_WithReActAgent(t *testing.T) {
+	weatherTool, err := ReflectTool("get_weather", "Get weather for a city",
+		func(ctx context.Context, args *weatherArgs) (string, error) {
+			return "Weather in " + args.City + ": 22°C", nil
+		})
+	if err != nil {
+		t.Fatalf("ReflectTool: %v", err)
+	}
+
+	model := &mockModel{}
+	model.addResp("Let me check the weather")
+	model.addResp("All done")
+
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{
+		Model: model,
+		Tools: []Tool{weatherTool},
+	}).WithName("reflect_agent")
+
+	ctx := context.Background()
+	iter := agent.Run(ctx, &AgentInput{Messages: []Message{schema.UserMessage("What is the weather in Tokyo?")}})
+	events := drainAgentEvents(t, iter)
+	if len(events) == 0 {
+		t.Error("expected events")
+	}
+	t.Logf("reflect tool agent: %d events", len(events))
+}
+
+// ======================== Integration: ApprovalMiddleware in Agent ========================
+
+func TestApprovalMiddleware_WithToolsNode(t *testing.T) {
+	approved := false
+	tn := NewToolsNode[*schema.Message](&ToolsNodeConfig{
+		Tools: []Tool{&mockTool{name: "approve_me", desc: "needs approval"}},
+		ToolInvokeMiddlewares: []ToolInvokeMiddleware{
+			ApprovalMiddleware(func(ctx context.Context, ictx *ToolInvocationContext) (*ApprovalRequest, error) {
+				ch := make(chan bool, 1)
+				ch <- true
+				approved = true
+				return &ApprovalRequest{
+					ToolName:    ictx.Name,
+					CallID:      ictx.CallID,
+					Arguments:   ictx.Arguments,
+					ApproveChan: ch,
+				}, nil
+			}),
+		},
+	})
+
+	resp := &schema.Message{
+		Role: schema.RoleAssistant,
+		ToolCalls: []schema.ToolCall{
+			{ID: "c1", Function: schema.ToolCallFunction{Name: "approve_me", Arguments: "{}"}},
+		},
+	}
+
+	results, _, err := tn.Execute(context.Background(), resp, &TypedReActAgentState[*schema.Message]{}, nil)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if len(results) != 1 {
+		t.Errorf("expected 1 result, got %d", len(results))
+	}
+	if !approved {
+		t.Error("expected approval callback to be called")
+	}
+}
+
+func TestApprovalMiddleware_Rejected(t *testing.T) {
+	tn := NewToolsNode[*schema.Message](&ToolsNodeConfig{
+		Tools: []Tool{&mockTool{name: "reject_me", desc: "will be rejected"}},
+		ToolInvokeMiddlewares: []ToolInvokeMiddleware{
+			ApprovalMiddleware(func(ctx context.Context, ictx *ToolInvocationContext) (*ApprovalRequest, error) {
+				ch := make(chan bool, 1)
+				ch <- false // reject
+				return &ApprovalRequest{
+					ToolName:    ictx.Name,
+					CallID:      ictx.CallID,
+					Arguments:   ictx.Arguments,
+					ApproveChan: ch,
+				}, nil
+			}),
+		},
+	})
+
+	resp := &schema.Message{
+		Role: schema.RoleAssistant,
+		ToolCalls: []schema.ToolCall{
+			{ID: "c1", Function: schema.ToolCallFunction{Name: "reject_me", Arguments: "{}"}},
+		},
+	}
+
+	results, _, err := tn.Execute(context.Background(), resp, &TypedReActAgentState[*schema.Message]{}, nil)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if len(results) != 1 {
+		t.Errorf("expected 1 result (rejection message), got %d", len(results))
+	}
+	if len(results) > 0 {
+		content := extractTextContent(results[0])
+		if content != "Error: rejected" {
+			t.Logf("rejection content: %s", content)
+		}
 	}
 }

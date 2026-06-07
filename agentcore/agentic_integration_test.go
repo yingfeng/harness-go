@@ -3,6 +3,7 @@ package agentcore
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/infiniflow/ragflow/harness/agentcore/schema"
 )
@@ -170,6 +171,139 @@ func TestAgenticIntegration_EmptyInput(t *testing.T) {
 	if len(events) == 0 {
 		t.Error("expected events even with empty input")
 	}
+}
+
+// ======================== Tool Calling Integration Tests ========================
+
+func TestAgenticIntegration_ToolInvokeMiddlewareChain(t *testing.T) {
+	model := &mockModel{}
+	model.addResp("I'll call a tool")
+	model.addResp("Done")
+	tool := &mockTool{name: "search", desc: "search"}
+
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{
+		Model: model,
+		Tools: []Tool{tool},
+		ToolsConfig: &ToolsNodeConfig{
+			Tools: []Tool{tool},
+			ToolInvokeMiddlewares: []ToolInvokeMiddleware{
+				NewTimeoutToolMiddleware(5 * time.Second),
+			},
+		},
+	}).WithName("mw_chain_e2e")
+
+	iter := agent.Run(context.Background(), &AgentInput{Messages: []Message{schema.UserMessage("search")}})
+	events := drainAgentEvents(t, iter)
+	if len(events) == 0 {
+		t.Error("expected events")
+	}
+	t.Logf("mw chain integration: %d events", len(events))
+}
+
+func TestAgenticIntegration_ReflectToolAgent(t *testing.T) {
+	weatherTool, err := ReflectTool("get_weather", "Get weather",
+		func(ctx context.Context, args *weatherArgs) (string, error) {
+			return "Weather in " + args.City + ": 22°C", nil
+		})
+	if err != nil {
+		t.Fatalf("ReflectTool: %v", err)
+	}
+
+	model := &mockModel{}
+	model.addResp("Let me check weather")
+	model.addResp("Done")
+
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{
+		Model: model,
+		Tools: []Tool{weatherTool},
+	}).WithName("reflect_e2e")
+
+	iter := agent.Run(context.Background(), &AgentInput{Messages: []Message{schema.UserMessage("weather in Tokyo")}})
+	events := drainAgentEvents(t, iter)
+	if len(events) == 0 {
+		t.Error("expected events")
+	}
+	t.Logf("reflect tool e2e: %d events", len(events))
+}
+
+func TestAgenticIntegration_ToolRegistryAgent(t *testing.T) {
+	r := NewToolRegistry()
+	searchTool := MustReflectTool("web_search", "Search web",
+		func(ctx context.Context, args *weatherArgs) (string, error) {
+			return "Search results for " + args.City, nil
+		})
+	r.Register(searchTool, WithAlias("search"), WithCategory("web"))
+
+	model := &mockModel{}
+	model.addResp("I'll search")
+	model.addResp("Results ready")
+
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{
+		Model: model,
+		Tools: r.ToSlice(),
+	}).WithName("registry_e2e")
+
+	iter := agent.Run(context.Background(), &AgentInput{Messages: []Message{schema.UserMessage("search for London")}})
+	events := drainAgentEvents(t, iter)
+	if len(events) == 0 {
+		t.Error("expected events")
+	}
+	t.Logf("registry e2e: %d events", len(events))
+}
+
+func TestAgenticIntegration_RetryToolMiddleware(t *testing.T) {
+	model := &mockModel{}
+	model.addResp("Calling tool")
+	model.addResp("Finally done")
+	tool := &mockTool{name: "flakey_tool", desc: "might fail"}
+
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{
+		Model: model,
+		Tools: []Tool{tool},
+		ToolsConfig: &ToolsNodeConfig{
+			Tools: []Tool{tool},
+			ToolInvokeMiddlewares: []ToolInvokeMiddleware{
+				NewRetryToolMiddleware(&ToolRetryConfig{
+					MaxAttempts: 2, Backoff: time.Millisecond,
+					IsRetryable: func(err error) bool { return true },
+				}),
+			},
+		},
+	}).WithName("retry_tool_e2e")
+
+	iter := agent.Run(context.Background(), &AgentInput{Messages: []Message{schema.UserMessage("run")}})
+	events := drainAgentEvents(t, iter)
+	if len(events) == 0 {
+		t.Error("expected events")
+	}
+	t.Logf("retry tool e2e: %d events", len(events))
+}
+
+func TestAgenticIntegration_ToolFallback(t *testing.T) {
+	model := &mockModel{}
+	model.addResp("Using primary tool")
+	model.addResp("Fallback complete")
+	primary := &mockTool{name: "primary", desc: "primary"}
+
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{
+		Model: model,
+		Tools: []Tool{primary},
+		ToolsConfig: &ToolsNodeConfig{
+			Tools: []Tool{primary},
+			ToolInvokeMiddlewares: []ToolInvokeMiddleware{
+				NewFallbackToolMiddleware(func(ctx context.Context, args *schema.ToolArgument) (*schema.ToolResult, error) {
+					return &schema.ToolResult{Content: "fallback result", ToolCallID: args.CallID}, nil
+				}),
+			},
+		},
+	}).WithName("fallback_e2e")
+
+	iter := agent.Run(context.Background(), &AgentInput{Messages: []Message{schema.UserMessage("run")}})
+	events := drainAgentEvents(t, iter)
+	if len(events) == 0 {
+		t.Error("expected events")
+	}
+	t.Logf("fallback e2e: %d events", len(events))
 }
 
 func TestAgenticIntegration_ModelErrorRecovery(t *testing.T) {
