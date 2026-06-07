@@ -40,8 +40,7 @@ type WorkflowGraphState struct {
 
 // WorkflowGraph wraps a CompiledGraph that runs sub-agents as graph nodes.
 type WorkflowGraph struct {
-	compiled     *graph.CompiledGraph
-	subAgentIter func(ctx context.Context, idx int, state *WorkflowGraphState) error
+	compiled *graph.CompiledGraph
 }
 
 // ---- Sequential ----
@@ -115,12 +114,11 @@ func NewSequentialGraph(ctx context.Context, cfg *SequentialConfig, cptr graph.C
 // ---- Parallel ----
 
 // NewParallelGraph builds a StateGraph where sub-agents run in parallel via
-// graph branches. Each sub-agent produces output independently, and the
-// graph engine's BSP model aggregates results automatically.
+// a split node that fans out to all sub-agents.
 //
-//	     ┌→ sub_0 ─┐
-//	start─┼→ sub_1 ─┼→ end
-//	     └→ sub_n ─┘
+//	start → __wf_split__ ─┬→ sub_0 ─┬→ end
+//	                      ├→ sub_1 ─┤
+//	                      └→ sub_n ─┘
 func NewParallelGraph(ctx context.Context, cfg *ParallelConfig, cptr graph.Checkpointer, interrupts ...string) (*WorkflowGraph, error) {
 	sg := graph.NewStateGraph(&WorkflowGraphState{})
 
@@ -128,6 +126,12 @@ func NewParallelGraph(ctx context.Context, cfg *ParallelConfig, cptr graph.Check
 	for i, a := range cfg.SubAgents {
 		names[i] = a.Name(ctx)
 	}
+
+	// Add a split node that fans out to all sub-agents via multiple outgoing edges.
+	sg.AddNode("__wf_split__", func(ctx context.Context, state interface{}) (interface{}, error) {
+		return state, nil
+	})
+	sg.AddEdge(constants.Start, "__wf_split__")
 
 	// Each sub-agent is a node that appends its output.
 	for i, agent := range cfg.SubAgents {
@@ -151,30 +155,15 @@ func NewParallelGraph(ctx context.Context, cfg *ParallelConfig, cptr graph.Check
 					s.Messages = append(s.Messages, ev.Output.MessageOutput.Message)
 				}
 			}
-			return s, nil
+			// Return only the Messages field to avoid concurrent writes to
+			// other struct fields (Done, CurrentStep, etc.) from parallel nodes.
+			return map[string]interface{}{
+				"Messages": s.Messages,
+			}, nil
 		})
+		sg.AddEdge("__wf_split__", nodeName)
+		sg.AddEdge(nodeName, constants.End)
 	}
-
-	// Branch from start to all sub-agents.
-	sg.AddEdge(constants.Start, "sub_0")
-	var branchTargets []string
-	for i := range cfg.SubAgents {
-		branchTargets = append(branchTargets, fmt.Sprintf("sub_%d", i))
-	}
-	// Use conditional edges to fan out (Pregel BSP model handles parallelism).
-	sg.AddConditionalEdges(constants.Start,
-		func(ctx context.Context, state interface{}) (interface{}, error) {
-			// Fan out to all sub-agents.
-			return branchTargets[0], nil
-		},
-		makeMap(branchTargets),
-	)
-
-	// Each sub-agent goes to end.
-	for _, target := range branchTargets[1:] {
-		sg.AddEdge(target, constants.End)
-	}
-	sg.AddEdge(branchTargets[0], constants.End)
 
 	compileOpts := []graph.CompileOption{
 		graph.WithRecursionLimit(len(cfg.SubAgents) * 2),
@@ -265,6 +254,9 @@ func NewLoopGraph(ctx context.Context, cfg *LoopConfig, cptr graph.Checkpointer,
 			"sub_0":       "sub_0",
 		},
 	)
+	// Mark lastNode as a finish point so graph validation passes. The
+	// conditional edge to End is the actual runtime termination path.
+	sg.SetFinishPoint(lastNode)
 
 	compileOpts := []graph.CompileOption{
 		graph.WithRecursionLimit(maxIter*len(cfg.SubAgents) + 5),
@@ -286,43 +278,85 @@ func NewLoopGraph(ctx context.Context, cfg *LoopConfig, cptr graph.Checkpointer,
 
 // ---- Invocation ----
 
+// toWorkflowGraphState converts the engine's result (map or typed struct)
+// back to *WorkflowGraphState. The Pregel engine serializes state through
+// channels which may flatten structs into map[string]interface{}.
+func toWorkflowGraphState(result interface{}) (*WorkflowGraphState, error) {
+	switch v := result.(type) {
+	case *WorkflowGraphState:
+		return v, nil
+	case map[string]interface{}:
+		return mapToWorkflowGraphState(v)
+	default:
+		return nil, fmt.Errorf("unexpected result type %T from workflow graph", result)
+	}
+}
+
+// mapToWorkflowGraphState converts a map result to WorkflowGraphState.
+// The Pregel engine uses Go struct field names as channel keys (PascalCase).
+func mapToWorkflowGraphState(m map[string]interface{}) (*WorkflowGraphState, error) {
+	s := &WorkflowGraphState{}
+	if msgs, ok := m["Messages"]; ok {
+		if msgList, ok := msgs.([]*schema.Message); ok {
+			s.Messages = msgList
+		} else if rawList, ok := msgs.([]interface{}); ok {
+			for _, raw := range rawList {
+				if msg, ok := raw.(*schema.Message); ok {
+					s.Messages = append(s.Messages, msg)
+				}
+			}
+		}
+	}
+	if step, ok := m["CurrentStep"].(int); ok {
+		s.CurrentStep = step
+	} else if step, ok := m["CurrentStep"].(float64); ok {
+		s.CurrentStep = int(step)
+	}
+	if iter, ok := m["LoopIter"].(int); ok {
+		s.LoopIter = iter
+	} else if iter, ok := m["LoopIter"].(float64); ok {
+		s.LoopIter = int(iter)
+	}
+	if maxIter, ok := m["MaxLoopIter"].(int); ok {
+		s.MaxLoopIter = maxIter
+	} else if maxIter, ok := m["MaxLoopIter"].(float64); ok {
+		s.MaxLoopIter = int(maxIter)
+	}
+	if done, ok := m["Done"].(bool); ok {
+		s.Done = done
+	}
+	return s, nil
+}
+
 // Invoke runs the workflow graph synchronously and returns the final state.
 func (wg *WorkflowGraph) Invoke(ctx context.Context, input *AgentInput) (*WorkflowGraphState, error) {
 	state := &WorkflowGraphState{
-		Messages:      input.Messages,
-		CurrentStep:   0,
+		Messages:    input.Messages,
+		CurrentStep: 0,
 	}
 	result, err := wg.compiled.Invoke(ctx, state)
 	if err != nil {
 		return nil, err
 	}
-	outState, ok := result.(*WorkflowGraphState)
-	if !ok {
-		return nil, fmt.Errorf("unexpected result type %T from workflow graph", result)
-	}
-	return outState, nil
+	return toWorkflowGraphState(result)
 }
 
 // Stream runs the workflow graph with streaming events via Pregel.
 func (wg *WorkflowGraph) Stream(ctx context.Context, input *AgentInput, mode types.StreamMode) (<-chan interface{}, <-chan error) {
 	state := &WorkflowGraphState{
-		Messages:      input.Messages,
-		CurrentStep:   0,
+		Messages:    input.Messages,
+		CurrentStep: 0,
 	}
 	return wg.compiled.Stream(ctx, state, mode)
 }
 
 // Resume resumes a previously interrupted workflow.
 func (wg *WorkflowGraph) Resume(ctx context.Context) (*WorkflowGraphState, error) {
-	result, err := wg.compiled.Invoke(ctx, nil)
+	result, err := wg.compiled.Invoke(ctx, &WorkflowGraphState{})
 	if err != nil {
 		return nil, err
 	}
-	outState, ok := result.(*WorkflowGraphState)
-	if !ok {
-		return nil, fmt.Errorf("unexpected result type %T from resumed workflow", result)
-	}
-	return outState, nil
+	return toWorkflowGraphState(result)
 }
 
 // Compile returns the underlying CompiledGraph.
