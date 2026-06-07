@@ -12,8 +12,8 @@ import (
 func TestWorkflow_SequentialAgent(t *testing.T) {
 	m1 := &mockModel{}; m1.addResp("A1")
 	m2 := &mockModel{}; m2.addResp("A2")
-	a1 := chatModelAgentSetup(m1, nil); a1.name = "seq_a1"
-	a2 := chatModelAgentSetup(m2, nil); a2.name = "seq_a2"
+	a1 := reActAgentSetup(m1, nil); a1.name = "seq_a1"
+	a2 := reActAgentSetup(m2, nil); a2.name = "seq_a2"
 
 	ctx := context.Background()
 	wf, err := NewSequential(ctx, &SequentialConfig{
@@ -33,8 +33,8 @@ func TestWorkflow_SequentialAgent(t *testing.T) {
 func TestWorkflow_ParallelAgent(t *testing.T) {
 	m1 := &mockModel{}; m1.addResp("P1")
 	m2 := &mockModel{}; m2.addResp("P2")
-	a1 := chatModelAgentSetup(m1, nil); a1.name = "par_a1"
-	a2 := chatModelAgentSetup(m2, nil); a2.name = "par_a2"
+	a1 := reActAgentSetup(m1, nil); a1.name = "par_a1"
+	a2 := reActAgentSetup(m2, nil); a2.name = "par_a2"
 
 	ctx := context.Background()
 	wf, err := NewParallel(ctx, &ParallelConfig{
@@ -56,8 +56,8 @@ func TestWorkflow_NestedParallel(t *testing.T) {
 	m2 := &mockModel{}; m2.addResp("inner2")
 	m3 := &mockModel{}; m3.addResp("outer")
 
-	a1 := chatModelAgentSetup(m1, nil); a1.name = "inner_a"
-	a2 := chatModelAgentSetup(m2, nil); a2.name = "inner_b"
+	a1 := reActAgentSetup(m1, nil); a1.name = "inner_a"
+	a2 := reActAgentSetup(m2, nil); a2.name = "inner_b"
 
 	innerPar, err := NewParallel(context.Background(), &ParallelConfig{
 		Name: "inner-par", Description: "inner parallel", SubAgents: []Agent{a1, a2},
@@ -66,7 +66,7 @@ func TestWorkflow_NestedParallel(t *testing.T) {
 		t.Fatalf("NewParallel: %v", err)
 	}
 
-	a3 := chatModelAgentSetup(m3, nil); a3.name = "outer"
+	a3 := reActAgentSetup(m3, nil); a3.name = "outer"
 	wf, err := NewSequential(context.Background(), &SequentialConfig{
 		Name: "nested", Description: "nested parallel", SubAgents: []Agent{innerPar, a3},
 	})
@@ -84,7 +84,7 @@ func TestWorkflow_NestedParallel(t *testing.T) {
 
 func TestWorkflow_LoopAgent(t *testing.T) {
 	m := &mockModel{}; m.addResp("loop body")
-	body := chatModelAgentSetup(m, nil); body.name = "loop_body"
+	body := reActAgentSetup(m, nil); body.name = "loop_body"
 
 	ctx := context.Background()
 	wf, err := NewLoop(ctx, &LoopConfig{
@@ -119,7 +119,7 @@ func TestWorkflow_UnsupportedMode(t *testing.T) {
 
 func TestAgenticIntegration_BasicGenerate(t *testing.T) {
 	model := &mockModel{}; model.addResp("Hello!")
-	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: model}).WithName("e2e")
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{Model: model}).WithName("e2e")
 
 	iter := agent.Run(context.Background(), &AgentInput{Messages: []Message{schema.UserMessage("Hi")}})
 	events := drainAgentEvents(t, iter)
@@ -134,7 +134,7 @@ func TestAgenticIntegration_ToolInvocation(t *testing.T) {
 	model.addResp("Here are results")
 	tool := &mockTool{name: "search", desc: "search tool"}
 
-	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{
 		Model: model, Tools: []Tool{tool},
 	}).WithName("tool_e2e")
 
@@ -150,7 +150,7 @@ func TestAgenticIntegration_StreamingOutput(t *testing.T) {
 	model := &mockModel{}
 	model.addResp("streaming response")
 
-	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: model}).WithName("stream_e2e")
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{Model: model}).WithName("stream_e2e")
 
 	ctx := context.Background()
 	iter := agent.Run(ctx, &AgentInput{Messages: []Message{schema.UserMessage("stream test")}})
@@ -162,7 +162,7 @@ func TestAgenticIntegration_StreamingOutput(t *testing.T) {
 
 func TestAgenticIntegration_EmptyInput(t *testing.T) {
 	model := &mockModel{}; model.addResp("response")
-	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: model}).WithName("empty")
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{Model: model}).WithName("empty")
 
 	ctx := context.Background()
 	iter := agent.Run(ctx, &AgentInput{})
@@ -177,7 +177,7 @@ func TestAgenticIntegration_ModelErrorRecovery(t *testing.T) {
 	cfg := &ModelRetryConfig{MaxRetries: 5, IsRetryAble: func(_ context.Context, err error) bool { return true }}
 	wrapped := WithModelRetry(model, cfg)
 
-	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: wrapped}).WithName("retry_e2e")
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{Model: wrapped}).WithName("retry_e2e")
 
 	iter := agent.Run(context.Background(), &AgentInput{Messages: []Message{schema.UserMessage("retry test")}})
 	_ = drainAgentEvents(t, iter)

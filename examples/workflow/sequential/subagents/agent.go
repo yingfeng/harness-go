@@ -9,7 +9,7 @@ import (
 
 // NewPlanAgent creates a chat model agent that generates a research plan.
 func NewPlanAgent() agentcore.Agent {
-	return agentcore.NewChatModelAgent[*schema.Message](&agentcore.ChatModelConfig[*schema.Message]{
+	return agentcore.NewReActAgent[*schema.Message](&agentcore.ReActConfig[*schema.Message]{
 		Model: workflow.MockModel("PlannerAgent"),
 		Instruction: `You are an expert research planner.
 Your goal is to create a comprehensive, step-by-step research plan for a given topic.
@@ -20,7 +20,7 @@ The user will provide the research topic. Your output must ONLY be the research 
 
 // NewWriterAgent creates a chat model agent that writes a report based on a plan.
 func NewWriterAgent() agentcore.Agent {
-	return agentcore.NewChatModelAgent[*schema.Message](&agentcore.ChatModelConfig[*schema.Message]{
+	return agentcore.NewReActAgent[*schema.Message](&agentcore.ReActConfig[*schema.Message]{
 		Model: workflow.MockModel("WriterAgent"),
 		Instruction: `You are an expert academic writer.
 You will be provided with a detailed research plan.

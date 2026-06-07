@@ -9,7 +9,7 @@ import (
 
 // NewStockDataCollectionAgent returns a stock market data collector agent.
 func NewStockDataCollectionAgent() agentcore.Agent {
-	return agentcore.NewChatModelAgent[*schema.Message](&agentcore.ChatModelConfig[*schema.Message]{
+	return agentcore.NewReActAgent[*schema.Message](&agentcore.ReActConfig[*schema.Message]{
 		Model: workflow.MockModel("StockDataCollectionAgent"),
 		Instruction: `You are a Stock Data Collection Agent. Your role is to:
 
@@ -24,7 +24,7 @@ func NewStockDataCollectionAgent() agentcore.Agent {
 
 // NewNewsDataCollectionAgent returns a news data collector agent.
 func NewNewsDataCollectionAgent() agentcore.Agent {
-	return agentcore.NewChatModelAgent[*schema.Message](&agentcore.ChatModelConfig[*schema.Message]{
+	return agentcore.NewReActAgent[*schema.Message](&agentcore.ReActConfig[*schema.Message]{
 		Model: workflow.MockModel("NewsDataCollectionAgent"),
 		Instruction: `You are a News Data Collection Agent. Your responsibilities include:
 
@@ -39,7 +39,7 @@ func NewNewsDataCollectionAgent() agentcore.Agent {
 
 // NewSocialMediaInfoCollectionAgent returns a social media data collector agent.
 func NewSocialMediaInfoCollectionAgent() agentcore.Agent {
-	return agentcore.NewChatModelAgent[*schema.Message](&agentcore.ChatModelConfig[*schema.Message]{
+	return agentcore.NewReActAgent[*schema.Message](&agentcore.ReActConfig[*schema.Message]{
 		Model: workflow.MockModel("SocialMediaInformationCollectionAgent"),
 		Instruction: `You are a Social Media Information Collection Agent. Your tasks are to:
 

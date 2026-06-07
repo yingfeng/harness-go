@@ -13,7 +13,7 @@ func TestAgentTool_BasicInvocation(t *testing.T) {
 	// Inner agent: simple echo.
 	innerM := &mockModel{}
 	innerM.addResp("response from inner agent")
-	innerAgent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{
+	innerAgent := NewReActAgent(&ReActConfig[*schema.Message]{
 		Model: innerM,
 	}).WithName("inner").WithDescription("inner echo agent")
 
@@ -27,7 +27,7 @@ func TestAgentTool_BasicInvocation(t *testing.T) {
 		finalResp: "parent finished",
 		firstCall: true,
 	}
-	parent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{
+	parent := NewReActAgent(&ReActConfig[*schema.Message]{
 		Model:       parentM,
 		Tools:       []Tool{agentTool},
 		ToolsConfig: &ToolsNodeConfig{Tools: []Tool{agentTool}},
@@ -64,7 +64,7 @@ func TestAgentTool_BasicInvocation(t *testing.T) {
 func TestAgentTool_NestedWithCheckpoint(t *testing.T) {
 	innerM := &mockModel{}
 	innerM.addResp("nested result")
-	innerAgent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{
+	innerAgent := NewReActAgent(&ReActConfig[*schema.Message]{
 		Model: innerM,
 	}).WithName("nested").WithDescription("nested agent for checkpoint test")
 
@@ -77,7 +77,7 @@ func TestAgentTool_NestedWithCheckpoint(t *testing.T) {
 		finalResp: "with checkpoint",
 		firstCall: true,
 	}
-	parent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{
+	parent := NewReActAgent(&ReActConfig[*schema.Message]{
 		Model:       parentM,
 		Tools:       []Tool{agentTool},
 		ToolsConfig: &ToolsNodeConfig{Tools: []Tool{agentTool}},
@@ -110,7 +110,7 @@ func TestAgentTool_NestedWithCheckpoint(t *testing.T) {
 func TestAgentTool_EventForwarding(t *testing.T) {
 	innerM := &mockModel{}
 	innerM.addResp("forwarded response")
-	innerAgent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{
+	innerAgent := NewReActAgent(&ReActConfig[*schema.Message]{
 		Model: innerM,
 	}).WithName("forward_inner").WithDescription("inner with event forwarding")
 
@@ -123,7 +123,7 @@ func TestAgentTool_EventForwarding(t *testing.T) {
 		finalResp: "forwarded done",
 		firstCall: true,
 	}
-	parent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{
+	parent := NewReActAgent(&ReActConfig[*schema.Message]{
 		Model:       parentM,
 		Tools:       []Tool{agentTool},
 		ToolsConfig: &ToolsNodeConfig{Tools: []Tool{agentTool}},
@@ -158,7 +158,7 @@ func TestAgentTool_ResumeAfterInterrupt(t *testing.T) {
 		firstCall: true,
 	}
 	tool := &mockTool{name: "resume_inner_tool", desc: "tool for resume test"}
-	innerAgent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{
+	innerAgent := NewReActAgent(&ReActConfig[*schema.Message]{
 		Model:       innerM,
 		Tools:       []Tool{tool},
 		ToolsConfig: &ToolsNodeConfig{Tools: []Tool{tool}},
@@ -174,7 +174,7 @@ func TestAgentTool_ResumeAfterInterrupt(t *testing.T) {
 		finalResp: "parent after resume",
 		firstCall: true,
 	}
-	parent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{
+	parent := NewReActAgent(&ReActConfig[*schema.Message]{
 		Model:       parentM,
 		Tools:       []Tool{agentTool},
 		ToolsConfig: &ToolsNodeConfig{Tools: []Tool{agentTool}},

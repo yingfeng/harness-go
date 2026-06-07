@@ -11,7 +11,7 @@ import (
 
 // NewMainAgent creates the primary task-solving agent.
 func NewMainAgent() agentcore.Agent {
-	return agentcore.NewChatModelAgent[*schema.Message](&agentcore.ChatModelConfig[*schema.Message]{
+	return agentcore.NewReActAgent[*schema.Message](&agentcore.ReActConfig[*schema.Message]{
 		Model: workflow.MockModel("MainAgent"),
 		Instruction: `You are the main agent responsible for solving the user's task.
 Provide a comprehensive solution based on the given requirements.
@@ -28,7 +28,7 @@ func NewCritiqueAgent() agentcore.Agent {
 			return "Loop execution completed. Summary: " + args, nil
 		})
 
-	return agentcore.NewChatModelAgent[*schema.Message](&agentcore.ChatModelConfig[*schema.Message]{
+	return agentcore.NewReActAgent[*schema.Message](&agentcore.ReActConfig[*schema.Message]{
 		Model: workflow.MockModel("CritiqueAgent"),
 		Instruction: `You are a critique agent responsible for reviewing the main agent's work.
 Analyze the provided solution for accuracy, completeness, and quality.

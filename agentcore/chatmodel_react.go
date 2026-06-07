@@ -9,14 +9,14 @@ import (
 
 // ---- ReAct run function ----
 
-func (a *TypedChatModelAgent[M]) buildReActRunFunc() typedRunFunc[M] {
+func (a *ReActAgent[M]) buildReActRunFunc() typedRunFunc[M] {
 	return func(ctx context.Context, p *typedRunParams[M]) {
 		maxIter := a.config.MaxIterations
 		if maxIter <= 0 { maxIter = 10 }
 
-		var state *TypedChatModelAgentState[M]
+		var state *TypedReActAgentState[M]
 		if p.interruptState != nil { state = p.interruptState
-		} else { state = NewChatModelAgentState(p.input.Messages, a.exeCtx.toolInfos, maxIter) }
+		} else { state = NewReActAgentState(p.input.Messages, a.exeCtx.toolInfos, maxIter) }
 
 		// Deep copy input messages to prevent middleware side-effects
 		if len(state.Messages) > 0 {
@@ -38,7 +38,7 @@ func (a *TypedChatModelAgent[M]) buildReActRunFunc() typedRunFunc[M] {
 		}
 
 		// BeforeAgent middlewares
-		rc := &ChatModelAgentContext{Instruction: a.exeCtx.instruction, Tools: a.config.Tools, ReturnDirectly: a.exeCtx.returnDirectly, ToolSearchTool: a.exeCtx.toolSearchTool}
+		rc := &ReActAgentContext{Instruction: a.exeCtx.instruction, Tools: a.config.Tools, ReturnDirectly: a.exeCtx.returnDirectly, ToolSearchTool: a.exeCtx.toolSearchTool}
 		if err := a.runBeforeAgent(&ctx, rc, p.generator); err != nil { return }
 
 		model := BuildModelWrapperChain(a.config.Model, nil, a.config)
@@ -109,11 +109,11 @@ func (a *TypedChatModelAgent[M]) buildReActRunFunc() typedRunFunc[M] {
 }
 
 // executeInlineTools is the fallback when no ToolsNode is configured.
-func (a *TypedChatModelAgent[M]) executeInlineTools(
+func (a *ReActAgent[M]) executeInlineTools(
 	ctx context.Context,
 	toolCalls []schema.ToolCall,
-	rc *ChatModelAgentContext,
-	state *TypedChatModelAgentState[M],
+	rc *ReActAgentContext,
+	state *TypedReActAgentState[M],
 	gen *AsyncGenerator[*TypedAgentEvent[M]],
 ) (*AgentAction, error) {
 

@@ -91,7 +91,7 @@ type ModelContext = TypedModelContext[*schema.Message]
 
 // ---- Middleware interface ----
 //
-// TypedChatModelMiddleware[M MessageType] is the interface for agent middleware.
+// TypedReActMiddleware[M MessageType] is the interface for agent middleware.
 // Implement *BaseMiddleware[M] to get default no-op implementations, then override only what you need.
 //
 // Execution order (outermost to innermost wrapper chain):
@@ -106,11 +106,11 @@ type ModelContext = TypedModelContext[*schema.Message]
 //  2. WrapToolInvoke / WrapEnhancedInvokableToolCall (user wrappers)
 //  3. Tool.Invoke
 
-type TypedChatModelMiddleware[M MessageType] interface {
-	BeforeAgent(ctx context.Context, rc *ChatModelAgentContext) (context.Context, *ChatModelAgentContext, error)
-	AfterAgent(ctx context.Context, state *TypedChatModelAgentState[M]) (context.Context, error)
-	BeforeModelRewrite(ctx context.Context, state *TypedChatModelAgentState[M], mc *TypedModelContext[M]) (context.Context, *TypedChatModelAgentState[M], error)
-	AfterModelRewrite(ctx context.Context, state *TypedChatModelAgentState[M], mc *TypedModelContext[M]) (context.Context, *TypedChatModelAgentState[M], error)
+type TypedReActMiddleware[M MessageType] interface {
+	BeforeAgent(ctx context.Context, rc *ReActAgentContext) (context.Context, *ReActAgentContext, error)
+	AfterAgent(ctx context.Context, state *TypedReActAgentState[M]) (context.Context, error)
+	BeforeModelRewrite(ctx context.Context, state *TypedReActAgentState[M], mc *TypedModelContext[M]) (context.Context, *TypedReActAgentState[M], error)
+	AfterModelRewrite(ctx context.Context, state *TypedReActAgentState[M], mc *TypedModelContext[M]) (context.Context, *TypedReActAgentState[M], error)
 	WrapToolInvoke(ctx context.Context, ep InvokableToolEndpoint, tc *ToolContext) (InvokableToolEndpoint, error)
 	WrapToolStream(ctx context.Context, ep StreamableToolEndpoint, tc *ToolContext) (StreamableToolEndpoint, error)
 	// Enhanced tool wrappers: called for tools that return structured *schema.ToolResult
@@ -119,23 +119,23 @@ type TypedChatModelMiddleware[M MessageType] interface {
 	WrapModel(ctx context.Context, m ChatModel[M], mc *TypedModelContext[M]) (ChatModel[M], error)
 }
 
-type ChatModelMiddleware = TypedChatModelMiddleware[*schema.Message]
+type ReActMiddleware = TypedReActMiddleware[*schema.Message]
 
 // Alias names for Eino ADK compatibility.
 // These allow middlewares to use the same naming convention as Eino's ADK.
 type (
-	BeforeModelRewriteState[M MessageType] = TypedChatModelAgentState[M]
-	AfterModelRewriteState[M MessageType]  = TypedChatModelAgentState[M]
+	BeforeModelRewriteState[M MessageType] = TypedReActAgentState[M]
+	AfterModelRewriteState[M MessageType]  = TypedReActAgentState[M]
 )
 
-// BaseMiddleware provides no-op defaults for TypedChatModelMiddleware.
+// BaseMiddleware provides no-op defaults for TypedReActMiddleware.
 // Embed in custom middlewares to only override needed methods.
 type BaseMiddleware[M MessageType] struct{}
 
-func (b *BaseMiddleware[M]) BeforeAgent(ctx context.Context, rc *ChatModelAgentContext) (context.Context, *ChatModelAgentContext, error) { return ctx, rc, nil }
-func (b *BaseMiddleware[M]) AfterAgent(ctx context.Context, state *TypedChatModelAgentState[M]) (context.Context, error) { return ctx, nil }
-func (b *BaseMiddleware[M]) BeforeModelRewrite(ctx context.Context, state *TypedChatModelAgentState[M], mc *TypedModelContext[M]) (context.Context, *TypedChatModelAgentState[M], error) { return ctx, state, nil }
-func (b *BaseMiddleware[M]) AfterModelRewrite(ctx context.Context, state *TypedChatModelAgentState[M], mc *TypedModelContext[M]) (context.Context, *TypedChatModelAgentState[M], error) { return ctx, state, nil }
+func (b *BaseMiddleware[M]) BeforeAgent(ctx context.Context, rc *ReActAgentContext) (context.Context, *ReActAgentContext, error) { return ctx, rc, nil }
+func (b *BaseMiddleware[M]) AfterAgent(ctx context.Context, state *TypedReActAgentState[M]) (context.Context, error) { return ctx, nil }
+func (b *BaseMiddleware[M]) BeforeModelRewrite(ctx context.Context, state *TypedReActAgentState[M], mc *TypedModelContext[M]) (context.Context, *TypedReActAgentState[M], error) { return ctx, state, nil }
+func (b *BaseMiddleware[M]) AfterModelRewrite(ctx context.Context, state *TypedReActAgentState[M], mc *TypedModelContext[M]) (context.Context, *TypedReActAgentState[M], error) { return ctx, state, nil }
 func (b *BaseMiddleware[M]) WrapToolInvoke(_ context.Context, ep InvokableToolEndpoint, _ *ToolContext) (InvokableToolEndpoint, error) { return ep, nil }
 func (b *BaseMiddleware[M]) WrapToolStream(_ context.Context, ep StreamableToolEndpoint, _ *ToolContext) (StreamableToolEndpoint, error) { return ep, nil }
 func (b *BaseMiddleware[M]) WrapEnhancedInvokableToolCall(_ context.Context, ep EnhancedInvokableToolEndpoint, _ *ToolContext) (EnhancedInvokableToolEndpoint, error) { return ep, nil }

@@ -259,7 +259,7 @@ func TestTaskJSON(t *testing.T) {
 }
 
 func TestInitManager(t *testing.T) {
-	// Note: GetManagerFromContext requires a valid run context from within ChatModelAgent.
+	// Note: GetManagerFromContext requires a valid run context from within ReActAgent.
 	// This test verifies Manager creation and basic operations only.
 	m := NewManager()
 	if m == nil {

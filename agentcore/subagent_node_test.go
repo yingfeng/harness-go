@@ -13,7 +13,7 @@ import (
 func TestSubAgentNode_Simple(t *testing.T) {
 	m := &mockModel{}
 	m.addResp("sub-agent response")
-	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m}).WithName("worker")
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{Model: m}).WithName("worker")
 
 	sg := graph.NewStateGraph(map[string]interface{}{"Messages": []interface{}{}})
 	node := NewSubAgentNode(agent)
@@ -43,8 +43,8 @@ func TestSubAgentNode_SequentialChain(t *testing.T) {
 	m2 := &mockModel{}
 	m2.addResp("agent two")
 
-	a1 := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m1}).WithName("agent_a")
-	a2 := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m2}).WithName("agent_b")
+	a1 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m1}).WithName("agent_a")
+	a2 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m2}).WithName("agent_b")
 
 	sg := graph.NewStateGraph(map[string]interface{}{"Messages": []interface{}{}})
 	sg.AddNode("agent_a", NewSubAgentNode(a1))
@@ -71,7 +71,7 @@ func TestSubAgentNode_SequentialChain(t *testing.T) {
 func TestSubAgentNode_WithFieldMapping(t *testing.T) {
 	m := &mockModel{}
 	m.addResp("projected result")
-	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m}).WithName("projector")
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{Model: m}).WithName("projector")
 
 	sg := graph.NewStateGraph(map[string]interface{}{"query": "", "response": "", "Messages": []interface{}{}})
 	node := NewSubAgentNode(agent,
@@ -103,7 +103,7 @@ func TestSubAgentNode_WithFieldMapping(t *testing.T) {
 func TestSubAgentNode_BuilderCompile(t *testing.T) {
 	m := &mockModel{}
 	m.addResp("builder test")
-	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m}).WithName("builder_agent")
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{Model: m}).WithName("builder_agent")
 
 	sg := graph.NewStateGraph(map[string]interface{}{"Messages": []interface{}{}})
 	sg.AddNode("node1", NewSubAgentNode(agent))
@@ -124,7 +124,7 @@ func TestSubAgentNode_BuilderCompile(t *testing.T) {
 func TestSubAgentNode_WithSubAgentName(t *testing.T) {
 	m := &mockModel{}
 	m.addResp("named agent")
-	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m}).WithName("original_name")
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{Model: m}).WithName("original_name")
 
 	sg := graph.NewStateGraph(map[string]interface{}{"Messages": []interface{}{}})
 	node := NewSubAgentNode(agent, WithSubAgentName("custom_name"))
@@ -150,7 +150,7 @@ func TestSubAgentNode_WithSubAgentName(t *testing.T) {
 func TestSubAgentNode_CustomExtractor(t *testing.T) {
 	m := &mockModel{}
 	m.addResp("custom extractor ok")
-	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m}).WithName("extractor_test")
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{Model: m}).WithName("extractor_test")
 
 	sg := graph.NewStateGraph(map[string]interface{}{"data": "", "Messages": []interface{}{}})
 	node := NewSubAgentNode(agent,

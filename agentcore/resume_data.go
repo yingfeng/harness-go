@@ -1,7 +1,7 @@
 package agentcore
 
 // ResumeWithData creates a ResumeInfo with custom resume data.
-// Use this to pass ChatModelAgentResumeData (e.g., HistoryModifier)
+// Use this to pass ReActAgentResumeData (e.g., HistoryModifier)
 // when resuming an interrupted agent.
 func ResumeWithData(data any) *ResumeInfo {
 	return &ResumeInfo{ResumeData: data}
@@ -9,7 +9,7 @@ func ResumeWithData(data any) *ResumeInfo {
 
 // WithHistoryModifier returns a RunOption that sets a HistoryModifier
 // for modifying message history during resume.
-// Deprecated: Use ResumeWithData(ChatModelAgentResumeData{...}) instead.
+// Deprecated: Use ResumeWithData(ReActAgentResumeData{...}) instead.
 //
 // Note: This is defined in options.go and re-exported here for convenience.
 // The actual implementation is in options.go; this is just a documentation alias.

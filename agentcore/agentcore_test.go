@@ -140,10 +140,10 @@ func (m *loopToolModel) BindTools(tools []*schema.ToolInfo) error { return nil }
 
 type testMiddleware struct {
 	BaseMiddleware[*schema.Message]
-	beforeAgent        func(context.Context, *ChatModelAgentContext) (context.Context, *ChatModelAgentContext, error)
-	beforeModel        func(context.Context, *ChatModelAgentState, *ModelContext) (context.Context, *ChatModelAgentState, error)
-	afterModel         func(context.Context, *ChatModelAgentState, *ModelContext) (context.Context, *ChatModelAgentState, error)
-	afterAgent         func(context.Context, *ChatModelAgentState) (context.Context, error)
+	beforeAgent        func(context.Context, *ReActAgentContext) (context.Context, *ReActAgentContext, error)
+	beforeModel        func(context.Context, *ReActAgentState, *ModelContext) (context.Context, *ReActAgentState, error)
+	afterModel         func(context.Context, *ReActAgentState, *ModelContext) (context.Context, *ReActAgentState, error)
+	afterAgent         func(context.Context, *ReActAgentState) (context.Context, error)
 	wrapModel          func(context.Context, ChatModel[*schema.Message], *ModelContext) (ChatModel[*schema.Message], error)
 	wrapToolInvoke     func(context.Context, InvokableToolEndpoint, *ToolContext) (InvokableToolEndpoint, error)
 	wrapToolStream     func(context.Context, StreamableToolEndpoint, *ToolContext) (StreamableToolEndpoint, error)
@@ -151,19 +151,19 @@ type testMiddleware struct {
 	wrapEnhancedStream   func(context.Context, EnhancedStreamableToolEndpoint, *ToolContext) (EnhancedStreamableToolEndpoint, error)
 }
 
-func (m *testMiddleware) BeforeAgent(ctx context.Context, rc *ChatModelAgentContext) (context.Context, *ChatModelAgentContext, error) {
+func (m *testMiddleware) BeforeAgent(ctx context.Context, rc *ReActAgentContext) (context.Context, *ReActAgentContext, error) {
 	if m.beforeAgent != nil { return m.beforeAgent(ctx, rc) }
 	return ctx, rc, nil
 }
-func (m *testMiddleware) BeforeModelRewrite(ctx context.Context, state *ChatModelAgentState, mc *ModelContext) (context.Context, *ChatModelAgentState, error) {
+func (m *testMiddleware) BeforeModelRewrite(ctx context.Context, state *ReActAgentState, mc *ModelContext) (context.Context, *ReActAgentState, error) {
 	if m.beforeModel != nil { return m.beforeModel(ctx, state, mc) }
 	return ctx, state, nil
 }
-func (m *testMiddleware) AfterModelRewrite(ctx context.Context, state *ChatModelAgentState, mc *ModelContext) (context.Context, *ChatModelAgentState, error) {
+func (m *testMiddleware) AfterModelRewrite(ctx context.Context, state *ReActAgentState, mc *ModelContext) (context.Context, *ReActAgentState, error) {
 	if m.afterModel != nil { return m.afterModel(ctx, state, mc) }
 	return ctx, state, nil
 }
-func (m *testMiddleware) AfterAgent(ctx context.Context, state *ChatModelAgentState) (context.Context, error) {
+func (m *testMiddleware) AfterAgent(ctx context.Context, state *ReActAgentState) (context.Context, error) {
 	if m.afterAgent != nil { return m.afterAgent(ctx, state) }
 	return ctx, nil
 }

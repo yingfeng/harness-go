@@ -4,11 +4,11 @@ import (
 	"context"
 )
 
-// toolMiddlewareAdapter wraps a TypedChatModelMiddleware[M] as tool middleware.
+// toolMiddlewareAdapter wraps a TypedReActMiddleware[M] as tool middleware.
 // It delegates WrapToolInvoke/WrapToolStream/WrapEnhancedInvokableToolCall/WrapEnhancedStreamableToolCall
 // from the middleware interface.
 type toolMiddlewareAdapter[M MessageType] struct {
-	mw TypedChatModelMiddleware[M]
+	mw TypedReActMiddleware[M]
 }
 
 func (a *toolMiddlewareAdapter[M]) WrapInvokableToolCall(ctx context.Context, ep InvokableToolEndpoint, tc *ToolContext) (InvokableToolEndpoint, error) {
@@ -29,7 +29,7 @@ func (a *toolMiddlewareAdapter[M]) WrapEnhancedStreamableToolCall(ctx context.Co
 
 // HandlersToToolMiddlewares converts middleware handlers to tool-level middleware adapters.
 // The returned list can be used by ToolsNode to wrap tool endpoints.
-func HandlersToToolMiddlewares[M MessageType](handlers []TypedChatModelMiddleware[M]) []*toolMiddlewareAdapter[M] {
+func HandlersToToolMiddlewares[M MessageType](handlers []TypedReActMiddleware[M]) []*toolMiddlewareAdapter[M] {
 	if len(handlers) == 0 {
 		return nil
 	}

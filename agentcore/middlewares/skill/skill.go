@@ -52,15 +52,15 @@ type middleware[M agentcore.MessageType] struct {
 	cfg *TypedConfig[M]
 }
 
-func NewTyped[M agentcore.MessageType](cfg *TypedConfig[M]) agentcore.TypedChatModelMiddleware[M] {
+func NewTyped[M agentcore.MessageType](cfg *TypedConfig[M]) agentcore.TypedReActMiddleware[M] {
 	return &middleware[M]{cfg: cfg}
 }
 
-func New(cfg *TypedConfig[*schema.Message]) agentcore.TypedChatModelMiddleware[*schema.Message] {
+func New(cfg *TypedConfig[*schema.Message]) agentcore.TypedReActMiddleware[*schema.Message] {
 	return NewTyped[*schema.Message](cfg)
 }
 
-func (m *middleware[M]) BeforeAgent(ctx context.Context, rc *agentcore.ChatModelAgentContext) (context.Context, *agentcore.ChatModelAgentContext, error) {
+func (m *middleware[M]) BeforeAgent(ctx context.Context, rc *agentcore.ReActAgentContext) (context.Context, *agentcore.ReActAgentContext, error) {
 	if m.cfg == nil { return ctx, rc, nil }
 	skills := m.cfg.Skills
 	if len(skills) == 0 && m.cfg.Backend != nil {

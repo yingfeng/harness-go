@@ -16,7 +16,7 @@ type ClearConfig struct {
 
 // ClearOldToolResults removes old tool call messages from state before model rewrite.
 // This prevents the context window from being filled with stale tool results.
-func ClearOldToolResults[M agentcore.MessageType](ctx context.Context, state *agentcore.TypedChatModelAgentState[M], exclude []string) *agentcore.TypedChatModelAgentState[M] {
+func ClearOldToolResults[M agentcore.MessageType](ctx context.Context, state *agentcore.TypedReActAgentState[M], exclude []string) *agentcore.TypedReActAgentState[M] {
 	if state == nil || len(state.Messages) == 0 {
 		return state
 	}

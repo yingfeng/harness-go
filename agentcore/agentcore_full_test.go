@@ -12,18 +12,18 @@ import (
 
 // ======================== ChatModel Agent Tests ========================
 
-// chatModelAgentSetup creates a basic agent with given model and optional tools
-func chatModelAgentSetup(model ChatModel[*schema.Message], tools []Tool) *TypedChatModelAgent[*schema.Message] {
-	cfg := &ChatModelConfig[*schema.Message]{Model: model}
+// reActAgentSetup creates a basic agent with given model and optional tools
+func reActAgentSetup(model ChatModel[*schema.Message], tools []Tool) *ReActAgent[*schema.Message] {
+	cfg := &ReActConfig[*schema.Message]{Model: model}
 	if len(tools) > 0 { cfg.Tools = tools }
-	a := NewChatModelAgent(cfg)
+	a := NewReActAgent(cfg)
 	a.name = "test_cma"
 	return a
 }
 
-func TestChatModelAgent_BasicGenerate(t *testing.T) {
+func TestReActAgent_BasicGenerate(t *testing.T) {
 	model := &mockModel{}; model.addResp("Hello!")
-	agent := chatModelAgentSetup(model, nil)
+	agent := reActAgentSetup(model, nil)
 	iter := agent.Run(context.Background(), &AgentInput{Messages: []Message{schema.UserMessage("Hi")}})
 	events := drainAgentEvents(t, iter)
 	if len(events) == 0 { t.Fatal("expected events") }
@@ -36,7 +36,7 @@ func TestChatModelAgent_BasicGenerate(t *testing.T) {
 	if !found { t.Error("expected Hello! in output") }
 }
 
-func TestChatModelAgent_ToolCallAndResponse(t *testing.T) {
+func TestReActAgent_ToolCallAndResponse(t *testing.T) {
 	inner := &mockModel{}
 	inner.addResp("final")
 	wrapperModel := &forcedToolModel{
@@ -44,16 +44,16 @@ func TestChatModelAgent_ToolCallAndResponse(t *testing.T) {
 		finalResp: "Final answer", firstCall: true,
 	}
 	tool := &mockTool{name: "search", desc: "Search tool"}
-	agent := chatModelAgentSetup(wrapperModel, []Tool{tool})
+	agent := reActAgentSetup(wrapperModel, []Tool{tool})
 	iter := agent.Run(context.Background(), &AgentInput{Messages: []Message{schema.UserMessage("Search")}})
 	drainAgentEvents(t, iter)
 	if !tool.executed { t.Error("tool not executed") }
 }
 
-func TestChatModelAgent_MaxIterationsExceeded(t *testing.T) {
+func TestReActAgent_MaxIterationsExceeded(t *testing.T) {
 	loopModel := &loopToolModel{toolCalls: []schema.ToolCall{{ID: "c1", Function: schema.ToolCallFunction{Name: "loop", Arguments: "{}"}}}}
-	agent := &TypedChatModelAgent[*schema.Message]{
-		config: &ChatModelConfig[*schema.Message]{Model: loopModel, Tools: []Tool{&mockTool{name: "loop", desc: "loop"}}, MaxIterations: 2},
+	agent := &ReActAgent[*schema.Message]{
+		config: &ReActConfig[*schema.Message]{Model: loopModel, Tools: []Tool{&mockTool{name: "loop", desc: "loop"}}, MaxIterations: 2},
 		name:   "maxiter",
 	}
 	agent.config.Model = loopModel
@@ -63,22 +63,22 @@ func TestChatModelAgent_MaxIterationsExceeded(t *testing.T) {
 	if lastErr == nil { t.Error("expected max iterations error") }
 }
 
-func TestChatModelAgent_ZeroMaxIterations(t *testing.T) {
+func TestReActAgent_ZeroMaxIterations(t *testing.T) {
 	model := &mockModel{}; model.addResp("zero iter")
-	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: model, MaxIterations: 0})
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{Model: model, MaxIterations: 0})
 	agent.name = "zero_iter"
 	iter := agent.Run(context.Background(), &AgentInput{Messages: []Message{schema.UserMessage("test")}})
 	events := drainAgentEvents(t, iter)
 	if len(events) == 0 { t.Error("expected events even with zero iterations") }
 }
 
-func TestChatModelAgent_ReturnDirectly(t *testing.T) {
+func TestReActAgent_ReturnDirectly(t *testing.T) {
 	tool := &mockTool{name: "quick", desc: "Returns immediately"}
 	wrapperModel := &forcedToolModel{
 		toolCalls: []schema.ToolCall{{ID: "c1", Function: schema.ToolCallFunction{Name: "quick", Arguments: "{}"}}},
 		finalResp: "Final", firstCall: true,
 	}
-	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{
 		Model: wrapperModel, Tools: []Tool{tool},
 		ReturnDirectly: map[string]bool{"quick": true},
 	})
@@ -92,7 +92,7 @@ func TestChatModelAgent_ReturnDirectly(t *testing.T) {
 
 func TestRunner_CreateAndQuery(t *testing.T) {
 	model := &mockModel{}; model.addResp("Runner query")
-	agent := chatModelAgentSetup(model, nil)
+	agent := reActAgentSetup(model, nil)
 	runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: agent})
 	iter := runner.Query(context.Background(), "Test query")
 	events := drainAgentEvents(t, iter)
@@ -101,7 +101,7 @@ func TestRunner_CreateAndQuery(t *testing.T) {
 
 func TestRunner_MultipleRuns(t *testing.T) {
 	model := &mockModel{}; model.addResp("1"); model.addResp("2")
-	agent := chatModelAgentSetup(model, nil)
+	agent := reActAgentSetup(model, nil)
 	runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: agent})
 
 	iter1 := runner.Run(context.Background(), []Message{schema.UserMessage("A")})
@@ -113,7 +113,7 @@ func TestRunner_MultipleRuns(t *testing.T) {
 
 func TestRunner_WithRunOptions(t *testing.T) {
 	model := &mockModel{}; model.addResp("Options")
-	agent := chatModelAgentSetup(model, nil)
+	agent := reActAgentSetup(model, nil)
 	runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: agent})
 	iter := runner.Run(context.Background(), []Message{schema.UserMessage("opts")}, WithSessionValues(map[string]any{"k": "v"}))
 	drainAgentEvents(t, iter)
@@ -121,7 +121,7 @@ func TestRunner_WithRunOptions(t *testing.T) {
 
 func TestRunner_WithCheckpoint(t *testing.T) {
 	model := &mockModel{}; model.addResp("cp test")
-	agent := chatModelAgentSetup(model, nil)
+	agent := reActAgentSetup(model, nil)
 	store := &memStore{}
 	runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: agent, CheckPointStore: store})
 	iter := runner.Run(context.Background(), []Message{schema.UserMessage("cp")})
@@ -137,7 +137,7 @@ func TestRunner_NilAgent(t *testing.T) {
 
 func TestAgentTool_Basic(t *testing.T) {
 	subModel := &mockModel{}; subModel.addResp("Sub result")
-	subAgent := chatModelAgentSetup(subModel, nil)
+	subAgent := reActAgentSetup(subModel, nil)
 	subAgent.name = "sub_tool"
 
 	ctx := context.Background()
@@ -151,7 +151,7 @@ func TestAgentTool_Basic(t *testing.T) {
 
 func TestAgentTool_WithFullChatHistory(t *testing.T) {
 	subModel := &mockModel{}; subModel.addResp("history result")
-	subAgent := chatModelAgentSetup(subModel, nil)
+	subAgent := reActAgentSetup(subModel, nil)
 	subAgent.name = "history_tool"
 	ctx := context.Background()
 	agentTool := NewAgentTool(ctx, subAgent, WithFullChatHistoryAsInput())
@@ -161,7 +161,7 @@ func TestAgentTool_WithFullChatHistory(t *testing.T) {
 
 func TestAgentTool_FromRunner(t *testing.T) {
 	subModel := &mockModel{}; subModel.addResp("Sub result")
-	subAgent := chatModelAgentSetup(subModel, nil)
+	subAgent := reActAgentSetup(subModel, nil)
 	subAgent.name = "research"
 
 	ctx := context.Background()
@@ -171,7 +171,7 @@ func TestAgentTool_FromRunner(t *testing.T) {
 		toolCalls: []schema.ToolCall{{ID: "c1", Function: schema.ToolCallFunction{Name: "research", Arguments: `{"topic":"AI"}`}}},
 		finalResp: "Main done", firstCall: true,
 	}
-	mainAgent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{
+	mainAgent := NewReActAgent(&ReActConfig[*schema.Message]{
 		Model: mainModel, Tools: []Tool{agentTool},
 	})
 	mainAgent.name = "main"
@@ -234,27 +234,27 @@ func TestToolsNode_ReturnDirectly(t *testing.T) {
 
 // ======================== Retry / Failover ========================
 
-func TestChatModelAgent_RetrySucceeds(t *testing.T) {
+func TestReActAgent_RetrySucceeds(t *testing.T) {
 	inner := &mockModel{}; inner.addResp("final")
 	retryM := &retryModel{inner: inner, failAttempts: 2}
-	agent := chatModelAgentSetup(retryM, nil)
+	agent := reActAgentSetup(retryM, nil)
 	iter := agent.Run(context.Background(), &AgentInput{Messages: []Message{schema.UserMessage("test")}})
 	drainAgentEvents(t, iter)
 }
 
-func TestChatModelAgent_RetryExhausted(t *testing.T) {
+func TestReActAgent_RetryExhausted(t *testing.T) {
 	inner := &mockModel{}; inner.addResp("never")
 	retryM := &retryModel{inner: inner, failAttempts: 100}
-	agent := chatModelAgentSetup(retryM, nil)
+	agent := reActAgentSetup(retryM, nil)
 	iter := agent.Run(context.Background(), &AgentInput{Messages: []Message{schema.UserMessage("test")}})
 	var lastErr error
 	for { ev, ok := iter.Next(); if !ok { break }; if ev.Err != nil { lastErr = ev.Err } }
 	_ = lastErr
 }
 
-func TestChatModelAgent_AlwaysFails(t *testing.T) {
+func TestReActAgent_AlwaysFails(t *testing.T) {
 	failing := &failModel{}
-	agent := chatModelAgentSetup(failing, nil)
+	agent := reActAgentSetup(failing, nil)
 	iter := agent.Run(context.Background(), &AgentInput{Messages: []Message{schema.UserMessage("hello")}})
 	var lastErr error
 	for { ev, ok := iter.Next(); if !ok { break }; if ev.Err != nil { lastErr = ev.Err } }
@@ -264,7 +264,7 @@ func TestChatModelAgent_AlwaysFails(t *testing.T) {
 // ======================== Interrupt Tests ========================
 
 func TestInterrupt_Basic(t *testing.T) {
-	agent := chatModelAgentSetup(&mockModel{}, nil)
+	agent := reActAgentSetup(&mockModel{}, nil)
 	ctx := context.Background()
 	_ = TypedCompositeInterrupt[*schema.Message](ctx, "user_interrupt", nil)
 	iter := agent.Run(ctx, &AgentInput{Messages: []Message{schema.UserMessage("test")}})
@@ -272,7 +272,7 @@ func TestInterrupt_Basic(t *testing.T) {
 }
 
 func TestInterrupt_WithResumeData(t *testing.T) {
-	agent := chatModelAgentSetup(&mockModel{}, nil)
+	agent := reActAgentSetup(&mockModel{}, nil)
 	agent.name = "resume"
 	store := &memStore{}
 	runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: agent, CheckPointStore: store})
@@ -286,8 +286,8 @@ func TestInterrupt_WithResumeData(t *testing.T) {
 func TestWorkflow_SequentialAgents(t *testing.T) {
 	m1 := &mockModel{}; m1.addResp("A1")
 	m2 := &mockModel{}; m2.addResp("A2")
-	a1 := chatModelAgentSetup(m1, nil); a1.name = "a1"
-	a2 := chatModelAgentSetup(m2, nil); a2.name = "a2"
+	a1 := reActAgentSetup(m1, nil); a1.name = "a1"
+	a2 := reActAgentSetup(m2, nil); a2.name = "a2"
 
 	ctx := context.Background()
 	wf, err := NewSequential(ctx, &SequentialConfig{Name: "seq", Description: "test", SubAgents: []Agent{a1, a2}})
@@ -301,8 +301,8 @@ func TestWorkflow_SequentialAgents(t *testing.T) {
 func TestWorkflow_ParallelAgents(t *testing.T) {
 	m1 := &mockModel{}; m1.addResp("P1")
 	m2 := &mockModel{}; m2.addResp("P2")
-	a1 := chatModelAgentSetup(m1, nil); a1.name = "p1"
-	a2 := chatModelAgentSetup(m2, nil); a2.name = "p2"
+	a1 := reActAgentSetup(m1, nil); a1.name = "p1"
+	a2 := reActAgentSetup(m2, nil); a2.name = "p2"
 
 	ctx := context.Background()
 	wf, err := NewParallel(ctx, &ParallelConfig{Name: "par", Description: "test", SubAgents: []Agent{a1, a2}})
@@ -315,8 +315,8 @@ func TestWorkflow_ParallelAgents(t *testing.T) {
 func TestWorkflow_LoopAgents(t *testing.T) {
 	m1 := &mockModel{}; m1.addResp("Main")
 	m2 := &mockModel{}; m2.addResp("Critique")
-	a1 := chatModelAgentSetup(m1, nil); a1.name = "main"
-	a2 := chatModelAgentSetup(m2, nil); a2.name = "critique"
+	a1 := reActAgentSetup(m1, nil); a1.name = "main"
+	a2 := reActAgentSetup(m2, nil); a2.name = "critique"
 
 	ctx := context.Background()
 	wf, err := NewLoop(ctx, &LoopConfig{
@@ -336,19 +336,19 @@ type orderedMiddleware struct {
 	executed []string
 }
 
-func (m *orderedMiddleware) BeforeAgent(ctx context.Context, rc *ChatModelAgentContext) (context.Context, *ChatModelAgentContext, error) {
+func (m *orderedMiddleware) BeforeAgent(ctx context.Context, rc *ReActAgentContext) (context.Context, *ReActAgentContext, error) {
 	m.executed = append(m.executed, m.id+":BeforeAgent")
 	return ctx, rc, nil
 }
-func (m *orderedMiddleware) BeforeModelRewrite(ctx context.Context, state *ChatModelAgentState, mc *ModelContext) (context.Context, *ChatModelAgentState, error) {
+func (m *orderedMiddleware) BeforeModelRewrite(ctx context.Context, state *ReActAgentState, mc *ModelContext) (context.Context, *ReActAgentState, error) {
 	m.executed = append(m.executed, m.id+":BeforeModelRewrite")
 	return ctx, state, nil
 }
-func (m *orderedMiddleware) AfterModelRewrite(ctx context.Context, state *ChatModelAgentState, mc *ModelContext) (context.Context, *ChatModelAgentState, error) {
+func (m *orderedMiddleware) AfterModelRewrite(ctx context.Context, state *ReActAgentState, mc *ModelContext) (context.Context, *ReActAgentState, error) {
 	m.executed = append(m.executed, m.id+":AfterModelRewrite")
 	return ctx, state, nil
 }
-func (m *orderedMiddleware) AfterAgent(ctx context.Context, state *ChatModelAgentState) (context.Context, error) {
+func (m *orderedMiddleware) AfterAgent(ctx context.Context, state *ReActAgentState) (context.Context, error) {
 	m.executed = append(m.executed, m.id+":AfterAgent")
 	return ctx, nil
 }
@@ -358,8 +358,8 @@ func TestMiddleware_ChainOrderPreserved(t *testing.T) {
 	m1 := &orderedMiddleware{id: "mw1", executed: make([]string, 0)}
 	m2 := &orderedMiddleware{id: "mw2", executed: make([]string, 0)}
 
-	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{
-		Model: model, Middlewares: []ChatModelMiddleware{m1, m2},
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{
+		Model: model, Middlewares: []ReActMiddleware{m1, m2},
 	})
 	agent.name = "chain"
 	iter := agent.Run(context.Background(), &AgentInput{Messages: []Message{schema.UserMessage("test")}})
@@ -373,7 +373,7 @@ func TestMiddleware_ErrorPropagation(t *testing.T) {
 		t.Run(failAt, func(t *testing.T) {
 			model := &mockModel{}; model.addResp("err test")
 			mw := &errorMiddleware{failAt: failAt}
-			agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: model, Middlewares: []ChatModelMiddleware{mw}})
+			agent := NewReActAgent(&ReActConfig[*schema.Message]{Model: model, Middlewares: []ReActMiddleware{mw}})
 			agent.name = "err_" + failAt
 			iter := agent.Run(context.Background(), &AgentInput{Messages: []Message{schema.UserMessage("test")}})
 			var lastErr error
@@ -390,7 +390,7 @@ func TestMiddleware_WrapModel(t *testing.T) {
 		wrapped = true; return m, nil
 	}
 	model := &mockModel{}; model.addResp("wrapped")
-	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: model, Middlewares: []ChatModelMiddleware{mw}})
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{Model: model, Middlewares: []ReActMiddleware{mw}})
 	agent.name = "wrap_m"
 	iter := agent.Run(context.Background(), &AgentInput{Messages: []Message{schema.UserMessage("test")}})
 	drainAgentEvents(t, iter)
@@ -418,7 +418,7 @@ func TestCallbacks_OnStartOnEnd(t *testing.T) {
 		onEnd:   func(ctx context.Context, output *AgentCallbackOutput) { onEnd = true },
 	}
 	model := &mockModel{}; model.addResp("cb test")
-	agent := chatModelAgentSetup(model, nil)
+	agent := reActAgentSetup(model, nil)
 	agent.name = "cb_agent"
 	// Callbacks are wired in flowAgent.Run path
 	iter := agent.Run(context.Background(), &AgentInput{Messages: []Message{schema.UserMessage("cb")}}, WithCallbacks(cb))
@@ -438,7 +438,7 @@ func TestCallbackFilter_AgentNameMatch(t *testing.T) {
 // ======================== Callback Infrastructure Tests ========================
 
 func TestInitAgentCallbacks_Nil(t *testing.T) {
-	ctx := initAgentCallbacks(context.Background(), "test", "ChatModelAgent")
+	ctx := initAgentCallbacks(context.Background(), "test", "ReActAgent")
 	if cbs := getCallbacks(ctx); cbs != nil { t.Error("expected nil callbacks") }
 }
 
@@ -544,7 +544,7 @@ func TestConcurrentCancel(t *testing.T) {
 		go func(id int) {
 			defer wg.Done()
 			model := &mockModel{}; model.addResp(fmt.Sprintf("concurrent-%d", id))
-			agent := chatModelAgentSetup(model, nil)
+			agent := reActAgentSetup(model, nil)
 			agent.name = "cc"
 			opt, cancel := WithCancel()
 			iter := agent.Run(context.Background(), &AgentInput{Messages: []Message{schema.UserMessage("test")}}, opt)
@@ -563,7 +563,7 @@ func TestConcurrentIterators(t *testing.T) {
 			defer wg.Done()
 			model := &mockModel{}
 			model.addResp("conc")
-			agent := chatModelAgentSetup(model, nil)
+			agent := reActAgentSetup(model, nil)
 			iter := agent.Run(context.Background(), &AgentInput{Messages: []Message{schema.UserMessage("hi")}})
 			drainAgentEvents(t, iter)
 		}()
@@ -584,14 +584,14 @@ func TestGetAgentType(t *testing.T) {
 }
 
 func TestGetAgentType_Default(t *testing.T) {
-	agent := chatModelAgentSetup(&mockModel{}, nil)
-	if gt := getAgentType(agent); gt != "ChatModelAgent" { t.Errorf("expected ChatModelAgent, got %s", gt) }
+	agent := reActAgentSetup(&mockModel{}, nil)
+	if gt := getAgentType(agent); gt != "ReActAgent" { t.Errorf("expected ReActAgent, got %s", gt) }
 }
 
 // ======================== Agent Resume ========================
 
 func TestRunner_ResumeWithCheckpoint(t *testing.T) {
-	agent := chatModelAgentSetup(&mockModel{}, nil)
+	agent := reActAgentSetup(&mockModel{}, nil)
 	agent.name = "resume_test"
 	store := &memStore{}
 	runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: agent, CheckPointStore: store})
@@ -643,19 +643,19 @@ type errorMiddleware struct {
 	failAt string
 }
 
-func (m *errorMiddleware) BeforeAgent(ctx context.Context, rc *ChatModelAgentContext) (context.Context, *ChatModelAgentContext, error) {
+func (m *errorMiddleware) BeforeAgent(ctx context.Context, rc *ReActAgentContext) (context.Context, *ReActAgentContext, error) {
 	if m.failAt == "BeforeAgent" { return ctx, nil, errors.New("error in BeforeAgent") }
 	return ctx, rc, nil
 }
-func (m *errorMiddleware) BeforeModelRewrite(ctx context.Context, state *ChatModelAgentState, mc *ModelContext) (context.Context, *ChatModelAgentState, error) {
+func (m *errorMiddleware) BeforeModelRewrite(ctx context.Context, state *ReActAgentState, mc *ModelContext) (context.Context, *ReActAgentState, error) {
 	if m.failAt == "BeforeModelRewrite" { return ctx, nil, errors.New("error in BeforeModelRewrite") }
 	return ctx, state, nil
 }
-func (m *errorMiddleware) AfterModelRewrite(ctx context.Context, state *ChatModelAgentState, mc *ModelContext) (context.Context, *ChatModelAgentState, error) {
+func (m *errorMiddleware) AfterModelRewrite(ctx context.Context, state *ReActAgentState, mc *ModelContext) (context.Context, *ReActAgentState, error) {
 	if m.failAt == "AfterModelRewrite" { return ctx, nil, errors.New("error in AfterModelRewrite") }
 	return ctx, state, nil
 }
-func (m *errorMiddleware) AfterAgent(ctx context.Context, state *ChatModelAgentState) (context.Context, error) {
+func (m *errorMiddleware) AfterAgent(ctx context.Context, state *ReActAgentState) (context.Context, error) {
 	if m.failAt == "AfterAgent" { return ctx, errors.New("error in AfterAgent") }
 	return ctx, nil
 }

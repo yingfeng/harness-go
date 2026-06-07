@@ -279,7 +279,7 @@ func TestBuildModelWrapperChain_RetryThenFailover_Integration(t *testing.T) {
 	m1 := &countingModelFailover{failUntil: 2, name: "m1"}
 	m2 := &countingModelFailover{failUntil: 0, name: "m2"}
 
-	cfg := &ChatModelConfig[Message]{
+	cfg := &ReActConfig[Message]{
 		Model:          m1,
 		RetryConfig:    &ModelRetryConfig{MaxRetries: 3, IsRetryAble: func(_ context.Context, err error) bool { return true }},
 		FailoverConfig: &FailoverConfig[Message]{Models: []ChatModel[Message]{m2}},

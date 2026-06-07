@@ -239,7 +239,7 @@ func New(ctx context.Context, cfg *Config) (agentcore.ResumableAgent, error) {
 		newPlan = defaultNewPlan
 	}
 
-	planner := agentcore.NewChatModelAgent(&agentcore.ChatModelConfig[*schema.Message]{
+	planner := agentcore.NewReActAgent(&agentcore.ReActConfig[*schema.Message]{
 		Model:       cfg.Planner.Model,
 		Instruction: plannerInstruction,
 		Tools:       []agentcore.Tool{planToolDef},
@@ -256,7 +256,7 @@ func New(ctx context.Context, cfg *Config) (agentcore.ResumableAgent, error) {
 	executorTools := make([]agentcore.Tool, 0, len(cfg.Executor.Tools)+1)
 	executorTools = append(executorTools, cfg.Executor.Tools...)
 
-	executor := agentcore.NewChatModelAgent(&agentcore.ChatModelConfig[*schema.Message]{
+	executor := agentcore.NewReActAgent(&agentcore.ReActConfig[*schema.Message]{
 		Model:         cfg.Executor.Model,
 		Instruction:   executorInstruction,
 		Tools:         executorTools,
@@ -276,7 +276,7 @@ func New(ctx context.Context, cfg *Config) (agentcore.ResumableAgent, error) {
 	// respond_tool is marked as ReturnDirectly so the agent exits after using it
 	returnDirectly := map[string]bool{toolRespond: true}
 
-	replanner := agentcore.NewChatModelAgent(&agentcore.ChatModelConfig[*schema.Message]{
+	replanner := agentcore.NewReActAgent(&agentcore.ReActConfig[*schema.Message]{
 		Model:         cfg.Replanner.Model,
 		Instruction:   replannerInstruction,
 		Tools:         replannerTools,

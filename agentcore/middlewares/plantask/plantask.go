@@ -3,7 +3,7 @@
 // with task state persisted in the run session.
 //
 // TODO: This package is placed under middlewares/ but does not implement
-// TypedChatModelMiddleware[M]. It is a tool library rather than a middleware.
+// TypedReActMiddleware[M]. It is a tool library rather than a middleware.
 // Consider moving to agentcore/tools/ or integrating its TaskManager with
 // prebuilt/deep's TaskManager to eliminate duplication.
 package plantask

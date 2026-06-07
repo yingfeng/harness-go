@@ -357,8 +357,8 @@ func TestRetry_SequentialWorkflow_RetryableStream_SuccessfulRetry(t *testing.T) 
 	m2 := &mockModel{}
 	m2.addResp("agent B response")
 
-	a1 := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m1Wrapped}).WithName("agent_a")
-	a2 := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m2}).WithName("agent_b")
+	a1 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m1Wrapped}).WithName("agent_a")
+	a2 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m2}).WithName("agent_b")
 
 	wf, err := NewSequential(context.Background(), &SequentialConfig{
 		Name: "seq-retry", Description: "seq retry test", SubAgents: []Agent{a1, a2},
@@ -384,8 +384,8 @@ func TestRetry_SequentialWorkflow_NonRetryableError_StopsFlow(t *testing.T) {
 	m2 := &mockModel{}
 	m2.addResp("should not be reached")
 
-	a1 := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: wrapped}).WithName("fail_agent")
-	a2 := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m2}).WithName("never_agent")
+	a1 := NewReActAgent(&ReActConfig[*schema.Message]{Model: wrapped}).WithName("fail_agent")
+	a2 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m2}).WithName("never_agent")
 
 	wf, err := NewSequential(context.Background(), &SequentialConfig{
 		Name: "seq-nonretry", Description: "non-retryable stops flow", SubAgents: []Agent{a1, a2},
@@ -421,7 +421,7 @@ func TestRetry_WithTools_Generate(t *testing.T) {
 	cfg := &ModelRetryConfig{MaxRetries: 5, IsRetryAble: func(_ context.Context, err error) bool { return true }}
 	wrapped := WithModelRetry(model, cfg)
 
-	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{
 		Model: wrapped,
 	}).WithName("tool_retry")
 

@@ -27,7 +27,7 @@ func TestNew_WithModelAndAgents(t *testing.T) {
 	ctx := context.Background()
 	model := &mockSupervisorModel{}
 
-	subAgent := agentcore.NewChatModelAgent(&agentcore.ChatModelConfig[*schema.Message]{
+	subAgent := agentcore.NewReActAgent(&agentcore.ReActConfig[*schema.Message]{
 		Model:       model,
 		Instruction: "You are a coder.",
 	}).WithName("coder")
@@ -74,7 +74,7 @@ func TestSystemPrompt(t *testing.T) {
 func TestNewWithRouter(t *testing.T) {
 	ctx := context.Background()
 	model := &mockSupervisorModel{}
-	subAgent := agentcore.NewChatModelAgent(&agentcore.ChatModelConfig[*schema.Message]{Model: model}).WithName("sub")
+	subAgent := agentcore.NewReActAgent(&agentcore.ReActConfig[*schema.Message]{Model: model}).WithName("sub")
 
 	flow, err := NewWithRouter(ctx, model, []AgentSpec{{Name: "sub", Description: "Sub agent", Agent: subAgent}})
 	if err != nil {
@@ -88,7 +88,7 @@ func TestNewWithRouter(t *testing.T) {
 func TestDeterministicTransfer(t *testing.T) {
 	ctx := context.Background()
 	model := &mockSupervisorModel{}
-	subAgent := agentcore.NewChatModelAgent(&agentcore.ChatModelConfig[*schema.Message]{Model: model}).WithName("coder")
+	subAgent := agentcore.NewReActAgent(&agentcore.ReActConfig[*schema.Message]{Model: model}).WithName("coder")
 
 	// Verify that sub-agents get wrapped with DeterministicTransfer
 	flow, err := New(ctx, &Config{
@@ -122,14 +122,14 @@ func TestDeterministicTransfer(t *testing.T) {
 func TestGetType(t *testing.T) {
 	model := &mockSupervisorModel{}
 
-	// The supervisor's ChatModelAgent should have GetType == "ChatModelAgent"
-	sup := agentcore.NewChatModelAgent(&agentcore.ChatModelConfig[*schema.Message]{
+	// The supervisor's ReActAgent should have GetType == "ReActAgent"
+	sup := agentcore.NewReActAgent(&agentcore.ReActConfig[*schema.Message]{
 		Model:       model,
 		Instruction: "test",
 	}).WithName("supervisor")
 
-	if sup.GetType() != "ChatModelAgent" {
-		t.Errorf("expected GetType() = ChatModelAgent, got %s", sup.GetType())
+	if sup.GetType() != "ReActAgent" {
+		t.Errorf("expected GetType() = ReActAgent, got %s", sup.GetType())
 	}
 }
 
@@ -153,7 +153,7 @@ func contains(s, sub string) bool {
 func TestDeterministicTransferConstraint(t *testing.T) {
 	ctx := context.Background()
 	model := &mockSupervisorModel{}
-	subAgent := agentcore.NewChatModelAgent(&agentcore.ChatModelConfig[*schema.Message]{
+	subAgent := agentcore.NewReActAgent(&agentcore.ReActConfig[*schema.Message]{
 		Model: model,
 		Instruction: "You are a coder.",
 	}).WithName("coder")

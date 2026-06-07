@@ -23,7 +23,7 @@ func TestNewToolsNode(t *testing.T) {
 func TestToolsNode_Execute_NoToolCalls(t *testing.T) {
 	tn := NewToolsNode[*schema.Message](&ToolsNodeConfig{})
 	resp := &schema.Message{Role: schema.RoleAssistant, Content: "no tools here"}
-	state := &TypedChatModelAgentState[*schema.Message]{}
+	state := &TypedReActAgentState[*schema.Message]{}
 
 	results, action, err := tn.Execute(context.Background(), resp, state, nil)
 	if err != nil {
@@ -47,7 +47,7 @@ func TestToolsNode_Execute_ToolNotFound(t *testing.T) {
 			{ID: "tc1", Function: schema.ToolCallFunction{Name: "missing_tool", Arguments: "{}"}},
 		},
 	}
-	state := &TypedChatModelAgentState[*schema.Message]{}
+	state := &TypedReActAgentState[*schema.Message]{}
 
 	results, _, err := tn.Execute(context.Background(), resp, state, nil)
 	if err != nil {
@@ -71,7 +71,7 @@ func TestToolsNode_Execute_ReturnDirectly(t *testing.T) {
 			{ID: "tc1", Function: schema.ToolCallFunction{Name: "exit_tool", Arguments: "{}"}},
 		},
 	}
-	state := &TypedChatModelAgentState[*schema.Message]{}
+	state := &TypedReActAgentState[*schema.Message]{}
 
 	results, action, err := tn.Execute(context.Background(), resp, state, nil)
 	if err != nil {

@@ -41,7 +41,7 @@ func TestTurnLoop_PrepareAgentError_RecoverItems(t *testing.T) {
 			}
 			m := &mockModel{}
 			m.addResp("ok")
-			return NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m}).WithName("retry_agent"), nil
+			return NewReActAgent(&ReActConfig[*schema.Message]{Model: m}).WithName("retry_agent"), nil
 		},
 	})
 	loop.Push(schema.UserMessage("prepare_recover"))
@@ -138,7 +138,7 @@ func newTurnLoop(name, resp string) *TurnLoop[*schema.Message] {
 		PrepareAgent: func(_ context.Context, _ *TurnLoop[*schema.Message], _ []*schema.Message) (Agent, error) {
 			m := &mockModel{}
 			m.addResp(resp)
-			return NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m}).WithName(name), nil
+			return NewReActAgent(&ReActConfig[*schema.Message]{Model: m}).WithName(name), nil
 		},
 	})
 }

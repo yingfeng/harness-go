@@ -12,13 +12,13 @@ import (
 	"github.com/infiniflow/ragflow/harness/graphengine/graph"
 )
 
-// ChatModelConfig holds configuration for TypedChatModelAgent.
-type ChatModelConfig[M MessageType] struct {
+// ReActConfig holds configuration for TypedReActAgent.
+type ReActConfig[M MessageType] struct {
 	Model              ChatModel[M]
 	Tools              []Tool
 	Instruction        string
 	MaxIterations      int
-	Middlewares        []TypedChatModelMiddleware[M]
+	Middlewares        []TypedReActMiddleware[M]
 	RetryConfig        *TypedModelRetryConfig[M]
 	FailoverConfig     *FailoverConfig[M]
 	ReturnDirectly     map[string]bool
@@ -41,16 +41,16 @@ type ChatModelConfig[M MessageType] struct {
 	GraphReActInterruptBefore []string
 }
 
-func DefaultChatModelConfig[M MessageType]() *ChatModelConfig[M] {
-	return &ChatModelConfig[M]{MaxIterations: 10, Instruction: internal.DefaultSystemPrompt}
+func DefaultReActConfig[M MessageType]() *ReActConfig[M] {
+	return &ReActConfig[M]{MaxIterations: 10, Instruction: internal.DefaultSystemPrompt}
 }
 
-// ChatModelAgentResumeData holds data provided during resume to modify agent behavior.
-type ChatModelAgentResumeData struct {
+// ReActAgentResumeData holds data provided during resume to modify agent behavior.
+type ReActAgentResumeData struct {
 	HistoryModifier func(ctx context.Context, messages []Message) []Message
 }
 
-// TypedChatModelAgent implements the ReAct (Reasoning + Acting) pattern.
+// ReActAgent implements the ReAct (Reasoning + Acting) pattern.
 //
 // Production features:
 //   - freeze-once: after first Run/Resume, configuration is frozen (atomic)
@@ -61,10 +61,10 @@ type ChatModelAgentResumeData struct {
 //   - AfterToolCallsHook for TurnLoop integration
 //   - ResumeWithData / HistoryModifier for resume customization
 //   - gob encodability check on SetRunLocalValue
-type TypedChatModelAgent[M MessageType] struct {
+type ReActAgent[M MessageType] struct {
 	name        string
 	desc        string
-	config      *ChatModelConfig[M]
+	config      *ReActConfig[M]
 
 	once   sync.Once
 	frozen uint32
@@ -72,13 +72,13 @@ type TypedChatModelAgent[M MessageType] struct {
 	exeCtx *execContext
 }
 
-var _ ResumableAgent = &TypedChatModelAgent[*schema.Message]{}
-var _ TypedResumableAgent[*schema.AgenticMessage] = &TypedChatModelAgent[*schema.AgenticMessage]{}
+var _ ResumableAgent = &ReActAgent[*schema.Message]{}
+var _ TypedResumableAgent[*schema.AgenticMessage] = &ReActAgent[*schema.AgenticMessage]{}
 
 type TypedGenModelInput[M MessageType] func(ctx context.Context, instruction string, input *TypedAgentInput[M]) ([]M, error)
 
 // StateModifier allows transforming the agent state before model invocation.
-type StateModifier[M MessageType] func(ctx context.Context, state *TypedChatModelAgentState[M]) (*TypedChatModelAgentState[M], error)
+type StateModifier[M MessageType] func(ctx context.Context, state *TypedReActAgentState[M]) (*TypedReActAgentState[M], error)
 
 func defaultGenModelInput(ctx context.Context, instruction string, input *AgentInput) ([]Message, error) {
 	msgs := make([]Message, 0, len(input.Messages)+1)
@@ -101,29 +101,29 @@ func resolveTemplate(tmpl string, ctx context.Context) string {
 	return result
 }
 
-func NewChatModelAgent[M MessageType](cfg *ChatModelConfig[M]) *TypedChatModelAgent[M] {
-	if cfg == nil { cfg = DefaultChatModelConfig[M]() }
-	a := &TypedChatModelAgent[M]{name: "chat_model_agent", desc: "ReAct agent using a chat model", config: cfg}
+func NewReActAgent[M MessageType](cfg *ReActConfig[M]) *ReActAgent[M] {
+	if cfg == nil { cfg = DefaultReActConfig[M]() }
+	a := &ReActAgent[M]{name: "react_agent", desc: "ReAct agent using a chat model", config: cfg}
 	if cfg.ToolsConfig == nil && len(cfg.Tools) > 0 {
 		cfg.ToolsConfig = &ToolsNodeConfig{Tools: cfg.Tools, ReturnDirectly: cfg.ReturnDirectly}
 	}
 	return a
 }
-func (a *TypedChatModelAgent[M]) WithName(n string) *TypedChatModelAgent[M] { a.name = n; return a }
-func (a *TypedChatModelAgent[M]) WithDescription(d string) *TypedChatModelAgent[M] { a.desc = d; return a }
-func (a *TypedChatModelAgent[M]) Name(_ context.Context) string              { return a.name }
-func (a *TypedChatModelAgent[M]) Description(_ context.Context) string       { return a.desc }
-func (a *TypedChatModelAgent[M]) GetType() string                           { return "ChatModelAgent" }
+func (a *ReActAgent[M]) WithName(n string) *ReActAgent[M] { a.name = n; return a }
+func (a *ReActAgent[M]) WithDescription(d string) *ReActAgent[M] { a.desc = d; return a }
+func (a *ReActAgent[M]) Name(_ context.Context) string              { return a.name }
+func (a *ReActAgent[M]) Description(_ context.Context) string       { return a.desc }
+func (a *ReActAgent[M]) GetType() string                           { return "ReActAgent" }
 
 // ---- Freeze mechanism ----
 
-func (a *TypedChatModelAgent[M]) IsFrozen() bool { return atomic.LoadUint32(&a.frozen) == 1 }
+func (a *ReActAgent[M]) IsFrozen() bool { return atomic.LoadUint32(&a.frozen) == 1 }
 
-func (a *TypedChatModelAgent[M]) freeze() { atomic.StoreUint32(&a.frozen, 1) }
+func (a *ReActAgent[M]) freeze() { atomic.StoreUint32(&a.frozen, 1) }
 
 // ---- Run / Resume ----
 
-func (a *TypedChatModelAgent[M]) Run(ctx context.Context, input *TypedAgentInput[M], opts ...RunOption) *AsyncIterator[*TypedAgentEvent[M]] {
+func (a *ReActAgent[M]) Run(ctx context.Context, input *TypedAgentInput[M], opts ...RunOption) *AsyncIterator[*TypedAgentEvent[M]] {
 	it, gen := NewAsyncIteratorPair[*TypedAgentEvent[M]]()
 	go func() {
 		defer func() {
@@ -137,7 +137,7 @@ func (a *TypedChatModelAgent[M]) Run(ctx context.Context, input *TypedAgentInput
 	return it
 }
 
-func (a *TypedChatModelAgent[M]) Resume(ctx context.Context, info *ResumeInfo, opts ...RunOption) *AsyncIterator[*TypedAgentEvent[M]] {
+func (a *ReActAgent[M]) Resume(ctx context.Context, info *ResumeInfo, opts ...RunOption) *AsyncIterator[*TypedAgentEvent[M]] {
 	it, gen := NewAsyncIteratorPair[*TypedAgentEvent[M]]()
 	go func() {
 		defer func() {
@@ -145,10 +145,10 @@ func (a *TypedChatModelAgent[M]) Resume(ctx context.Context, info *ResumeInfo, o
 			gen.Close()
 		}()
 		if info.WasInterrupted {
-			if s, ok := info.InterruptState.(*TypedChatModelAgentState[M]); ok {
+			if s, ok := info.InterruptState.(*TypedReActAgentState[M]); ok {
 				runFunc := a.buildRunFunc(ctx)
 				params := &typedRunParams[M]{input: &TypedAgentInput[M]{Messages: s.Messages, EnableStreaming: info.EnableStreaming}, generator: gen, interruptState: s, resumeInfo: info}
-				if info.ResumeData != nil { if rd, ok := info.ResumeData.(*ChatModelAgentResumeData); ok && rd.HistoryModifier != nil { params.historyModifier = rd.HistoryModifier } }
+				if info.ResumeData != nil { if rd, ok := info.ResumeData.(*ReActAgentResumeData); ok && rd.HistoryModifier != nil { params.historyModifier = rd.HistoryModifier } }
 				runFunc(ctx, params)
 				a.freeze()
 				return
@@ -166,15 +166,15 @@ type typedRunFunc[M MessageType] func(ctx context.Context, p *typedRunParams[M])
 type typedRunParams[M MessageType] struct {
 	input            *TypedAgentInput[M]
 	generator        *AsyncGenerator[*TypedAgentEvent[M]]
-	interruptState    *TypedChatModelAgentState[M]
+	interruptState    *TypedReActAgentState[M]
 	resumeInfo       *ResumeInfo
 	historyModifier  func(context.Context, []Message) []Message
 	afterToolCallsHook func(ctx context.Context) error
 }
 
-// chatModelExecCtx carries per-execution state for event sending, cancellation,
+// reActExecCtx carries per-execution state for event sending, cancellation,
 // retry signal propagation, and after-tool-calls hooks.
-type chatModelExecCtx struct {
+type reActExecCtx struct {
 	generator         *AsyncGenerator[*TypedAgentEvent[*schema.Message]]
 	cancelCtx         *cancelContext
 	suppressEventSend bool
@@ -183,7 +183,7 @@ type chatModelExecCtx struct {
 	afterToolCallsHook func(ctx context.Context) error
 }
 
-func (ec *chatModelExecCtx) send(ev any) {
+func (ec *reActExecCtx) send(ev any) {
 	if ec != nil && ec.generator != nil {
 		if te, ok := ev.(*TypedAgentEvent[*schema.Message]); ok { ec.generator.Send(te) }
 	}
@@ -200,7 +200,7 @@ type execContext struct {
 
 // ---- Run function builder ----
 
-func (a *TypedChatModelAgent[M]) buildRunFunc(ctx context.Context) typedRunFunc[M] {
+func (a *ReActAgent[M]) buildRunFunc(ctx context.Context) typedRunFunc[M] {
 	var onceRun typedRunFunc[M]
 	a.once.Do(func() {
 		ec, err := a.prepareExecContext(ctx)
@@ -220,7 +220,7 @@ func (a *TypedChatModelAgent[M]) buildRunFunc(ctx context.Context) typedRunFunc[
 	return a.buildReActRunFunc()
 }
 
-func (a *TypedChatModelAgent[M]) prepareExecContext(_ context.Context) (*execContext, error) {
+func (a *ReActAgent[M]) prepareExecContext(_ context.Context) (*execContext, error) {
 	instruction := a.config.Instruction
 	if instruction == "" { instruction = internal.DefaultSystemPrompt }
 	rd := a.config.ReturnDirectly
@@ -230,14 +230,14 @@ func (a *TypedChatModelAgent[M]) prepareExecContext(_ context.Context) (*execCon
 
 // ---- No-tools run function ----
 
-func (a *TypedChatModelAgent[M]) buildNoToolsRunFunc() typedRunFunc[M] {
+func (a *ReActAgent[M]) buildNoToolsRunFunc() typedRunFunc[M] {
 	return func(ctx context.Context, p *typedRunParams[M]) {
 		// BeforeAgent middleware
-		rc := &ChatModelAgentContext{Instruction: a.exeCtx.instruction, Tools: a.config.Tools, ReturnDirectly: a.exeCtx.returnDirectly}
+		rc := &ReActAgentContext{Instruction: a.exeCtx.instruction, Tools: a.config.Tools, ReturnDirectly: a.exeCtx.returnDirectly}
 		if err := a.runBeforeAgent(&ctx, rc, p.generator); err != nil { return }
 
 		model := BuildModelWrapperChain(a.config.Model, nil, a.config)
-		state := NewChatModelAgentState(p.input.Messages, a.exeCtx.toolInfos, a.config.MaxIterations)
+		state := NewReActAgentState(p.input.Messages, a.exeCtx.toolInfos, a.config.MaxIterations)
 
 		// BeforeModelRewrite middleware
 		mc := &TypedModelContext[M]{Tools: state.ToolInfos, ModelRetryConfig: a.config.RetryConfig, ModelFailoverConfig: a.config.FailoverConfig}
@@ -267,7 +267,7 @@ func (a *TypedChatModelAgent[M]) buildNoToolsRunFunc() typedRunFunc[M] {
 
 // runBeforeAgent executes the BeforeAgent middleware chain.
 // Returns a non-nil error if any middleware signals termination.
-func (a *TypedChatModelAgent[M]) runBeforeAgent(ctx *context.Context, rc *ChatModelAgentContext, gen *AsyncGenerator[*TypedAgentEvent[M]]) error {
+func (a *ReActAgent[M]) runBeforeAgent(ctx *context.Context, rc *ReActAgentContext, gen *AsyncGenerator[*TypedAgentEvent[M]]) error {
 	for _, mw := range a.config.Middlewares {
 		if mw == nil { continue }
 		var err error
@@ -281,7 +281,7 @@ func (a *TypedChatModelAgent[M]) runBeforeAgent(ctx *context.Context, rc *ChatMo
 }
 
 // runBeforeModelRewrite executes the BeforeModelRewrite middleware chain.
-func (a *TypedChatModelAgent[M]) runBeforeModelRewrite(ctx *context.Context, state **TypedChatModelAgentState[M], mc *TypedModelContext[M], gen *AsyncGenerator[*TypedAgentEvent[M]]) error {
+func (a *ReActAgent[M]) runBeforeModelRewrite(ctx *context.Context, state **TypedReActAgentState[M], mc *TypedModelContext[M], gen *AsyncGenerator[*TypedAgentEvent[M]]) error {
 	for _, mw := range a.config.Middlewares {
 		if mw == nil { continue }
 		var err error
@@ -295,7 +295,7 @@ func (a *TypedChatModelAgent[M]) runBeforeModelRewrite(ctx *context.Context, sta
 }
 
 // runAfterModelRewrite executes the AfterModelRewrite middleware chain.
-func (a *TypedChatModelAgent[M]) runAfterModelRewrite(ctx *context.Context, state **TypedChatModelAgentState[M], mc *TypedModelContext[M], gen *AsyncGenerator[*TypedAgentEvent[M]]) error {
+func (a *ReActAgent[M]) runAfterModelRewrite(ctx *context.Context, state **TypedReActAgentState[M], mc *TypedModelContext[M], gen *AsyncGenerator[*TypedAgentEvent[M]]) error {
 	for _, mw := range a.config.Middlewares {
 		if mw == nil { continue }
 		var err error
@@ -309,7 +309,7 @@ func (a *TypedChatModelAgent[M]) runAfterModelRewrite(ctx *context.Context, stat
 }
 
 // runAfterAgent executes the AfterAgent middleware chain.
-func (a *TypedChatModelAgent[M]) runAfterAgent(ctx *context.Context, state *TypedChatModelAgentState[M], gen *AsyncGenerator[*TypedAgentEvent[M]]) {
+func (a *ReActAgent[M]) runAfterAgent(ctx *context.Context, state *TypedReActAgentState[M], gen *AsyncGenerator[*TypedAgentEvent[M]]) {
 	for _, mw := range a.config.Middlewares {
 		if mw == nil { continue }
 		var err error
@@ -438,16 +438,16 @@ func streamWithCancel[M MessageType](s *schema.StreamReader[M], cc *cancelContex
 }
 
 // getChatModelExecCtx retrieves the chat model execution context from context.
-func getChatModelExecCtx(ctx context.Context) *chatModelExecCtx {
+func getChatModelExecCtx(ctx context.Context) *reActExecCtx {
 	rc := getRunCtx(ctx)
 	if rc == nil { return nil }
 	// The exec ctx is stored on the run session or passed via context value
-	if ec, ok := rc.Session.Values["__exec_ctx"].(*chatModelExecCtx); ok { return ec }
+	if ec, ok := rc.Session.Values["__exec_ctx"].(*reActExecCtx); ok { return ec }
 	return nil
 }
 
-// getTypedChatModelExecCtx retrieves the typed execution context from context.
-func getTypedChatModelExecCtx[M MessageType](ctx context.Context) *chatModelExecCtx {
+// getReActExecCtx retrieves the typed execution context from context.
+func getReActExecCtx[M MessageType](ctx context.Context) *reActExecCtx {
 	return getChatModelExecCtx(ctx)
 }
 
@@ -459,23 +459,23 @@ const CheckpointDataV1 CheckpointDataVersion = 1
 // preprocessCheckpointData performs forward-compatible migration on resume data.
 func preprocessCheckpointData(data any) any { return data }
 
-// WithGraphReAct enables the graph-based ReAct execution engine for a ChatModelConfig.
+// WithGraphReAct enables the graph-based ReAct execution engine for a ReActConfig.
 // When enabled, each ReAct iteration runs as a StateGraph node with the Pregel engine,
 // providing automatic checkpoint, interrupt before tool execution, and resume support.
 //
 // Usage:
 //
-//	cfg := DefaultChatModelConfig[*schema.Message]()
+//	cfg := DefaultReActConfig[*schema.Message]()
 //	cfg.GraphReAct = true
 //	cfg.GraphReActCheckpointer = checkpoint.NewMemorySaver()  // optional
-func WithGraphReAct[M MessageType](cfg *ChatModelConfig[M], cptr graph.Checkpointer) {
+func WithGraphReAct[M MessageType](cfg *ReActConfig[M], cptr graph.Checkpointer) {
 	cfg.GraphReAct = true
 	cfg.GraphReActCheckpointer = cptr
 }
 
 // WithGraphReActInterrupt sets which graph nodes to interrupt before.
 // Default: ["execute_tools"]. Use this to customize interrupt behavior.
-func WithGraphReActInterrupt[M MessageType](cfg *ChatModelConfig[M], interruptBefore ...string) {
+func WithGraphReActInterrupt[M MessageType](cfg *ReActConfig[M], interruptBefore ...string) {
 	cfg.GraphReActInterruptBefore = interruptBefore
 }
 
@@ -488,7 +488,7 @@ func WithGraphReActInterrupt[M MessageType](cfg *ChatModelConfig[M], interruptBe
 //   - Resume from checkpoint on restart (via graph.Invoke with same config)
 //   - Streaming events via pregel.StreamManager
 
-func (a *TypedChatModelAgent[M]) buildGraphReActRunFunc() typedRunFunc[M] {
+func (a *ReActAgent[M]) buildGraphReActRunFunc() typedRunFunc[M] {
 	return func(ctx context.Context, p *typedRunParams[M]) {
 		// Graph-based ReAct currently supports *schema.Message only.
 		// For AgenticMessage, fall back to the simple for-loop.
@@ -507,8 +507,8 @@ func (a *TypedChatModelAgent[M]) buildGraphReActRunFunc() typedRunFunc[M] {
 			RecursionLimit:  a.config.MaxIterations * 2, // each iter = 2 nodes, so allow extra
 		}
 
-		// Type-assert the agent to *TypedChatModelAgent[*schema.Message].
-		msgAgent, ok := any(a).(*TypedChatModelAgent[*schema.Message])
+		// Type-assert the agent to *ReActAgent[*schema.Message].
+		msgAgent, ok := any(a).(*ReActAgent[*schema.Message])
 		if !ok {
 			p.generator.Send(&TypedAgentEvent[M]{Err: fmt.Errorf("graph ReAct: agent type assertion failed")})
 			return

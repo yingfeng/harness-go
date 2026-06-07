@@ -76,7 +76,7 @@ func (t *agentTool) Invoke(ctx context.Context, args string, opts ...ToolOption)
 	iter := runner.Run(runCtx, messages)
 
 	// If EmitInternalEvents is set, get the parent's exec ctx to forward events
-	var parentEC *chatModelExecCtx
+	var parentEC *reActExecCtx
 	if t.opts.EmitInternalEvents { parentEC = getChatModelExecCtx(runCtx) }
 
 	var result string

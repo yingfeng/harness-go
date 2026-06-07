@@ -20,16 +20,16 @@ func NewEventSenderModelWrapper[M MessageType]() *eventSenderModelHandler[M] {
 type eventSenderModelHandler[M MessageType] struct{}
 
 func (h *eventSenderModelHandler[M]) WrapModel(ctx context.Context, m ChatModel[M], mc *TypedModelContext[M]) (ChatModel[M], error) {
-	ec := getTypedChatModelExecCtx[M](ctx)
+	ec := getReActExecCtx[M](ctx)
 	if ec == nil { return m, nil }
 	return wrapModelWithEventSender(m, ec), nil
 }
 
 // All other middleware methods are no-op
-func (h *eventSenderModelHandler[M]) BeforeAgent(ctx context.Context, rc *ChatModelAgentContext) (context.Context, *ChatModelAgentContext, error) { return ctx, rc, nil }
-func (h *eventSenderModelHandler[M]) AfterAgent(ctx context.Context, state *TypedChatModelAgentState[M]) (context.Context, error) { return ctx, nil }
-func (h *eventSenderModelHandler[M]) BeforeModelRewrite(ctx context.Context, state *TypedChatModelAgentState[M], mc *TypedModelContext[M]) (context.Context, *TypedChatModelAgentState[M], error) { return ctx, state, nil }
-func (h *eventSenderModelHandler[M]) AfterModelRewrite(ctx context.Context, state *TypedChatModelAgentState[M], mc *TypedModelContext[M]) (context.Context, *TypedChatModelAgentState[M], error) { return ctx, state, nil }
+func (h *eventSenderModelHandler[M]) BeforeAgent(ctx context.Context, rc *ReActAgentContext) (context.Context, *ReActAgentContext, error) { return ctx, rc, nil }
+func (h *eventSenderModelHandler[M]) AfterAgent(ctx context.Context, state *TypedReActAgentState[M]) (context.Context, error) { return ctx, nil }
+func (h *eventSenderModelHandler[M]) BeforeModelRewrite(ctx context.Context, state *TypedReActAgentState[M], mc *TypedModelContext[M]) (context.Context, *TypedReActAgentState[M], error) { return ctx, state, nil }
+func (h *eventSenderModelHandler[M]) AfterModelRewrite(ctx context.Context, state *TypedReActAgentState[M], mc *TypedModelContext[M]) (context.Context, *TypedReActAgentState[M], error) { return ctx, state, nil }
 func (h *eventSenderModelHandler[M]) WrapToolInvoke(_ context.Context, ep InvokableToolEndpoint, _ *ToolContext) (InvokableToolEndpoint, error) { return ep, nil }
 func (h *eventSenderModelHandler[M]) WrapToolStream(_ context.Context, ep StreamableToolEndpoint, _ *ToolContext) (StreamableToolEndpoint, error) { return ep, nil }
 func (h *eventSenderModelHandler[M]) WrapEnhancedInvokableToolCall(_ context.Context, ep EnhancedInvokableToolEndpoint, _ *ToolContext) (EnhancedInvokableToolEndpoint, error) { return ep, nil }
@@ -44,7 +44,7 @@ func NewEventSenderToolWrapper[M MessageType]() *eventSenderToolHandler[M] {
 type eventSenderToolHandler[M MessageType] struct{}
 
 func (h *eventSenderToolHandler[M]) WrapToolInvoke(ctx context.Context, next InvokableToolEndpoint, tc *ToolContext) (InvokableToolEndpoint, error) {
-	ec := getTypedChatModelExecCtx[M](ctx)
+	ec := getReActExecCtx[M](ctx)
 	if ec == nil { return next, nil }
 	name := tc.Name
 	callID := tc.CallID
@@ -63,7 +63,7 @@ func (h *eventSenderToolHandler[M]) WrapToolInvoke(ctx context.Context, next Inv
 }
 
 func (h *eventSenderToolHandler[M]) WrapToolStream(ctx context.Context, next StreamableToolEndpoint, tc *ToolContext) (StreamableToolEndpoint, error) {
-	ec := getTypedChatModelExecCtx[M](ctx)
+	ec := getReActExecCtx[M](ctx)
 	if ec == nil { return next, nil }
 	name := tc.Name
 	callID := tc.CallID
@@ -99,7 +99,7 @@ func (h *eventSenderToolHandler[M]) WrapToolStream(ctx context.Context, next Str
 }
 
 func (h *eventSenderToolHandler[M]) WrapEnhancedInvokableToolCall(ctx context.Context, next EnhancedInvokableToolEndpoint, tc *ToolContext) (EnhancedInvokableToolEndpoint, error) {
-	ec := getTypedChatModelExecCtx[M](ctx)
+	ec := getReActExecCtx[M](ctx)
 	if ec == nil { return next, nil }
 	name := tc.Name
 	callID := tc.CallID
@@ -132,7 +132,7 @@ func (h *eventSenderToolHandler[M]) WrapEnhancedInvokableToolCall(ctx context.Co
 }
 
 func (h *eventSenderToolHandler[M]) WrapEnhancedStreamableToolCall(ctx context.Context, next EnhancedStreamableToolEndpoint, tc *ToolContext) (EnhancedStreamableToolEndpoint, error) {
-	ec := getTypedChatModelExecCtx[M](ctx)
+	ec := getReActExecCtx[M](ctx)
 	if ec == nil { return next, nil }
 	name := tc.Name
 	callID := tc.CallID
@@ -180,16 +180,16 @@ func (h *eventSenderToolHandler[M]) WrapEnhancedStreamableToolCall(ctx context.C
 }
 
 // No-op for remaining methods
-func (h *eventSenderToolHandler[M]) BeforeAgent(ctx context.Context, rc *ChatModelAgentContext) (context.Context, *ChatModelAgentContext, error) { return ctx, rc, nil }
-func (h *eventSenderToolHandler[M]) AfterAgent(ctx context.Context, state *TypedChatModelAgentState[M]) (context.Context, error) { return ctx, nil }
-func (h *eventSenderToolHandler[M]) BeforeModelRewrite(ctx context.Context, state *TypedChatModelAgentState[M], mc *TypedModelContext[M]) (context.Context, *TypedChatModelAgentState[M], error) { return ctx, state, nil }
-func (h *eventSenderToolHandler[M]) AfterModelRewrite(ctx context.Context, state *TypedChatModelAgentState[M], mc *TypedModelContext[M]) (context.Context, *TypedChatModelAgentState[M], error) { return ctx, state, nil }
+func (h *eventSenderToolHandler[M]) BeforeAgent(ctx context.Context, rc *ReActAgentContext) (context.Context, *ReActAgentContext, error) { return ctx, rc, nil }
+func (h *eventSenderToolHandler[M]) AfterAgent(ctx context.Context, state *TypedReActAgentState[M]) (context.Context, error) { return ctx, nil }
+func (h *eventSenderToolHandler[M]) BeforeModelRewrite(ctx context.Context, state *TypedReActAgentState[M], mc *TypedModelContext[M]) (context.Context, *TypedReActAgentState[M], error) { return ctx, state, nil }
+func (h *eventSenderToolHandler[M]) AfterModelRewrite(ctx context.Context, state *TypedReActAgentState[M], mc *TypedModelContext[M]) (context.Context, *TypedReActAgentState[M], error) { return ctx, state, nil }
 func (h *eventSenderToolHandler[M]) WrapModel(ctx context.Context, m ChatModel[M], mc *TypedModelContext[M]) (ChatModel[M], error) { return m, nil }
 
 // HasUserEventSenderToolWrapper checks if the handlers list contains a user-provided
 // NewEventSenderToolWrapper. When present, the framework skips its internal default
 // tool event sender to avoid duplicate events.
-func HasUserEventSenderToolWrapper[M MessageType](handlers []TypedChatModelMiddleware[M]) bool {
+func HasUserEventSenderToolWrapper[M MessageType](handlers []TypedReActMiddleware[M]) bool {
 	for _, h := range handlers {
 		if _, ok := h.(*eventSenderToolHandler[M]); ok {
 			return true
@@ -201,7 +201,7 @@ func HasUserEventSenderToolWrapper[M MessageType](handlers []TypedChatModelMiddl
 // HasUserEventSenderModelWrapper checks if the handlers list contains a user-provided
 // NewEventSenderModelWrapper. When present, the framework skips its internal default
 // model event sender to avoid duplicate events.
-func HasUserEventSenderModelWrapper[M MessageType](handlers []TypedChatModelMiddleware[M]) bool {
+func HasUserEventSenderModelWrapper[M MessageType](handlers []TypedReActMiddleware[M]) bool {
 	for _, h := range handlers {
 		if _, ok := h.(*eventSenderModelHandler[M]); ok {
 			return true

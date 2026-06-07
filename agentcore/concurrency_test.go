@@ -56,8 +56,8 @@ func TestWorkflow_ParallelAgentConcurrency(t *testing.T) {
 		m2.addResp("par_b_result")
 	}
 
-	a1 := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m1}).WithName("par_conc_a")
-	a2 := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m2}).WithName("par_conc_b")
+	a1 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m1}).WithName("par_conc_a")
+	a2 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m2}).WithName("par_conc_b")
 
 	ctx := context.Background()
 	par, err := NewParallel(ctx, &ParallelConfig{
@@ -118,7 +118,7 @@ func TestTurnLoop_ConcurrentPushStop(t *testing.T) {
 		PrepareAgent: func(_ context.Context, _ *TurnLoop[*schema.Message], consumed []*schema.Message) (Agent, error) {
 			m := &mockModel{}
 			m.addResp("turn loop conc response")
-			return NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m}).WithName("conc_loop"), nil
+			return NewReActAgent(&ReActConfig[*schema.Message]{Model: m}).WithName("conc_loop"), nil
 		},
 	})
 
@@ -141,10 +141,10 @@ func TestTurnLoop_ConcurrentPushStop(t *testing.T) {
 	}
 }
 
-// ---- ChatModelAgent concurrent Run ----
+// ---- ReActAgent concurrent Run ----
 
-// TestChatModelAgent_ConcurrentRun verifies multiple agents can run concurrently.
-func TestChatModelAgent_ConcurrentRun(t *testing.T) {
+// TestReActAgent_ConcurrentRun verifies multiple agents can run concurrently.
+func TestReActAgent_ConcurrentRun(t *testing.T) {
 	ctx := context.Background()
 	var wg sync.WaitGroup
 	errs := make(chan error, 10)
@@ -156,7 +156,7 @@ func TestChatModelAgent_ConcurrentRun(t *testing.T) {
 			m := &mockModel{}
 			m.addResp("concurrent result")
 			m.addResp("concurrent result")
-			agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m}).WithName("conc_agent")
+			agent := NewReActAgent(&ReActConfig[*schema.Message]{Model: m}).WithName("conc_agent")
 			iter := agent.Run(ctx, &AgentInput{
 				Messages: []*schema.Message{schema.UserMessage("concurrent run test")},
 			})
@@ -199,7 +199,7 @@ func TestRunner_ConcurrentInstances(t *testing.T) {
 			m := &mockModel{}
 			m.addResp("runner conc result")
 			m.addResp("runner conc result")
-			agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m}).WithName("runner_conc")
+			agent := NewReActAgent(&ReActConfig[*schema.Message]{Model: m}).WithName("runner_conc")
 			runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: agent})
 			iter := runner.Run(ctx, []*schema.Message{schema.UserMessage("runner conc test")})
 			for {
@@ -231,7 +231,7 @@ func TestRunner_ConcurrentInstances(t *testing.T) {
 func TestTool_ConcurrentAgent(t *testing.T) {
 	innerM := &mockModel{}
 	innerM.addResp("inner agent result")
-	innerAgent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: innerM}).WithName("inner_conc").WithDescription("inner agent")
+	innerAgent := NewReActAgent(&ReActConfig[*schema.Message]{Model: innerM}).WithName("inner_conc").WithDescription("inner agent")
 
 	ctx := context.Background()
 	agentTool := NewAgentTool(ctx, innerAgent)
@@ -242,7 +242,7 @@ func TestTool_ConcurrentAgent(t *testing.T) {
 		finalResp: "parent done",
 		firstCall: true,
 	}
-	parent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{
+	parent := NewReActAgent(&ReActConfig[*schema.Message]{
 		Model: parentM, Tools: []Tool{agentTool},
 		ToolsConfig: &ToolsNodeConfig{Tools: []Tool{agentTool}},
 	}).WithName("parent_conc")
@@ -298,8 +298,8 @@ func TestWorkflow_SequentialConcurrent(t *testing.T) {
 			m2 := &mockModel{}
 			m2.addResp("seq_b_conc")
 			m2.addResp("seq_b_conc")
-			a1 := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m1}).WithName("seq_conc_a")
-			a2 := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m2}).WithName("seq_conc_b")
+			a1 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m1}).WithName("seq_conc_a")
+			a2 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m2}).WithName("seq_conc_b")
 
 			seq, err := NewSequential(ctx, &SequentialConfig{
 				Name:      "seq_conc",
@@ -342,7 +342,7 @@ func TestCancel_ConcurrentTrigger(t *testing.T) {
 	m.addResp("will be cancelled")
 	m.setDelay(100 * time.Millisecond)
 
-	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m}).WithName("cancel_conc")
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{Model: m}).WithName("cancel_conc")
 
 	cancelOpt, cancelFunc := WithCancel()
 	store := newCancelTestStore()
@@ -387,7 +387,7 @@ func TestInterrupt_Concurrent(t *testing.T) {
 		firstCall: true,
 	}
 	tool := &mockTool{name: "ci_tool", desc: "concurrent interrupt tool"}
-	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{
 		Model: model, Tools: []Tool{tool},
 		ToolsConfig: &ToolsNodeConfig{Tools: []Tool{tool}},
 	}).WithName("ci_agent")

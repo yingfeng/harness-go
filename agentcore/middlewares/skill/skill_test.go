@@ -36,7 +36,7 @@ func TestBeforeAgent_InlineSkill(t *testing.T) {
 			{Name: "test_skill", Description: "A test skill", Content: "You are a test assistant.", ExecutionMode: ModeInline},
 		},
 	})
-	rc := &agentcore.ChatModelAgentContext{Instruction: "Base instruction", Tools: make([]agentcore.Tool, 0)}
+	rc := &agentcore.ReActAgentContext{Instruction: "Base instruction", Tools: make([]agentcore.Tool, 0)}
 	_, newRc, err := mw.BeforeAgent(context.Background(), rc)
 	if err != nil { t.Fatalf("BeforeAgent: %v", err) }
 
@@ -52,7 +52,7 @@ func TestBeforeAgent_ForkSkill(t *testing.T) {
 			{Name: "fork_skill", Description: "A fork skill", Content: "Execute this separately.", ExecutionMode: ModeFork},
 		},
 	})
-	rc := &agentcore.ChatModelAgentContext{Instruction: "Base", Tools: make([]agentcore.Tool, 0)}
+	rc := &agentcore.ReActAgentContext{Instruction: "Base", Tools: make([]agentcore.Tool, 0)}
 	_, newRc, err := mw.BeforeAgent(context.Background(), rc)
 	if err != nil { t.Fatalf("BeforeAgent: %v", err) }
 	// Fork skills should add a tool

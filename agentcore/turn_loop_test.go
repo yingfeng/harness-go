@@ -29,11 +29,11 @@ func (a *turnLoopMockAgent) Run(ctx context.Context, input *AgentInput, opts ...
 	response := a.response
 	if response == "" { response = "mock" }
 	m.addResp(response)
-	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m})
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{Model: m})
 	agent.name = a.name
 	return agent.Run(ctx, input, opts...)
 }
-func (a *turnLoopMockAgent) GetType() string { return "ChatModelAgent" }
+func (a *turnLoopMockAgent) GetType() string { return "ReActAgent" }
 
 func (a *turnLoopMockAgent) new() Agent {
 	return &turnLoopMockAgent{
@@ -82,7 +82,7 @@ func simpleTurnLoop(onEvents func(context.Context, *TurnContext[string], *AsyncI
 		},
 		PrepareAgent: func(ctx context.Context, loop *TurnLoop[string], consumed []string) (Agent, error) {
 			m := &mockModel{}; m.addResp("Echo: " + consumed[0])
-			return NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m}), nil
+			return NewReActAgent(&ReActConfig[*schema.Message]{Model: m}), nil
 		},
 		OnAgentEvents: onEvents,
 	})
@@ -124,7 +124,7 @@ func genInputConsumeAllWithMsg(_ context.Context, _ *TurnLoop[string], items []s
 var prepareTestAgent = func(_ context.Context, _ *TurnLoop[string], _ []string) (Agent, error) {
 	m := &mockModel{}
 	m.addResp("test")
-	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m})
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{Model: m})
 	agent.name = "test"
 	return agent, nil
 }
@@ -385,7 +385,7 @@ func TestTurnLoop_WithCheckpoint(t *testing.T) {
 		},
 		PrepareAgent: func(ctx context.Context, loop *TurnLoop[string], consumed []string) (Agent, error) {
 			m := &mockModel{}; m.addResp("cp:" + consumed[0])
-			return NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m}), nil
+			return NewReActAgent(&ReActConfig[*schema.Message]{Model: m}), nil
 		},
 		Store: store,
 	})
@@ -466,7 +466,7 @@ func TestTurnLoop_WithToolAgent(t *testing.T) {
 				toolCalls: []schema.ToolCall{{ID: "c1", Function: schema.ToolCallFunction{Name: "calc", Arguments: "{}"}}},
 				finalResp: "Tool done", firstCall: true,
 			}
-			return NewChatModelAgent(&ChatModelConfig[*schema.Message]{
+			return NewReActAgent(&ReActConfig[*schema.Message]{
 				Model: wrapperModel, Tools: []Tool{tool},
 			}), nil
 		},
@@ -489,7 +489,7 @@ func TestTurnLoop_GenInputAllConsumed(t *testing.T) {
 		},
 		PrepareAgent: func(ctx context.Context, loop *TurnLoop[string], consumed []string) (Agent, error) {
 			m := &mockModel{}; m.addResp("all")
-			return NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m}), nil
+			return NewReActAgent(&ReActConfig[*schema.Message]{Model: m}), nil
 		},
 	})
 	tl.Push("1"); tl.Push("2")
@@ -509,7 +509,7 @@ func TestTurnLoop_GenInputOneByOne(t *testing.T) {
 		},
 		PrepareAgent: func(ctx context.Context, loop *TurnLoop[string], consumed []string) (Agent, error) {
 			m := &mockModel{}; m.addResp("one:" + consumed[0])
-			return NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m}), nil
+			return NewReActAgent(&ReActConfig[*schema.Message]{Model: m}), nil
 		},
 	})
 	tl.Push("x"); tl.Push("y"); tl.Push("z")
@@ -548,7 +548,7 @@ func TestTurnLoop_InterceptedItems(t *testing.T) {
 		},
 		PrepareAgent: func(ctx context.Context, loop *TurnLoop[string], consumed []string) (Agent, error) {
 			m := &mockModel{}; m.addResp("intercepted")
-			return NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m}), nil
+			return NewReActAgent(&ReActConfig[*schema.Message]{Model: m}), nil
 		},
 	})
 	tl.Push("a")
@@ -787,7 +787,7 @@ func TestTurnLoop_ContextCancelAfterGenInput_RecoverItems(t *testing.T) {
 			if err := ctx.Err(); err != nil {
 				return nil, err
 			}
-			return NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: &mockModel{}}), nil
+			return NewReActAgent(&ReActConfig[*schema.Message]{Model: &mockModel{}}), nil
 		},
 	})
 
@@ -860,7 +860,7 @@ func TestTurnLoop_StopCheckPointIDInCancelError(t *testing.T) {
 	}
 	slowModel.addResp("Hello")
 
-	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{
 		Instruction: "You are a test assistant",
 		Model:       slowModel,
 	}).WithName("TestAgent").WithDescription("Test agent")
@@ -896,7 +896,7 @@ func TestTurnLoop_CancelError_CapturedIndependentlyOfCallback(t *testing.T) {
 	}
 	slowModel.addResp("Hello")
 
-	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{
 		Instruction: "You are a test assistant",
 		Model:       slowModel,
 	}).WithName("TestAgent").WithDescription("Test agent")
@@ -938,7 +938,7 @@ func TestTurnLoop_StopWithoutCheckpointIDDoesNotPersist(t *testing.T) {
 	}
 	slowModel.addResp("Hello")
 
-	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{
 		Instruction: "You are a test assistant",
 		Model:       slowModel,
 	}).WithName("TestAgent").WithDescription("Test agent")
@@ -1149,7 +1149,7 @@ func TestNewTurnLoop_ConcurrentPushAndRun(t *testing.T) {
 				return &GenInputResult[string]{Input: &AgentInput{}, Consumed: items}, nil
 			},
 			PrepareAgent: func(ctx context.Context, _ *TurnLoop[string], consumed []string) (Agent, error) {
-				return NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: &mockModel{}}), nil
+				return NewReActAgent(&ReActConfig[*schema.Message]{Model: &mockModel{}}), nil
 			},
 		})
 

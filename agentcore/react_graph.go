@@ -49,8 +49,8 @@ type ReActGraphState struct {
 // checkpoint at each iteration and interrupt before tool execution.
 type ReActGraph struct {
 	compiled *graph.CompiledGraph
-	config   *ChatModelConfig[*schema.Message]
-	agent    *TypedChatModelAgent[*schema.Message]
+	config   *ReActConfig[*schema.Message]
+	agent    *ReActAgent[*schema.Message]
 }
 
 // ReActGraphConfig holds options for building a ReActGraph.
@@ -72,7 +72,7 @@ type ReActGraphConfig struct {
 //   - prepare_input: BeforeAgent
 //   - model_generate: BeforeModelRewrite → model call → AfterModelRewrite
 //   - check_done (on exit): AfterAgent
-func NewReActGraph(agent *TypedChatModelAgent[*schema.Message], cfg *ReActGraphConfig) (*ReActGraph, error) {
+func NewReActGraph(agent *ReActAgent[*schema.Message], cfg *ReActGraphConfig) (*ReActGraph, error) {
 	if cfg == nil {
 		cfg = &ReActGraphConfig{}
 	}
@@ -88,7 +88,7 @@ func NewReActGraph(agent *TypedChatModelAgent[*schema.Message], cfg *ReActGraphC
 	// Runs once at the start. Applies BeforeAgent middleware.
 	sg.AddNode("prepare_input", func(ctx context.Context, state interface{}) (interface{}, error) {
 		s := state.(*ReActGraphState)
-		rc := &ChatModelAgentContext{
+		rc := &ReActAgentContext{
 			Instruction:    s.Instruction,
 			Tools:          agentCfg.Tools,
 			ReturnDirectly: agentCfg.ReturnDirectly,
@@ -119,12 +119,12 @@ func NewReActGraph(agent *TypedChatModelAgent[*schema.Message], cfg *ReActGraphC
 
 		model := BuildModelWrapperChain(agentCfg.Model, nil, agentCfg)
 
-		agentState := NewChatModelAgentState(
+		agentState := NewReActAgentState(
 			messageSliceToAny(s.Messages),
 			s.ToolInfos,
 			s.IterationsLeft+1,
 		)
-		typedState := (*TypedChatModelAgentState[*schema.Message])(agentState)
+		typedState := (*TypedReActAgentState[*schema.Message])(agentState)
 		mc := &TypedModelContext[*schema.Message]{
 			Tools:               s.ToolInfos,
 			ModelRetryConfig:    agentCfg.RetryConfig,
@@ -209,12 +209,12 @@ func NewReActGraph(agent *TypedChatModelAgent[*schema.Message], cfg *ReActGraphC
 			return s, nil
 		}
 
-		agentState := NewChatModelAgentState(
+		agentState := NewReActAgentState(
 			messageSliceToAny(s.Messages),
 			s.ToolInfos,
 			s.IterationsLeft,
 		)
-		typedState := (*TypedChatModelAgentState[*schema.Message])(agentState)
+		typedState := (*TypedReActAgentState[*schema.Message])(agentState)
 
 		// Use ToolsNode for full middleware chain support.
 		var tn *ToolsNode[*schema.Message]
@@ -270,12 +270,12 @@ func NewReActGraph(agent *TypedChatModelAgent[*schema.Message], cfg *ReActGraphC
 	// Emits AfterAgent middleware and writes the final output.
 	sg.AddNode("check_done", func(ctx context.Context, state interface{}) (interface{}, error) {
 		s := state.(*ReActGraphState)
-		agentState := NewChatModelAgentState(
+		agentState := NewReActAgentState(
 			messageSliceToAny(s.Messages),
 			s.ToolInfos,
 			s.IterationsLeft,
 		)
-		typedState := (*TypedChatModelAgentState[*schema.Message])(agentState)
+		typedState := (*TypedReActAgentState[*schema.Message])(agentState)
 
 		for _, mw := range agentCfg.Middlewares {
 			if mw == nil {

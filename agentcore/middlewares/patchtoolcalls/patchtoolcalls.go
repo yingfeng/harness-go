@@ -45,14 +45,14 @@ func getPatchContent(cfg *Config, toolName, toolCallID string) string {
 	return defaultPatchContent(toolName, toolCallID)
 }
 
-func New[M agentcore.MessageType](cfg *Config) agentcore.TypedChatModelMiddleware[M] {
+func New[M agentcore.MessageType](cfg *Config) agentcore.TypedReActMiddleware[M] {
 	if cfg == nil {
 		cfg = &Config{}
 	}
 	return &middleware[M]{cfg: cfg}
 }
 
-func (m *middleware[M]) BeforeModelRewrite(ctx context.Context, state *agentcore.TypedChatModelAgentState[M], mc *agentcore.TypedModelContext[M]) (context.Context, *agentcore.TypedChatModelAgentState[M], error) {
+func (m *middleware[M]) BeforeModelRewrite(ctx context.Context, state *agentcore.TypedReActAgentState[M], mc *agentcore.TypedModelContext[M]) (context.Context, *agentcore.TypedReActAgentState[M], error) {
 	// Find assistant messages with tool calls that have no corresponding tool result
 	for i := 0; i < len(state.Messages)-1; i++ {
 		var toolCalls []struct{ ID, Name string }

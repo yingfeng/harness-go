@@ -13,8 +13,8 @@ import (
 
 func TestBaseMiddleware_AllMethods(t *testing.T) {
 	var b BaseMiddleware[*schema.Message]
-	rc := &ChatModelAgentContext{}
-	s := NewChatModelAgentState([]*schema.Message{}, nil, 10)
+	rc := &ReActAgentContext{}
+	s := NewReActAgentState([]*schema.Message{}, nil, 10)
 	mc := &ModelContext{}
 
 	ctx, rc2, err := b.BeforeAgent(context.Background(), rc)
@@ -87,14 +87,14 @@ func TestBaseMiddleware_AllMethods(t *testing.T) {
 
 func TestMiddleware_BeforeAgentCanModifyInstruction(t *testing.T) {
 	mw := &testMiddleware{}
-	mw.beforeAgent = func(ctx context.Context, rc *ChatModelAgentContext) (context.Context, *ChatModelAgentContext, error) {
+	mw.beforeAgent = func(ctx context.Context, rc *ReActAgentContext) (context.Context, *ReActAgentContext, error) {
 		rc.Instruction = "MODIFIED: " + rc.Instruction
 		return ctx, rc, nil
 	}
 	model := &mockModel{}
 	model.addResp("modified")
-	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{
-		Model: model, Middlewares: []ChatModelMiddleware{mw},
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{
+		Model: model, Middlewares: []ReActMiddleware{mw},
 	})
 	agent.name = "mod_agent"
 	iter := agent.Run(context.Background(), &AgentInput{
@@ -111,14 +111,14 @@ func TestMiddleware_BeforeAgentCanModifyInstruction(t *testing.T) {
 
 func TestMiddleware_BeforeModelRewriteCanModifyState(t *testing.T) {
 	mw := &testMiddleware{}
-	mw.beforeModel = func(ctx context.Context, state *ChatModelAgentState, mc *ModelContext) (context.Context, *ChatModelAgentState, error) {
+	mw.beforeModel = func(ctx context.Context, state *ReActAgentState, mc *ModelContext) (context.Context, *ReActAgentState, error) {
 		state.RemainingIterations = 1 // force stop after 1 iteration
 		return ctx, state, nil
 	}
 	model := &mockModel{}
 	model.addResp("bmr-test")
-	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{
-		Model: model, Middlewares: []ChatModelMiddleware{mw},
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{
+		Model: model, Middlewares: []ReActMiddleware{mw},
 	})
 	agent.name = "bmr_agent"
 	iter := agent.Run(context.Background(), &AgentInput{
@@ -135,7 +135,7 @@ func TestMiddleware_BeforeModelRewriteCanModifyState(t *testing.T) {
 
 func TestMiddleware_AfterModelRewriteModifiesState(t *testing.T) {
 	mw := &testMiddleware{}
-	mw.afterModel = func(ctx context.Context, state *ChatModelAgentState, mc *ModelContext) (context.Context, *ChatModelAgentState, error) {
+	mw.afterModel = func(ctx context.Context, state *ReActAgentState, mc *ModelContext) (context.Context, *ReActAgentState, error) {
 		if len(state.Messages) > 0 {
 			state.Messages[len(state.Messages)-1] = schema.ToolMessage("rewritten", "call_override")
 		}
@@ -143,8 +143,8 @@ func TestMiddleware_AfterModelRewriteModifiesState(t *testing.T) {
 	}
 	model := &mockModel{}
 	model.addResp("original")
-	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{
-		Model: model, Middlewares: []ChatModelMiddleware{mw},
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{
+		Model: model, Middlewares: []ReActMiddleware{mw},
 	})
 	agent.name = "amr_agent"
 	iter := agent.Run(context.Background(), &AgentInput{
@@ -162,19 +162,19 @@ func TestMiddleware_AfterModelRewriteModifiesState(t *testing.T) {
 func TestMiddleware_MultipleMiddlewares(t *testing.T) {
 	var order []string
 	mw1 := &testMiddleware{}
-	mw1.beforeAgent = func(ctx context.Context, rc *ChatModelAgentContext) (context.Context, *ChatModelAgentContext, error) {
+	mw1.beforeAgent = func(ctx context.Context, rc *ReActAgentContext) (context.Context, *ReActAgentContext, error) {
 		order = append(order, "mw1.BeforeAgent")
 		return ctx, rc, nil
 	}
 	mw2 := &testMiddleware{}
-	mw2.beforeAgent = func(ctx context.Context, rc *ChatModelAgentContext) (context.Context, *ChatModelAgentContext, error) {
+	mw2.beforeAgent = func(ctx context.Context, rc *ReActAgentContext) (context.Context, *ReActAgentContext, error) {
 		order = append(order, "mw2.BeforeAgent")
 		return ctx, rc, nil
 	}
 	model := &mockModel{}
 	model.addResp("multi")
-	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{
-		Model: model, Middlewares: []ChatModelMiddleware{mw1, mw2},
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{
+		Model: model, Middlewares: []ReActMiddleware{mw1, mw2},
 	})
 	agent.name = "multi_mw"
 	iter := agent.Run(context.Background(), &AgentInput{
@@ -195,12 +195,12 @@ func TestMiddleware_MultipleMiddlewares(t *testing.T) {
 func TestMiddleware_BeforeAgentError(t *testing.T) {
 	expectedErr := errors.New("before agent error")
 	mw := &testMiddleware{}
-	mw.beforeAgent = func(ctx context.Context, rc *ChatModelAgentContext) (context.Context, *ChatModelAgentContext, error) {
+	mw.beforeAgent = func(ctx context.Context, rc *ReActAgentContext) (context.Context, *ReActAgentContext, error) {
 		return ctx, nil, expectedErr
 	}
 	model := &mockModel{}
-	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{
-		Model: model, Middlewares: []ChatModelMiddleware{mw},
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{
+		Model: model, Middlewares: []ReActMiddleware{mw},
 	})
 	agent.name = "err_before"
 	iter := agent.Run(context.Background(), &AgentInput{
@@ -224,12 +224,12 @@ func TestMiddleware_BeforeAgentError(t *testing.T) {
 func TestMiddleware_BeforeModelRewriteError(t *testing.T) {
 	expectedErr := errors.New("before model error")
 	mw := &testMiddleware{}
-	mw.beforeModel = func(ctx context.Context, state *ChatModelAgentState, mc *ModelContext) (context.Context, *ChatModelAgentState, error) {
+	mw.beforeModel = func(ctx context.Context, state *ReActAgentState, mc *ModelContext) (context.Context, *ReActAgentState, error) {
 		return ctx, nil, expectedErr
 	}
 	model := &mockModel{}
-	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{
-		Model: model, Middlewares: []ChatModelMiddleware{mw},
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{
+		Model: model, Middlewares: []ReActMiddleware{mw},
 	})
 	agent.name = "err_bmr"
 	iter := agent.Run(context.Background(), &AgentInput{
@@ -253,12 +253,12 @@ func TestMiddleware_BeforeModelRewriteError(t *testing.T) {
 func TestMiddleware_AfterModelRewriteError(t *testing.T) {
 	expectedErr := errors.New("after model error")
 	mw := &testMiddleware{}
-	mw.afterModel = func(ctx context.Context, state *ChatModelAgentState, mc *ModelContext) (context.Context, *ChatModelAgentState, error) {
+	mw.afterModel = func(ctx context.Context, state *ReActAgentState, mc *ModelContext) (context.Context, *ReActAgentState, error) {
 		return ctx, nil, expectedErr
 	}
 	model := &mockModel{}
-	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{
-		Model: model, Middlewares: []ChatModelMiddleware{mw},
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{
+		Model: model, Middlewares: []ReActMiddleware{mw},
 	})
 	agent.name = "err_amr"
 	iter := agent.Run(context.Background(), &AgentInput{
@@ -282,12 +282,12 @@ func TestMiddleware_AfterModelRewriteError(t *testing.T) {
 func TestMiddleware_AfterAgentError(t *testing.T) {
 	expectedErr := errors.New("after agent error")
 	mw := &testMiddleware{}
-	mw.afterAgent = func(ctx context.Context, state *ChatModelAgentState) (context.Context, error) {
+	mw.afterAgent = func(ctx context.Context, state *ReActAgentState) (context.Context, error) {
 		return ctx, expectedErr
 	}
 	model := &mockModel{}
-	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{
-		Model: model, Middlewares: []ChatModelMiddleware{mw},
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{
+		Model: model, Middlewares: []ReActMiddleware{mw},
 	})
 	agent.name = "err_aa"
 	iter := agent.Run(context.Background(), &AgentInput{
@@ -315,8 +315,8 @@ func TestMiddleware_WrapModelReturnsError(t *testing.T) {
 		return nil, expectedErr
 	}
 	model := &mockModel{}
-	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{
-		Model: model, Middlewares: []ChatModelMiddleware{mw},
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{
+		Model: model, Middlewares: []ReActMiddleware{mw},
 	})
 	agent.name = "err_wm"
 	iter := agent.Run(context.Background(), &AgentInput{

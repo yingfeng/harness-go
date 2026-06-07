@@ -36,7 +36,7 @@ func TestNewWithOptions(t *testing.T) {
 
 func TestMiddlewareImplementsInterface(t *testing.T) {
 	mw := New()
-	var _ agentcore.ChatModelMiddleware = mw
+	var _ agentcore.ReActMiddleware = mw
 	_ = mw
 }
 

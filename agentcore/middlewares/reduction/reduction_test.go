@@ -42,7 +42,7 @@ func TestBeforeModelRewrite_Truncation(t *testing.T) {
 		schema.UserMessage("Hello"),
 		schema.ToolMessage("This is a very long tool output that should be truncated", "call1"),
 	}
-	state := agentcore.NewChatModelAgentState(msgs, nil, 10)
+	state := agentcore.NewReActAgentState(msgs, nil, 10)
 	_, newState, err := mw.BeforeModelRewrite(context.Background(), state, nil)
 	if err != nil { t.Fatalf("BeforeModelRewrite: %v", err) }
 
@@ -88,7 +88,7 @@ func TestBeforeModelRewrite_ClearOldToolCalls(t *testing.T) {
 		toolMsgs[i] = schema.ToolMessage("result from tool call that will be cleared", "call_clear")
 	}
 	msgs := append([]*schema.Message{schema.UserMessage("Hello")}, toolMsgs...)
-	state := agentcore.NewChatModelAgentState(msgs, nil, 10)
+	state := agentcore.NewReActAgentState(msgs, nil, 10)
 	_, newState, err := mw.BeforeModelRewrite(context.Background(), state, nil)
 	if err != nil { t.Fatalf("BeforeModelRewrite: %v", err) }
 	if len(newState.Messages) != len(msgs) {

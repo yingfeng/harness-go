@@ -7,12 +7,12 @@ import (
 	"github.com/infiniflow/ragflow/harness/agentcore/schema"
 )
 
-func BenchmarkChatModelAgent_ReActLoop(b *testing.B) {
+func BenchmarkReActAgent_ReActLoop(b *testing.B) {
 	model := &mockModel{}
 	tool := &mockTool{name: "bench_tool", desc: "benchmark tool"}
 	model.addResp("tool")
 	model.addResp("done")
-	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{
 		Model: model,
 		Tools: []Tool{tool},
 		ToolsConfig: &ToolsNodeConfig{Tools: []Tool{tool}},
@@ -31,10 +31,10 @@ func BenchmarkChatModelAgent_ReActLoop(b *testing.B) {
 	}
 }
 
-func BenchmarkChatModelAgent_NoTools(b *testing.B) {
+func BenchmarkReActAgent_NoTools(b *testing.B) {
 	model := &mockModel{}
 	model.addResp("done")
-	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: model})
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{Model: model})
 	agent.name = "bench_nt"
 	ctx := context.Background()
 	b.ResetTimer()

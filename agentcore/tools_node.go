@@ -9,7 +9,7 @@ import (
 	"github.com/infiniflow/ragflow/harness/agentcore/schema"
 )
 
-// ToolsNodeConfig configures the tools node for a ChatModelAgent.
+// ToolsNodeConfig configures the tools node for a ReActAgent.
 type ToolsNodeConfig struct {
 	// Tools is the list of tools available for execution.
 	Tools []Tool
@@ -60,7 +60,7 @@ func NewToolsNode[M MessageType](cfg *ToolsNodeConfig) *ToolsNode[M] {
 // When multiple independent tool calls are present, Execute runs them concurrently
 // using a bounded goroutine pool (default max concurrency = 10), reducing total
 // latency from O(sum) to O(max). For a single tool call, no goroutine is spawned.
-func (tn *ToolsNode[M]) Execute(ctx context.Context, resp M, state *TypedChatModelAgentState[M], _ interface{}) ([]M, *AgentAction, error) {
+func (tn *ToolsNode[M]) Execute(ctx context.Context, resp M, state *TypedReActAgentState[M], _ interface{}) ([]M, *AgentAction, error) {
 	toolCalls := extractToolCalls(resp)
 	if len(toolCalls) == 0 {
 		return nil, nil, nil

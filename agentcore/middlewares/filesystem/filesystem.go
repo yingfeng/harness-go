@@ -53,7 +53,7 @@ func NewTyped[M agentcore.MessageType](cfg *Config) *middleware[M] {
 
 func New(cfg *Config) *middleware[*schema.Message] { return NewTyped[*schema.Message](cfg) }
 
-func (m *middleware[M]) BeforeAgent(ctx context.Context, rc *agentcore.ChatModelAgentContext) (context.Context, *agentcore.ChatModelAgentContext, error) {
+func (m *middleware[M]) BeforeAgent(ctx context.Context, rc *agentcore.ReActAgentContext) (context.Context, *agentcore.ReActAgentContext, error) {
 	if m.cfg.Backend == nil { return ctx, rc, nil }
 	rc.Tools = append(rc.Tools, m.buildTools()...)
 	return ctx, rc, nil

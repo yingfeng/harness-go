@@ -45,8 +45,8 @@ func New(ctx context.Context, cfg *Config) (agentcore.ResumableAgent, error) {
 
 	instruction := fmt.Sprintf(systemPrompt, agentDescs)
 
-	// The supervisor itself is a ChatModelAgent that only transfers to sub-agents
-	sup := agentcore.NewChatModelAgent(&agentcore.ChatModelConfig[*schema.Message]{
+	// The supervisor itself is a ReActAgent that only transfers to sub-agents
+	sup := agentcore.NewReActAgent(&agentcore.ReActConfig[*schema.Message]{
 		Model:       cfg.Model,
 		Instruction: instruction,
 	})
@@ -65,7 +65,7 @@ func New(ctx context.Context, cfg *Config) (agentcore.ResumableAgent, error) {
 	}
 
 	// TODO: Add unified tracing container for supervisor identification.
-	// Currently NewChatModelAgent returns a concrete type, so we cannot
+	// Currently NewReActAgent returns a concrete type, so we cannot
 	// easily add a GetType() method to identify the supervisor.
 
 	flow, err := agentcore.SetSubAgents(ctx, supAgent, wrappedSubs)

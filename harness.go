@@ -208,16 +208,16 @@ type (
 	BaseTool = agentcore.BaseTool
 	// ToolContext provides tool metadata.
 	ToolContext = agentcore.ToolContext
-	// ChatModelAgentState holds agent state for middlewares.
-	ChatModelAgentState = agentcore.ChatModelAgentState
-	// ChatModelAgentContext is passed to BeforeAgent middlewares.
-	ChatModelAgentContext = agentcore.ChatModelAgentContext
+	// ReActAgentState holds agent state for middlewares.
+	ReActAgentState = agentcore.ReActAgentState
+	// ReActAgentContext is passed to BeforeAgent middlewares.
+	ReActAgentContext = agentcore.ReActAgentContext
 	// ModelContext wraps model call context.
 	ModelContext = agentcore.ModelContext
 	// CheckPointStore persists execution checkpoints.
 	CheckPointStore = agentcore.CheckPointStore
-	// ChatModelMiddleware allows customizing agent behavior.
-	ChatModelMiddleware = agentcore.ChatModelMiddleware
+	// ReActMiddleware allows customizing agent behavior.
+	ReActMiddleware = agentcore.ReActMiddleware
 	// Workflow types
 	SequentialConfig = agentcore.SequentialConfig
 	ParallelConfig   = agentcore.ParallelConfig

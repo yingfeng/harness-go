@@ -42,18 +42,18 @@ type middleware[M agentcore.MessageType] struct {
 	cache map[string]string
 }
 
-func NewTyped[M agentcore.MessageType](cfg *TypedConfig[M]) agentcore.TypedChatModelMiddleware[M] {
+func NewTyped[M agentcore.MessageType](cfg *TypedConfig[M]) agentcore.TypedReActMiddleware[M] {
 	if cfg == nil { cfg = &TypedConfig[M]{MaxBytes: 50000, MaxDepth: 5} }
 	if cfg.MaxBytes <= 0 { cfg.MaxBytes = 50000 }
 	if cfg.MaxDepth <= 0 { cfg.MaxDepth = 5 }
 	return &middleware[M]{cfg: cfg, cache: make(map[string]string)}
 }
 
-func New(cfg *TypedConfig[*schema.Message]) agentcore.TypedChatModelMiddleware[*schema.Message] {
+func New(cfg *TypedConfig[*schema.Message]) agentcore.TypedReActMiddleware[*schema.Message] {
 	return NewTyped[*schema.Message](cfg)
 }
 
-func (m *middleware[M]) BeforeAgent(ctx context.Context, rc *agentcore.ChatModelAgentContext) (context.Context, *agentcore.ChatModelAgentContext, error) {
+func (m *middleware[M]) BeforeAgent(ctx context.Context, rc *agentcore.ReActAgentContext) (context.Context, *agentcore.ReActAgentContext, error) {
 	// Check if already injected via session (idempotent)
 	sess := getSession(ctx)
 	if sess != nil {

@@ -44,7 +44,7 @@ type middleware[M agentcore.MessageType] struct {
 	keyCounter int
 }
 
-func NewTyped[M agentcore.MessageType](cfg *TypedConfig[M]) agentcore.TypedChatModelMiddleware[M] {
+func NewTyped[M agentcore.MessageType](cfg *TypedConfig[M]) agentcore.TypedReActMiddleware[M] {
 	if cfg == nil { cfg = &TypedConfig[M]{} }
 	if cfg.MaxToolOutputLen <= 0 { cfg.MaxToolOutputLen = 2000 }
 	if cfg.MaxToolCalls <= 0 { cfg.MaxToolCalls = 20 }
@@ -52,7 +52,7 @@ func NewTyped[M agentcore.MessageType](cfg *TypedConfig[M]) agentcore.TypedChatM
 	return &middleware[M]{cfg: cfg}
 }
 
-func New(cfg *Config) agentcore.TypedChatModelMiddleware[*schema.Message] {
+func New(cfg *Config) agentcore.TypedReActMiddleware[*schema.Message] {
 	return NewTyped[*schema.Message](cfg)
 }
 
@@ -109,7 +109,7 @@ func (mw *middleware[M]) WrapToolStream(ctx context.Context, next agentcore.Stre
 
 // ---- Clear Phase (BeforeModelRewrite) ----
 
-func (mw *middleware[M]) BeforeModelRewrite(ctx context.Context, state *agentcore.TypedChatModelAgentState[M], mc *agentcore.TypedModelContext[M]) (context.Context, *agentcore.TypedChatModelAgentState[M], error) {
+func (mw *middleware[M]) BeforeModelRewrite(ctx context.Context, state *agentcore.TypedReActAgentState[M], mc *agentcore.TypedModelContext[M]) (context.Context, *agentcore.TypedReActAgentState[M], error) {
 	// Phase 1: Truncate oversized outputs
 	mw.truncateToolOutputs(state)
 
@@ -124,7 +124,7 @@ func (mw *middleware[M]) BeforeModelRewrite(ctx context.Context, state *agentcor
 	return ctx, state, nil
 }
 
-func (mw *middleware[M]) truncateToolOutputs(state *agentcore.TypedChatModelAgentState[M]) {
+func (mw *middleware[M]) truncateToolOutputs(state *agentcore.TypedReActAgentState[M]) {
 	toolCount := 0
 	for i, msg := range state.Messages {
 		m, ok := any(msg).(*schema.Message)
@@ -145,7 +145,7 @@ func (mw *middleware[M]) truncateToolOutputs(state *agentcore.TypedChatModelAgen
 	}
 }
 
-func (mw *middleware[M]) clearOldToolCalls(state *agentcore.TypedChatModelAgentState[M], totalTokens int) {
+func (mw *middleware[M]) clearOldToolCalls(state *agentcore.TypedReActAgentState[M], totalTokens int) {
 	if mw.cfg.ClearAtLeast <= 0 { return }
 	targetTokens := mw.cfg.MaxTokensForClear - mw.cfg.ClearAtLeast
 	if totalTokens <= targetTokens { return }

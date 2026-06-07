@@ -25,18 +25,18 @@ type middleware[M agentcore.MessageType] struct {
 	initialized bool
 }
 
-func NewTyped[M agentcore.MessageType](cfg *TypedConfig[M]) agentcore.TypedChatModelMiddleware[M] {
+func NewTyped[M agentcore.MessageType](cfg *TypedConfig[M]) agentcore.TypedReActMiddleware[M] {
 	if cfg == nil { cfg = &TypedConfig[M]{MaxResults: 5, SearchThreshold: 10} }
 	if cfg.MaxResults <= 0 { cfg.MaxResults = 5 }
 	if cfg.SearchThreshold <= 0 { cfg.SearchThreshold = 10 }
 	return &middleware[M]{cfg: cfg}
 }
 
-func New(cfg *TypedConfig[*schema.Message]) agentcore.TypedChatModelMiddleware[*schema.Message] {
+func New(cfg *TypedConfig[*schema.Message]) agentcore.TypedReActMiddleware[*schema.Message] {
 	return NewTyped[*schema.Message](cfg)
 }
 
-func (m *middleware[M]) BeforeAgent(ctx context.Context, rc *agentcore.ChatModelAgentContext) (context.Context, *agentcore.ChatModelAgentContext, error) {
+func (m *middleware[M]) BeforeAgent(ctx context.Context, rc *agentcore.ReActAgentContext) (context.Context, *agentcore.ReActAgentContext, error) {
 	if m.initialized { return ctx, rc, nil }
 	m.initialized = true
 
@@ -67,7 +67,7 @@ func (m *middleware[M]) BeforeAgent(ctx context.Context, rc *agentcore.ChatModel
 	return ctx, rc, nil
 }
 
-func (m *middleware[M]) BeforeModelRewrite(ctx context.Context, state *agentcore.TypedChatModelAgentState[M], mc *agentcore.TypedModelContext[M]) (context.Context, *agentcore.TypedChatModelAgentState[M], error) {
+func (m *middleware[M]) BeforeModelRewrite(ctx context.Context, state *agentcore.TypedReActAgentState[M], mc *agentcore.TypedModelContext[M]) (context.Context, *agentcore.TypedReActAgentState[M], error) {
 	if !m.cfg.UseDeferred { return ctx, state, nil }
 
 	// Deferred mode: build tool info list

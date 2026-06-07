@@ -151,7 +151,7 @@ func getAgentType(a Agent) string {
 	if t, ok := a.(interface{ GetType() string }); ok {
 		return t.GetType()
 	}
-	return "ChatModelAgent"
+	return "ReActAgent"
 }
 
 // ---- Run-local value helpers ----
@@ -196,7 +196,7 @@ func SendEvent(ctx context.Context, event *AgentEvent) error {
 }
 
 func TypedSendEvent[M MessageType](ctx context.Context, event *TypedAgentEvent[M]) error {
-	ec := getTypedChatModelExecCtx[M](ctx)
+	ec := getReActExecCtx[M](ctx)
 	if ec == nil || ec.generator == nil {
 		return errNotInAgentExec
 	}
@@ -208,7 +208,7 @@ type AgentExecError struct{ Message string }
 
 func (e *AgentExecError) Error() string { return e.Message }
 
-var errNotInAgentExec = &AgentExecError{Message: "must be called within ChatModelAgent Run/Resume"}
+var errNotInAgentExec = &AgentExecError{Message: "must be called within ReActAgent Run/Resume"}
 
 // checkGobEncodability probes whether the value can be gob-encoded as part of
 // a map[string]any, which is exactly how session values are serialized during

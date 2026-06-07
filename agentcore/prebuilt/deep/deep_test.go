@@ -109,7 +109,7 @@ func TestNewWithSubAgents_WithSubs(t *testing.T) {
 	ctx := context.Background()
 	cfg := DefaultConfig()
 	cfg.Model = &mockModel{}
-	sub := agentcore.NewChatModelAgent(&agentcore.ChatModelConfig[*schema.Message]{
+	sub := agentcore.NewReActAgent(&agentcore.ReActConfig[*schema.Message]{
 		Model: &mockModel{}, Instruction: "You are a helper.",
 	}).WithName("helper")
 
@@ -138,7 +138,7 @@ func TestWithFailoverModel(t *testing.T) {
 }
 
 func TestNewWithSubAgents_BasicCreation(t *testing.T) {
-	subAgent := agentcore.NewChatModelAgent(&agentcore.ChatModelConfig[*schema.Message]{
+	subAgent := agentcore.NewReActAgent(&agentcore.ReActConfig[*schema.Message]{
 		Model: &mockModel{},
 		Instruction: "You handle data processing.",
 	}).WithName("data_processor")

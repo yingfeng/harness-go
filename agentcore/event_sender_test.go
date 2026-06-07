@@ -21,7 +21,7 @@ func TestEventSenderToolWrapper_Creation(t *testing.T) {
 }
 
 func TestHasUserEventSenderModelWrapper_Empty(t *testing.T) {
-	handlers := []TypedChatModelMiddleware[*schema.Message]{}
+	handlers := []TypedReActMiddleware[*schema.Message]{}
 	if HasUserEventSenderModelWrapper(handlers) {
 		t.Error("should be false for empty handlers")
 	}
@@ -29,7 +29,7 @@ func TestHasUserEventSenderModelWrapper_Empty(t *testing.T) {
 
 func TestHasUserEventSenderModelWrapper_Present(t *testing.T) {
 	wrapper := NewEventSenderModelWrapper[*schema.Message]()
-	handlers := []TypedChatModelMiddleware[*schema.Message]{wrapper}
+	handlers := []TypedReActMiddleware[*schema.Message]{wrapper}
 	if !HasUserEventSenderModelWrapper(handlers) {
 		t.Error("should detect user's EventSenderModelWrapper")
 	}
@@ -37,7 +37,7 @@ func TestHasUserEventSenderModelWrapper_Present(t *testing.T) {
 
 func TestHasUserEventSenderToolWrapper_Present(t *testing.T) {
 	wrapper := NewEventSenderToolWrapper[*schema.Message]()
-	handlers := []TypedChatModelMiddleware[*schema.Message]{wrapper}
+	handlers := []TypedReActMiddleware[*schema.Message]{wrapper}
 	if !HasUserEventSenderToolWrapper(handlers) {
 		t.Error("should detect user's EventSenderToolWrapper")
 	}
@@ -59,7 +59,7 @@ func TestEventSenderModelWrapper_AllNoOp(t *testing.T) {
 }
 
 func TestResumeWithData(t *testing.T) {
-	info := ResumeWithData(&ChatModelAgentResumeData{})
+	info := ResumeWithData(&ReActAgentResumeData{})
 	if info.ResumeData == nil {
 		t.Error("ResumeData should be set")
 	}

@@ -323,7 +323,7 @@ func TestHandleRunFuncError_AlreadyHandled_NoDuplicate(t *testing.T) {
 // ---- TestCancel_SafePointNeverFires ----
 
 func TestCancel_SafePointNeverFires_ErrExecutionEnded(t *testing.T) {
-	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: &mockModel{}})
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{Model: &mockModel{}})
 	agent.name = "never"
 	opt, cancel := WithCancel()
 	ctx := context.Background()
@@ -347,8 +347,8 @@ func TestCancelContextKey(t *testing.T) {
 func TestWithCancel_SequentialAgent(t *testing.T) {
 	m1 := &mockModel{}; m1.addResp("A1")
 	m2 := &mockModel{}; m2.addResp("A2")
-	a1 := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m1}); a1.name = "s1"
-	a2 := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m2}); a2.name = "s2"
+	a1 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m1}); a1.name = "s1"
+	a2 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m2}); a2.name = "s2"
 	ctx := context.Background()
 	wf, err := NewSequential(ctx, &SequentialConfig{Name: "seq", Description: "test", SubAgents: []Agent{a1, a2}})
 	if err != nil { t.Fatalf("NewSequential: %v", err) }
@@ -361,8 +361,8 @@ func TestWithCancel_SequentialAgent(t *testing.T) {
 func TestWithCancel_LoopAgent(t *testing.T) {
 	m1 := &mockModel{}; m1.addResp("L1")
 	m2 := &mockModel{}; m2.addResp("L2")
-	a1 := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m1}); a1.name = "l1"
-	a2 := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m2}); a2.name = "l2"
+	a1 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m1}); a1.name = "l1"
+	a2 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m2}); a2.name = "l2"
 	ctx := context.Background()
 	wf, err := NewLoop(ctx, &LoopConfig{Name: "loop", Description: "test", SubAgents: []Agent{a1, a2}, MaxIterations: 5})
 	if err != nil { t.Fatalf("NewLoop: %v", err) }
@@ -375,8 +375,8 @@ func TestWithCancel_LoopAgent(t *testing.T) {
 func TestWithCancel_ParallelAgent(t *testing.T) {
 	m1 := &mockModel{}; m1.addResp("P1")
 	m2 := &mockModel{}; m2.addResp("P2")
-	a1 := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m1}); a1.name = "p1"
-	a2 := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m2}); a2.name = "p2"
+	a1 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m1}); a1.name = "p1"
+	a2 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m2}); a2.name = "p2"
 	ctx := context.Background()
 	wf, err := NewParallel(ctx, &ParallelConfig{Name: "par", Description: "test", SubAgents: []Agent{a1, a2}})
 	if err != nil { t.Fatalf("NewParallel: %v", err) }
@@ -389,8 +389,8 @@ func TestWithCancel_ParallelAgent(t *testing.T) {
 func TestCheckCancel_Sequential_BetweenSubAgents(t *testing.T) {
 	m1 := &mockModel{}; m1.addResp("X1")
 	m2 := &mockModel{}; m2.addResp("X2")
-	a1 := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m1}); a1.name = "x1"
-	a2 := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m2}); a2.name = "x2"
+	a1 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m1}); a1.name = "x1"
+	a2 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m2}); a2.name = "x2"
 	ctx := context.Background()
 	wf, _ := NewSequential(ctx, &SequentialConfig{Name: "chk", Description: "test", SubAgents: []Agent{a1, a2}})
 	opt, cancel := WithCancel()
@@ -402,8 +402,8 @@ func TestCheckCancel_Sequential_BetweenSubAgents(t *testing.T) {
 func TestCheckCancel_Loop_BetweenIterations(t *testing.T) {
 	m1 := &mockModel{}; m1.addResp("Y1")
 	m2 := &mockModel{}; m2.addResp("Y2")
-	a1 := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m1}); a1.name = "y1"
-	a2 := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m2}); a2.name = "y2"
+	a1 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m1}); a1.name = "y1"
+	a2 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m2}); a2.name = "y2"
 	ctx := context.Background()
 	wf, _ := NewLoop(ctx, &LoopConfig{Name: "chk_loop", Description: "test", SubAgents: []Agent{a1, a2}, MaxIterations: 5})
 	opt, cancel := WithCancel()
@@ -415,8 +415,8 @@ func TestCheckCancel_Loop_BetweenIterations(t *testing.T) {
 func TestCheckCancel_Parallel_PreSpawn(t *testing.T) {
 	m1 := &mockModel{}; m1.addResp("Z1")
 	m2 := &mockModel{}; m2.addResp("Z2")
-	a1 := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m1}); a1.name = "z1"
-	a2 := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m2}); a2.name = "z2"
+	a1 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m1}); a1.name = "z1"
+	a2 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m2}); a2.name = "z2"
 	ctx := context.Background()
 	wf, _ := NewParallel(ctx, &ParallelConfig{Name: "chk_par", Description: "test", SubAgents: []Agent{a1, a2}})
 	opt, cancel := WithCancel()
@@ -429,7 +429,7 @@ func TestCheckCancel_Parallel_PreSpawn(t *testing.T) {
 
 func TestWithCancel_AfterCompletion(t *testing.T) {
 	model := &mockModel{}; model.addResp("done")
-	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: model})
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{Model: model})
 	agent.name = "after"
 	opt, cancel := WithCancel()
 	ctx := context.Background()
@@ -493,7 +493,7 @@ func TestCancelWithTools_CancelImmediate(t *testing.T) {
 	model := newCancelTestChatModel(nil)
 	tool := newSlowTool("slow_tool", 200*time.Millisecond, "result")
 	model.addResp("tool")
-	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{
 		Model: model, Tools: []Tool{tool},
 		ToolsConfig: &ToolsNodeConfig{Tools: []Tool{tool}},
 	})
@@ -510,7 +510,7 @@ func TestCancelWithTools_CancelAfterChatModel(t *testing.T) {
 	model := newCancelTestChatModel(nil)
 	tool := newSlowTool("slow_tool", 300*time.Millisecond, "result")
 	model.addResp("tool")
-	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{
 		Model: model, Tools: []Tool{tool},
 		ToolsConfig: &ToolsNodeConfig{Tools: []Tool{tool}},
 	})
@@ -528,7 +528,7 @@ func TestCancelWithTools_CancelAfterToolCalls(t *testing.T) {
 	tool := newSlowTool("slow_tool", 50*time.Millisecond, "result")
 	model.addResp("tool")
 	model.addResp("final")
-	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{
 		Model: model, Tools: []Tool{tool},
 		ToolsConfig: &ToolsNodeConfig{Tools: []Tool{tool}},
 	})
@@ -544,7 +544,7 @@ func TestCancelWithTools_CancelAfterToolCalls(t *testing.T) {
 func TestWithCancel_WithCheckpoint(t *testing.T) {
 	model := newCancelTestChatModel(nil)
 	model.addResp("hi")
-	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: model})
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{Model: model})
 	agent.name = "ckpt"
 	store := newCancelTestStore()
 	opt, cancel := WithCancel()
@@ -559,7 +559,7 @@ func TestWithCancel_Streaming(t *testing.T) {
 	t.Run("CancelImmediate", func(t *testing.T) {
 		model := newCancelTestChatModel(nil)
 		model.addResp("streaming_response")
-		agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: model})
+		agent := NewReActAgent(&ReActConfig[*schema.Message]{Model: model})
 		agent.name = "stream_cancel"
 		opt, cancel := WithCancel()
 		ctx := context.Background()
@@ -573,7 +573,7 @@ func TestWithCancel_Streaming(t *testing.T) {
 		tool := newSlowTool("slow_tool", 30*time.Millisecond, "result")
 		model.addResp("tool")
 		model.addResp("final")
-		agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{
+		agent := NewReActAgent(&ReActConfig[*schema.Message]{
 			Model: model, Tools: []Tool{tool},
 			ToolsConfig: &ToolsNodeConfig{Tools: []Tool{tool}},
 		})
@@ -590,7 +590,7 @@ func TestWithCancel_Streaming(t *testing.T) {
 func TestWithCancel_Resume(t *testing.T) {
 	model := newCancelTestChatModel(nil)
 	model.addResp("hi")
-	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: model})
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{Model: model})
 	agent.name = "cancel_then_resume"
 	store := newCancelTestStore()
 	opt, cancel := WithCancel()
@@ -604,8 +604,8 @@ func TestWithCancel_Resume(t *testing.T) {
 func TestCancel_SequentialWorkflow_CancelAfterChatModel(t *testing.T) {
 	m1 := newCancelTestChatModel(nil); m1.addResp("A1")
 	m2 := newCancelTestChatModel(nil); m2.addResp("A2")
-	a1 := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m1}); a1.name = "s1"
-	a2 := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m2}); a2.name = "s2"
+	a1 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m1}); a1.name = "s1"
+	a2 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m2}); a2.name = "s2"
 	ctx := context.Background()
 	wf, _ := NewSequential(ctx, &SequentialConfig{Name: "seq", Description: "test", SubAgents: []Agent{a1, a2}})
 	store := newCancelTestStore()
@@ -620,8 +620,8 @@ func TestCancel_SequentialWorkflow_CancelAfterChatModel(t *testing.T) {
 func TestCancel_ParallelWorkflow_CancelAfterChatModel(t *testing.T) {
 	m1 := newCancelTestChatModel(nil); m1.addResp("P1")
 	m2 := newCancelTestChatModel(nil); m2.addResp("P2")
-	a1 := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m1}); a1.name = "p1"
-	a2 := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m2}); a2.name = "p2"
+	a1 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m1}); a1.name = "p1"
+	a2 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m2}); a2.name = "p2"
 	ctx := context.Background()
 	wf, _ := NewParallel(ctx, &ParallelConfig{Name: "par", Description: "test", SubAgents: []Agent{a1, a2}})
 	opt, cancel := WithCancel()
@@ -634,8 +634,8 @@ func TestCancel_ParallelWorkflow_CancelAfterChatModel(t *testing.T) {
 func TestCancel_LoopWorkflow_CancelAfterChatModel(t *testing.T) {
 	m1 := newCancelTestChatModel(nil); m1.addResp("L1")
 	m2 := newCancelTestChatModel(nil); m2.addResp("L2")
-	a1 := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m1}); a1.name = "l1"
-	a2 := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m2}); a2.name = "l2"
+	a1 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m1}); a1.name = "l1"
+	a2 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m2}); a2.name = "l2"
 	ctx := context.Background()
 	wf, _ := NewLoop(ctx, &LoopConfig{Name: "loop", Description: "test", SubAgents: []Agent{a1, a2}, MaxIterations: 5})
 	opt, cancel := WithCancel()
@@ -648,8 +648,8 @@ func TestCancel_LoopWorkflow_CancelAfterChatModel(t *testing.T) {
 func TestCheckCancel_Transfer_BeforeTarget(t *testing.T) {
 	m1 := newCancelTestChatModel(nil); m1.addResp("route")
 	s1 := newCancelTestChatModel(nil); s1.addResp("sub")
-	a1 := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m1}); a1.name = "sup"
-	sAgent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: s1}); sAgent.name = "sub1"
+	a1 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m1}); a1.name = "sup"
+	sAgent := NewReActAgent(&ReActConfig[*schema.Message]{Model: s1}); sAgent.name = "sub1"
 	ctx := context.Background()
 	sup, err := SetSubAgents(ctx, a1, []Agent{sAgent})
 	if err != nil { t.Fatalf("SetSubAgents: %v", err) }
@@ -679,8 +679,8 @@ func TestCancelMonitoredToolHandler_EnhancedStreamableToolCall(t *testing.T) {
 func TestCancelImmediate_SequentialTransitionBoundary(t *testing.T) {
 	m1 := newCancelTestChatModel(nil); m1.addResp("A")
 	m2 := newCancelTestChatModel(nil); m2.addResp("B")
-	a1 := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m1}); a1.name = "x1"
-	a2 := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m2}); a2.name = "x2"
+	a1 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m1}); a1.name = "x1"
+	a2 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m2}); a2.name = "x2"
 	ctx := context.Background()
 	wf, _ := NewSequential(ctx, &SequentialConfig{Name: "seq_bound", Description: "test", SubAgents: []Agent{a1, a2}})
 	opt, cancel := WithCancel()
@@ -693,8 +693,8 @@ func TestCancelImmediate_SequentialTransitionBoundary(t *testing.T) {
 func TestCancelImmediate_LoopTransitionBoundary(t *testing.T) {
 	m1 := newCancelTestChatModel(nil); m1.addResp("L")
 	m2 := newCancelTestChatModel(nil); m2.addResp("L")
-	a1 := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m1}); a1.name = "lx"
-	a2 := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m2}); a2.name = "ly"
+	a1 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m1}); a1.name = "lx"
+	a2 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m2}); a2.name = "ly"
 	ctx := context.Background()
 	wf, _ := NewLoop(ctx, &LoopConfig{Name: "loop_bound", Description: "test", SubAgents: []Agent{a1, a2}, MaxIterations: 5})
 	opt, cancel := WithCancel()
@@ -707,8 +707,8 @@ func TestCancelImmediate_LoopTransitionBoundary(t *testing.T) {
 func TestCancelAfterChatModel_SequentialTransitionBoundary(t *testing.T) {
 	m1 := newCancelTestChatModel(nil); m1.addResp("A")
 	m2 := newCancelTestChatModel(nil); m2.addResp("B")
-	a1 := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m1}); a1.name = "t1"
-	a2 := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m2}); a2.name = "t2"
+	a1 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m1}); a1.name = "t1"
+	a2 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m2}); a2.name = "t2"
 	ctx := context.Background()
 	wf, _ := NewSequential(ctx, &SequentialConfig{Name: "seq_trans", Description: "test", SubAgents: []Agent{a1, a2}})
 	opt, cancel := WithCancel()
@@ -719,16 +719,16 @@ func TestCancelAfterChatModel_SequentialTransitionBoundary(t *testing.T) {
 }
 
 func TestCancelImmediate_OrphanedToolGoroutine_NoPanic(t *testing.T) {
-	_ = &chatModelExecCtx{}
+	_ = &reActExecCtx{}
 }
 
 func TestCancelImmediate_MultiLevelNesting(t *testing.T) {
 	m1 := newCancelTestChatModel(nil); m1.addResp("root")
 	m2 := newCancelTestChatModel(nil); m2.addResp("mid")
 	m3 := newCancelTestChatModel(nil); m3.addResp("leaf")
-	a1 := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m1}); a1.name = "root"
-	a2 := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m2}); a2.name = "mid"
-	a3 := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m3}); a3.name = "leaf"
+	a1 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m1}); a1.name = "root"
+	a2 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m2}); a2.name = "mid"
+	a3 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m3}); a3.name = "leaf"
 	ctx := context.Background()
 	midFlow, err := SetSubAgents(ctx, a2, []Agent{a3})
 	if err != nil { t.Fatalf("SetSubAgents mid: %v", err) }
@@ -743,9 +743,9 @@ func TestCancelImmediate_MultiLevelNesting(t *testing.T) {
 func TestCancel_NestedWorkflow_AgentTool_CancelAfterChatModel(t *testing.T) {
 	mRoot := newCancelTestChatModel(nil); mRoot.addResp("tool")
 	mLeaf := newCancelTestChatModel(nil); mLeaf.addResp("leaf")
-	leafAgent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: mLeaf}); leafAgent.name = "leaf"
+	leafAgent := NewReActAgent(&ReActConfig[*schema.Message]{Model: mLeaf}); leafAgent.name = "leaf"
 	tool := NewAgentTool(context.Background(), leafAgent)
-	rootAgent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{
+	rootAgent := NewReActAgent(&ReActConfig[*schema.Message]{
 		Model: mRoot, Tools: []Tool{tool}, ToolsConfig: &ToolsNodeConfig{Tools: []Tool{tool}},
 	})
 	rootAgent.name = "root"
@@ -761,11 +761,11 @@ func TestCancel_CancelAfterToolCalls_InSequentialWorkflow(t *testing.T) {
 	m1 := newCancelTestChatModel(nil); m1.addResp("X")
 	m2 := newCancelTestChatModel(nil); m2.addResp("Y")
 	slow := newSlowTool("slow_tool", 30*time.Millisecond, "result")
-	a1 := NewChatModelAgent(&ChatModelConfig[*schema.Message]{
+	a1 := NewReActAgent(&ReActConfig[*schema.Message]{
 		Model: m1, Tools: []Tool{slow},
 		ToolsConfig: &ToolsNodeConfig{Tools: []Tool{slow}},
 	}); a1.name = "with_tool"
-	a2 := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m2}); a2.name = "after_tool"
+	a2 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m2}); a2.name = "after_tool"
 	ctx := context.Background()
 	wf, _ := NewSequential(ctx, &SequentialConfig{Name: "seq_tool", Description: "test", SubAgents: []Agent{a1, a2}})
 	opt, cancel := WithCancel()
@@ -788,8 +788,8 @@ func TestCancelImmediate_CancelUnawareAgent_GracePeriodFallback(t *testing.T) {
 func TestCancelImmediate_ParallelWorkflow_WithAgentTool(t *testing.T) {
 	m1 := newCancelTestChatModel(nil); m1.addResp("P1")
 	m2 := newCancelTestChatModel(nil); m2.addResp("P2")
-	a1 := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m1}); a1.name = "pt1"
-	a2 := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m2}); a2.name = "pt2"
+	a1 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m1}); a1.name = "pt1"
+	a2 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m2}); a2.name = "pt2"
 	ctx := context.Background()
 	wf, _ := NewParallel(ctx, &ParallelConfig{Name: "par_tool", Description: "test", SubAgents: []Agent{a1, a2}})
 	opt, cancel := WithCancel()
@@ -897,8 +897,8 @@ func TestDeriveAgentToolCancelContext_ConcurrentSetRecursive(t *testing.T) {
 func TestWithCancel_SupervisorAgent(t *testing.T) {
 	mSup := newCancelTestChatModel(nil); mSup.addResp("sup")
 	mSub := newCancelTestChatModel(nil); mSub.addResp("sub")
-	sup := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: mSup}); sup.name = "supervisor"
-	sub := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: mSub}); sub.name = "sub1"
+	sup := NewReActAgent(&ReActConfig[*schema.Message]{Model: mSup}); sup.name = "supervisor"
+	sub := NewReActAgent(&ReActConfig[*schema.Message]{Model: mSub}); sub.name = "sub1"
 	ctx := context.Background()
 	flow, err := SetSubAgents(ctx, sup, []Agent{sub})
 	if err != nil { t.Fatalf("SetSubAgents: %v", err) }
@@ -913,9 +913,9 @@ func TestCancelAfterChatModel_Sequential_Agent1CompletesCancelBeforeAgent2Resume
 	m1 := newCancelTestChatModel(nil); m1.addResp("A")
 	m2 := newCancelTestChatModel(nil); m2.addResp("B")
 	m3 := newCancelTestChatModel(nil); m3.addResp("C")
-	a1 := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m1}); a1.name = "a"
-	a2 := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m2}); a2.name = "b"
-	a3 := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m3}); a3.name = "c"
+	a1 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m1}); a1.name = "a"
+	a2 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m2}); a2.name = "b"
+	a3 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m3}); a3.name = "c"
 	ctx := context.Background()
 	wf, _ := NewSequential(ctx, &SequentialConfig{Name: "seq3", Description: "test", SubAgents: []Agent{a1, a2, a3}})
 	store := newCancelTestStore()
@@ -930,9 +930,9 @@ func TestCancelAfterChatModel_Sequential_Agent1CompletesCancelBeforeAgent2Resume
 func TestCancelImmediate_AgentTool_PreservesChildCheckpoint(t *testing.T) {
 	mRoot := newCancelTestChatModel(nil); mRoot.addResp("tool")
 	mLeaf := newCancelTestChatModel(nil); mLeaf.addResp("leaf")
-	leafAgent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: mLeaf}); leafAgent.name = "leaf"
+	leafAgent := NewReActAgent(&ReActConfig[*schema.Message]{Model: mLeaf}); leafAgent.name = "leaf"
 	agt := NewAgentTool(context.Background(), leafAgent)
-	root := NewChatModelAgent(&ChatModelConfig[*schema.Message]{
+	root := NewReActAgent(&ReActConfig[*schema.Message]{
 		Model: mRoot, Tools: []Tool{agt},
 		ToolsConfig: &ToolsNodeConfig{Tools: []Tool{agt}},
 	})
@@ -951,11 +951,11 @@ func TestCancelAfterToolCalls_LoopTransitionBoundary(t *testing.T) {
 	m1 := newCancelTestChatModel(nil); m1.addResp("tool")
 	tool := newSlowTool("slow_tool", 50*time.Millisecond, "result")
 	m2 := newCancelTestChatModel(nil); m2.addResp("L2")
-	l1 := NewChatModelAgent(&ChatModelConfig[*schema.Message]{
+	l1 := NewReActAgent(&ReActConfig[*schema.Message]{
 		Model: m1, Tools: []Tool{tool},
 		ToolsConfig: &ToolsNodeConfig{Tools: []Tool{tool}},
 	}); l1.name = "l_tool"
-	l2 := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m2}); l2.name = "l_done"
+	l2 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m2}); l2.name = "l_done"
 	ctx := context.Background()
 	wf, _ := NewLoop(ctx, &LoopConfig{Name: "loop_tool", Description: "test", SubAgents: []Agent{l1, l2}, MaxIterations: 5})
 	opt, cancel := WithCancel()
@@ -973,7 +973,7 @@ func TestCancelAfterToolCalls_LoopTransitionBoundary(t *testing.T) {
 func TestCancel_BeforeExecutionStarts(t *testing.T) {
 	model := &mockModel{}
 	model.addResp("should not be called")
-	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: model}).WithName("never_start")
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{Model: model}).WithName("never_start")
 	opt, cancel := WithCancel()
 	ctx := context.Background()
 	iter := agent.Run(ctx, &AgentInput{Messages: []Message{schema.UserMessage("fail")}}, opt)
@@ -991,7 +991,7 @@ func TestCancel_AfterBusinessInterrupt(t *testing.T) {
 		firstCall: true,
 	}
 	tool := &mockTool{name: "bi_tool", desc: "business interrupt tool"}
-	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{
 		Model: model, Tools: []Tool{tool},
 		ToolsConfig: &ToolsNodeConfig{Tools: []Tool{tool}},
 	}).WithName("biz_interrupt")
@@ -1011,7 +1011,7 @@ func TestCancel_AfterBusinessInterrupt(t *testing.T) {
 // TestCancel_AfterError verifies cancelling after a model error returns ErrExecutionEnded.
 func TestCancel_AfterError(t *testing.T) {
 	model := &mockModel{}
-	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: model}).WithName("after_err")
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{Model: model}).WithName("after_err")
 	opt, cancel := WithCancel()
 	ctx := context.Background()
 	iter := agent.Run(ctx, &AgentInput{Messages: []Message{schema.UserMessage("fail")}}, opt)
@@ -1027,7 +1027,7 @@ func TestCancel_AfterError(t *testing.T) {
 // TestCancel_ModelError verifies model error marks cancelCtx done.
 func TestCancel_ModelError(t *testing.T) {
 	model := &mockModel{}
-	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: model}).WithName("model_err")
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{Model: model}).WithName("model_err")
 	opt, cancel := WithCancel()
 	ctx := context.Background()
 	iter := agent.Run(ctx, &AgentInput{Messages: []Message{schema.UserMessage("fail")}}, opt)
@@ -1044,7 +1044,7 @@ func TestCancel_ModelError(t *testing.T) {
 func TestCancel_NoCheckpointStore(t *testing.T) {
 	model := newCancelTestChatModel(nil)
 	model.addResp("nockpt")
-	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: model}).WithName("no_ckpt_cancel")
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{Model: model}).WithName("no_ckpt_cancel")
 	opt, cancel := WithCancel()
 	runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: agent})
 	ctx := context.Background()
@@ -1061,7 +1061,7 @@ func TestCancel_MultipleToolsConcurrent(t *testing.T) {
 	tool2 := newSlowTool("slow_tool_2", 80*time.Millisecond, "result2")
 	model.addResp("tool")
 	model.addResp("final")
-	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{
 		Model: model, Tools: []Tool{tool1, tool2},
 		ToolsConfig: &ToolsNodeConfig{Tools: []Tool{tool1, tool2}},
 	}).WithName("multi_tool_cancel")

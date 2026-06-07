@@ -25,7 +25,7 @@ type TypedConfig[M agentcore.MessageType] struct {
 	TokenCounter       func(ctx context.Context, msgs []M) (int, error)
 	GenModelInput      func(ctx context.Context, instruction string, msgs []M) ([]M, error)
 	Finalize           func(ctx context.Context, original, summary []M) ([]M, error)
-	Callback           func(ctx context.Context, before, after agentcore.TypedChatModelAgentState[M]) error
+	Callback           func(ctx context.Context, before, after agentcore.TypedReActAgentState[M]) error
 	RetryConfig        *agentcore.TypedModelRetryConfig[M]
 	EmitInternalEvents bool
 	MaxRetries         int
@@ -40,7 +40,7 @@ type middleware[M agentcore.MessageType] struct {
 	cfg   *TypedConfig[M]
 }
 
-func NewTyped[M agentcore.MessageType](cfg *TypedConfig[M]) agentcore.TypedChatModelMiddleware[M] {
+func NewTyped[M agentcore.MessageType](cfg *TypedConfig[M]) agentcore.TypedReActMiddleware[M] {
 	if cfg == nil { cfg = &TypedConfig[M]{MaxTokens: 160000} }
 	if cfg.Trigger == nil { cfg.Trigger = &TriggerCondition{MaxTokens: 160000} }
 	if cfg.MaxTokens <= 0 { cfg.MaxTokens = 160000 }
@@ -49,11 +49,11 @@ func NewTyped[M agentcore.MessageType](cfg *TypedConfig[M]) agentcore.TypedChatM
 	return &middleware[M]{cfg: cfg}
 }
 
-func New(cfg *Config) agentcore.TypedChatModelMiddleware[*schema.Message] {
+func New(cfg *Config) agentcore.TypedReActMiddleware[*schema.Message] {
 	return NewTyped[*schema.Message](cfg)
 }
 
-func (m *middleware[M]) BeforeModelRewrite(ctx context.Context, state *agentcore.TypedChatModelAgentState[M], mc *agentcore.TypedModelContext[M]) (context.Context, *agentcore.TypedChatModelAgentState[M], error) {
+func (m *middleware[M]) BeforeModelRewrite(ctx context.Context, state *agentcore.TypedReActAgentState[M], mc *agentcore.TypedModelContext[M]) (context.Context, *agentcore.TypedReActAgentState[M], error) {
 	if !m.shouldSummarize(ctx, state) { return ctx, state, nil }
 
 	// Fire before event if enabled
@@ -88,7 +88,7 @@ func (m *middleware[M]) BeforeModelRewrite(ctx context.Context, state *agentcore
 	return ctx, state, nil
 }
 
-func (m *middleware[M]) shouldSummarize(ctx context.Context, state *agentcore.TypedChatModelAgentState[M]) bool {
+func (m *middleware[M]) shouldSummarize(ctx context.Context, state *agentcore.TypedReActAgentState[M]) bool {
 	if m.cfg.Trigger.MaxMessages > 0 && len(state.Messages) > m.cfg.Trigger.MaxMessages {
 		return true
 	}

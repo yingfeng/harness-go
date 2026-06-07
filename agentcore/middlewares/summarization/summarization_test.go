@@ -49,7 +49,7 @@ func TestBeforeModelRewrite_NoTrigger(t *testing.T) {
 		schema.UserMessage("Hello"),
 		schema.SystemMessage("System prompt"),
 	}
-	state := agentcore.NewChatModelAgentState(msgs, nil, 10)
+	state := agentcore.NewReActAgentState(msgs, nil, 10)
 	_, newState, err := mw.BeforeModelRewrite(context.Background(), state, nil)
 	if err != nil {
 		t.Fatalf("BeforeModelRewrite: %v", err)

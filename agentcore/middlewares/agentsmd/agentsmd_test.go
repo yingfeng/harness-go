@@ -46,7 +46,7 @@ func TestBeforeAgent_ContentInjection(t *testing.T) {
 		Files:   []string{"AGENTS.md"},
 	})
 
-	rc := &agentcore.ChatModelAgentContext{Instruction: "Help me."}
+	rc := &agentcore.ReActAgentContext{Instruction: "Help me."}
 	_, newRc, err := mw.BeforeAgent(context.Background(), rc)
 	if err != nil { t.Fatalf("BeforeAgent: %v", err) }
 	if !strings.Contains(newRc.Instruction, "Available Agents") {
@@ -56,7 +56,7 @@ func TestBeforeAgent_ContentInjection(t *testing.T) {
 
 func TestBeforeAgent_EmptyBackend(t *testing.T) {
 	mw := NewTyped[*schema.Message](&TypedConfig[*schema.Message]{})
-	rc := &agentcore.ChatModelAgentContext{Instruction: "Base"}
+	rc := &agentcore.ReActAgentContext{Instruction: "Base"}
 	_, newRc, _ := mw.BeforeAgent(context.Background(), rc)
 	if newRc.Instruction != "Base" {
 		t.Error("empty backend should not modify instruction")

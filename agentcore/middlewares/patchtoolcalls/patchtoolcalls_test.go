@@ -22,7 +22,7 @@ func TestBeforeModelRewrite_InsertsPlaceholders(t *testing.T) {
 		// No corresponding tool message for call_1
 		schema.UserMessage("Tell me more"),
 	}
-	state := agentcore.NewChatModelAgentState(msgs, nil, 10)
+	state := agentcore.NewReActAgentState(msgs, nil, 10)
 	_, newState, err := mw.BeforeModelRewrite(context.Background(), state, nil)
 	if err != nil { t.Fatalf("BeforeModelRewrite: %v", err) }
 
@@ -52,7 +52,7 @@ func TestBeforeModelRewrite_CompleteToolCall(t *testing.T) {
 		},
 		schema.ToolMessage("Search result", "call_1"),
 	}
-	state := agentcore.NewChatModelAgentState(msgs, nil, 10)
+	state := agentcore.NewReActAgentState(msgs, nil, 10)
 	_, newState, err := mw.BeforeModelRewrite(context.Background(), state, nil)
 	if err != nil { t.Fatalf("BeforeModelRewrite: %v", err) }
 
@@ -74,7 +74,7 @@ func TestBeforeModelRewrite_NoToolCalls(t *testing.T) {
 		schema.UserMessage("No tools here"),
 		{Role: schema.RoleAssistant, Content: "Just a response"},
 	}
-	state := agentcore.NewChatModelAgentState(msgs, nil, 10)
+	state := agentcore.NewReActAgentState(msgs, nil, 10)
 	_, newState, err := mw.BeforeModelRewrite(context.Background(), state, nil)
 	if err != nil { t.Fatalf("BeforeModelRewrite: %v", err) }
 	if len(newState.Messages) != 2 {
@@ -97,7 +97,7 @@ func TestBeforeModelRewrite_MultipleMissingCalls(t *testing.T) {
 		// No tool result after assistant message - both calls are missing
 		schema.UserMessage("User follow-up"),
 	}
-	state := agentcore.NewChatModelAgentState(msgs, nil, 10)
+	state := agentcore.NewReActAgentState(msgs, nil, 10)
 	_, newState, err := mw.BeforeModelRewrite(context.Background(), state, nil)
 	if err != nil { t.Fatalf("BeforeModelRewrite: %v", err) }
 
@@ -117,7 +117,7 @@ func TestBeforeModelRewrite_MultipleMissingCalls(t *testing.T) {
 
 func TestBeforeModelRewrite_EmptyState(t *testing.T) {
 	mw := New[*schema.Message](nil)
-	state := agentcore.NewChatModelAgentState[*schema.Message](nil, nil, 10)
+	state := agentcore.NewReActAgentState[*schema.Message](nil, nil, 10)
 	_, newState, err := mw.BeforeModelRewrite(context.Background(), state, nil)
 	if err != nil { t.Fatalf("BeforeModelRewrite: %v", err) }
 	_ = newState

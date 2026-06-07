@@ -19,7 +19,7 @@ func TestIntegration_ReActToolResumeComplete(t *testing.T) {
 		firstCall: true,
 	}
 	tool := &mockTool{name: "calc", desc: "calculator"}
-	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{
 		Model: model, Tools: []Tool{tool},
 		ToolsConfig: &ToolsNodeConfig{Tools: []Tool{tool}},
 	})
@@ -53,8 +53,8 @@ func TestIntegration_SequentialAgent(t *testing.T) {
 	m2 := &mockModel{}
 	m2.addResp("hello from agent B")
 
-	a1 := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m1}).WithName("agent_a").WithDescription("first agent")
-	a2 := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m2}).WithName("agent_b").WithDescription("second agent")
+	a1 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m1}).WithName("agent_a").WithDescription("first agent")
+	a2 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m2}).WithName("agent_b").WithDescription("second agent")
 
 	ctx := context.Background()
 	seq, err := NewSequential(ctx, &SequentialConfig{
@@ -93,8 +93,8 @@ func TestIntegration_ParallelAgent(t *testing.T) {
 	m2 := &mockModel{}
 	m2.addResp("result from parallel B")
 
-	a1 := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m1}).WithName("par_a").WithDescription("parallel agent A")
-	a2 := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m2}).WithName("par_b").WithDescription("parallel agent B")
+	a1 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m1}).WithName("par_a").WithDescription("parallel agent A")
+	a2 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m2}).WithName("par_b").WithDescription("parallel agent B")
 
 	ctx := context.Background()
 	par, err := NewParallel(ctx, &ParallelConfig{
@@ -134,7 +134,7 @@ func TestIntegration_LoopAgent(t *testing.T) {
 		m.addResp("loop iteration output")
 	}
 
-	a := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m}).WithName("loop_body").WithDescription("loop body agent")
+	a := NewReActAgent(&ReActConfig[*schema.Message]{Model: m}).WithName("loop_body").WithDescription("loop body agent")
 
 	ctx := context.Background()
 	loop, err := NewLoop(ctx, &LoopConfig{
@@ -172,13 +172,13 @@ func TestIntegration_SupervisorTransfer(t *testing.T) {
 	m2 := &mockModel{}
 	m2.addResp("sub-agent output")
 
-	sub := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m2}).WithName("worker").WithDescription("worker agent")
+	sub := NewReActAgent(&ReActConfig[*schema.Message]{Model: m2}).WithName("worker").WithDescription("worker agent")
 
 	// Use AgentWithOptions with disallow transfer to parent and the sub-agent
 	ctx := context.Background()
 	wrappedSub := AgentWithOptions(ctx, sub, WithDisallowTransferToParent())
 
-	sup := NewChatModelAgent(&ChatModelConfig[*schema.Message]{
+	sup := NewReActAgent(&ReActConfig[*schema.Message]{
 		Model:       m1,
 		Instruction: "You are a supervisor. Transfer to worker agent when asked.",
 	}).WithName("supervisor").WithDescription("supervisor agent")
@@ -213,9 +213,9 @@ func TestIntegration_PlanExecute(t *testing.T) {
 
 	ctx := context.Background()
 
-	planner := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: plannerM}).WithName("planner").WithDescription("planner agent")
-	executor := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: execM}).WithName("executor").WithDescription("executor agent")
-	replanner := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: replannerM}).WithName("replanner").WithDescription("replanner agent")
+	planner := NewReActAgent(&ReActConfig[*schema.Message]{Model: plannerM}).WithName("planner").WithDescription("planner agent")
+	executor := NewReActAgent(&ReActConfig[*schema.Message]{Model: execM}).WithName("executor").WithDescription("executor agent")
+	replanner := NewReActAgent(&ReActConfig[*schema.Message]{Model: replannerM}).WithName("replanner").WithDescription("replanner agent")
 
 	loopAgent, err := NewLoop(ctx, &LoopConfig{
 		Name:          "pe_loop",
@@ -268,7 +268,7 @@ func TestIntegration_TurnLoopPushStop(t *testing.T) {
 		PrepareAgent: func(_ context.Context, _ *TurnLoop[*schema.Message], consumed []*schema.Message) (Agent, error) {
 			m := &mockModel{}
 			m.addResp("turn loop response")
-			agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m}).WithName("turn_agent")
+			agent := NewReActAgent(&ReActConfig[*schema.Message]{Model: m}).WithName("turn_agent")
 			return agent, nil
 		},
 	})
@@ -289,19 +289,19 @@ func TestIntegration_MiddlewareStack(t *testing.T) {
 	var beforeAgentCalled, afterAgentCalled, beforeModelCalled, afterModelCalled bool
 
 	mw := &testMiddleware{
-		beforeAgent: func(ctx context.Context, rc *ChatModelAgentContext) (context.Context, *ChatModelAgentContext, error) {
+		beforeAgent: func(ctx context.Context, rc *ReActAgentContext) (context.Context, *ReActAgentContext, error) {
 			beforeAgentCalled = true
 			return ctx, rc, nil
 		},
-		afterAgent: func(ctx context.Context, state *ChatModelAgentState) (context.Context, error) {
+		afterAgent: func(ctx context.Context, state *ReActAgentState) (context.Context, error) {
 			afterAgentCalled = true
 			return ctx, nil
 		},
-		beforeModel: func(ctx context.Context, state *ChatModelAgentState, mc *ModelContext) (context.Context, *ChatModelAgentState, error) {
+		beforeModel: func(ctx context.Context, state *ReActAgentState, mc *ModelContext) (context.Context, *ReActAgentState, error) {
 			beforeModelCalled = true
 			return ctx, state, nil
 		},
-		afterModel: func(ctx context.Context, state *ChatModelAgentState, mc *ModelContext) (context.Context, *ChatModelAgentState, error) {
+		afterModel: func(ctx context.Context, state *ReActAgentState, mc *ModelContext) (context.Context, *ReActAgentState, error) {
 			afterModelCalled = true
 			return ctx, state, nil
 		},
@@ -309,9 +309,9 @@ func TestIntegration_MiddlewareStack(t *testing.T) {
 
 	model := &mockModel{}
 	model.addResp("middleware test response")
-	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{
 		Model:       model,
-		Middlewares: []ChatModelMiddleware{mw},
+		Middlewares: []ReActMiddleware{mw},
 	})
 	agent.name = "mw_test"
 	ctx := context.Background()
@@ -345,7 +345,7 @@ func TestIntegration_MiddlewareStack(t *testing.T) {
 func TestIntegration_AgentToolNested(t *testing.T) {
 	innerM := &mockModel{}
 	innerM.addResp("inner agent result")
-	innerAgent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: innerM}).WithName("inner_agent").WithDescription("inner agent for testing")
+	innerAgent := NewReActAgent(&ReActConfig[*schema.Message]{Model: innerM}).WithName("inner_agent").WithDescription("inner agent for testing")
 
 	ctx := context.Background()
 	agentTool := NewAgentTool(ctx, innerAgent)
@@ -357,7 +357,7 @@ func TestIntegration_AgentToolNested(t *testing.T) {
 		firstCall: true,
 	}
 
-	parent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{
+	parent := NewReActAgent(&ReActConfig[*schema.Message]{
 		Model:       parentM,
 		Tools:       []Tool{agentTool},
 		ToolsConfig: &ToolsNodeConfig{Tools: []Tool{agentTool}},
@@ -394,7 +394,7 @@ func TestIntegration_CheckpointResume(t *testing.T) {
 		firstCall: true,
 	}
 	tool := &mockTool{name: "cp_tool", desc: "checkpoint tool"}
-	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{
 		Model: model, Tools: []Tool{tool},
 		ToolsConfig: &ToolsNodeConfig{Tools: []Tool{tool}},
 	})
@@ -433,13 +433,13 @@ func TestIntegration_SequentialCancelResume(t *testing.T) {
 	// First agent: responds immediately
 	m1 := &mockModel{}
 	m1.addResp("agent A done")
-	a1 := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m1}).WithName("seq_a").WithDescription("first in sequence")
+	a1 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m1}).WithName("seq_a").WithDescription("first in sequence")
 
 	// Second agent: use cancelTestChatModel with a delay so we can cancel mid-execution
 	m2 := newCancelTestChatModel(nil)
 	m2.addResp("agent B done")
 	m2.setDelay(50 * time.Millisecond)
-	a2 := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m2}).WithName("seq_b").WithDescription("second in sequence")
+	a2 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m2}).WithName("seq_b").WithDescription("second in sequence")
 
 	ctx := context.Background()
 	seq, err := NewSequential(ctx, &SequentialConfig{
@@ -489,8 +489,8 @@ func TestIntegration_LoopAgentSimple(t *testing.T) {
 	// 2 iterations * 1 call each = 2 calls
 	m2.addResp("loop_a2")
 	m2.addResp("loop_a2")
-	a1 := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m1}); a1.name = "la1"
-	a2 := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m2}); a2.name = "la2"
+	a1 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m1}); a1.name = "la1"
+	a2 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m2}); a2.name = "la2"
 	ctx := context.Background()
 	wf, err := NewLoop(ctx, &LoopConfig{Name: "loop_simple", Description: "test", SubAgents: []Agent{a1, a2}, MaxIterations: 2})
 	if err != nil { t.Fatalf("NewLoop: %v", err) }
@@ -504,7 +504,7 @@ func TestIntegration_PlanExecuteSimple(t *testing.T) {
 	model := &mockModel{}
 	model.addResp("plan")
 	model.addResp("execute")
-	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: model}).WithName("pe_test")
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{Model: model}).WithName("pe_test")
 	store := newCancelTestStore()
 	runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: agent, CheckPointStore: store})
 	ctx := context.Background()
@@ -524,7 +524,7 @@ func TestIntegration_RunnerToolCall(t *testing.T) {
 		firstCall: true,
 	}
 	tool := &mockTool{name: "calculator", desc: "calculates things"}
-	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{
 		Model: model, Tools: []Tool{tool},
 		ToolsConfig: &ToolsNodeConfig{Tools: []Tool{tool}},
 	})
@@ -551,7 +551,7 @@ func TestIntegration_RunnerToolCall(t *testing.T) {
 func TestIntegration_RunnerSimple(t *testing.T) {
 	model := &mockModel{}
 	model.addResp("hello world")
-	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: model})
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{Model: model})
 	agent.name = "runner_test"
 	store := newCancelTestStore()
 	runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: agent, CheckPointStore: store})
@@ -574,7 +574,7 @@ func TestIntegration_RunnerResume(t *testing.T) {
 	model := &mockModel{}
 	model.addResp("first response")
 	model.addResp("resumed response")
-	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: model}).WithName("resume_test")
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{Model: model}).WithName("resume_test")
 	store := newCancelTestStore()
 
 	// Run with a known checkpoint ID so we can resume from it.
@@ -612,7 +612,7 @@ func TestIntegration_RunnerCancel(t *testing.T) {
 	m := newCancelTestChatModel(nil)
 	m.addResp("should not appear")
 	m.setDelay(200 * time.Millisecond)
-	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m}).WithName("cancel_test")
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{Model: m}).WithName("cancel_test")
 
 	cancelOpt, cancelFunc := WithCancel()
 	store := newCancelTestStore()
@@ -640,7 +640,7 @@ func TestIntegration_RunnerCancel(t *testing.T) {
 func TestIntegration_RunnerStreamMode(t *testing.T) {
 	model := &mockModel{}
 	model.addResp("streamed output")
-	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: model}).WithName("stream_test")
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{Model: model}).WithName("stream_test")
 
 	store := newCancelTestStore()
 	runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: agent, CheckPointStore: store, EnableStreaming: true})
@@ -662,7 +662,7 @@ func TestIntegration_RunnerStreamMode(t *testing.T) {
 func TestIntegration_AgentToolViaRunner(t *testing.T) {
 	innerM := &mockModel{}
 	innerM.addResp("inner tool result")
-	innerAgent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: innerM}).WithName("inner").WithDescription("inner")
+	innerAgent := NewReActAgent(&ReActConfig[*schema.Message]{Model: innerM}).WithName("inner").WithDescription("inner")
 	ctx := context.Background()
 	agentTool := NewAgentTool(ctx, innerAgent)
 
@@ -671,7 +671,7 @@ func TestIntegration_AgentToolViaRunner(t *testing.T) {
 		finalResp: "parent complete",
 		firstCall: true,
 	}
-	parent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{
+	parent := NewReActAgent(&ReActConfig[*schema.Message]{
 		Model: parentM, Tools: []Tool{agentTool},
 		ToolsConfig: &ToolsNodeConfig{Tools: []Tool{agentTool}},
 	}).WithName("parent_tool")

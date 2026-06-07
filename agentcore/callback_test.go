@@ -10,11 +10,11 @@ import (
 // ---- Callback infrastructure tests ----
 //
 // Callback initialization (initAgentCallbacks) is triggered via flowAgent.Run,
-// not directly via ChatModelAgent.Run. These tests verify the infrastructure
+// not directly via ReActAgent.Run. These tests verify the infrastructure
 // layer: context propagation, filtering, and option handling.
 
 func TestInitAgentCallbacks_NoCallbacks(t *testing.T) {
-	ctx := initAgentCallbacks(context.Background(), "test_agent", "ChatModelAgent")
+	ctx := initAgentCallbacks(context.Background(), "test_agent", "ReActAgent")
 	cbs := getCallbacks(ctx)
 	if cbs != nil {
 		t.Error("expected nil callbacks when no options provided")
@@ -66,7 +66,7 @@ func TestFilterCallbacks_AgentNameMatch(t *testing.T) {
 func TestCallbacks_WithAgentNamesFilter_CallbackSavedAndFiltered(t *testing.T) {
 	model := &mockModel{}
 	model.addResp("filter-test")
-	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: model})
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{Model: model})
 	agent.name = "filtered_agent"
 
 	cb := callbackHandler{
@@ -84,7 +84,7 @@ func TestCallbacks_WithAgentNamesFilter_CallbackSavedAndFiltered(t *testing.T) {
 func TestCallbacks_EmptyCallbacks(t *testing.T) {
 	model := &mockModel{}
 	model.addResp("no-cb")
-	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: model})
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{Model: model})
 	agent.name = "no_cb"
 	iter := agent.Run(context.Background(), &AgentInput{
 		Messages: []Message{schema.UserMessage("test")},

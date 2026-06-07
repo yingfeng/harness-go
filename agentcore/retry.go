@@ -131,7 +131,7 @@ func (r *typedRetryModelWrapper[M]) generateLegacy(ctx context.Context, input []
 func (r *typedRetryModelWrapper[M]) generateWithShouldRetry(ctx context.Context, input []M, opts ...ModelOption) (M, error) {
 	backoff := r.config.BackoffFunc
 	if backoff == nil { backoff = defaultBackoff }
-	execCtx := getTypedChatModelExecCtx[M](ctx)
+	execCtx := getReActExecCtx[M](ctx)
 	currentInput := input
 	currentOpts := opts
 	var lastErr error
@@ -227,7 +227,7 @@ func (r *typedRetryModelWrapper[M]) streamLegacy(ctx context.Context, input []M,
 func (r *typedRetryModelWrapper[M]) streamWithShouldRetry(ctx context.Context, input []M, opts ...ModelOption) (*schema.StreamReader[M], error) {
 	backoff := r.config.BackoffFunc
 	if backoff == nil { backoff = defaultBackoff }
-	execCtx := getTypedChatModelExecCtx[M](ctx)
+	execCtx := getReActExecCtx[M](ctx)
 	currentInput := input
 	currentOpts := opts
 	var lastErr error

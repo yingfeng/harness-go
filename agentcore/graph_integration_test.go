@@ -24,8 +24,8 @@ func TestGraphIntegration_SequentialWorkflow(t *testing.T) {
 	m2 := &mockModel{}
 	m2.addResp("second agent reply")
 
-	a1 := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m1}).WithName("seq_first")
-	a2 := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m2}).WithName("seq_second")
+	a1 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m1}).WithName("seq_first")
+	a2 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m2}).WithName("seq_second")
 
 	gwf, err := NewSequentialGraph(context.Background(), &SequentialConfig{
 		Name:        "seq_graph",
@@ -59,8 +59,8 @@ func TestGraphIntegration_ParallelWorkflow(t *testing.T) {
 	m2 := &mockModel{}
 	m2.addResp("parallel agent B")
 
-	a1 := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m1}).WithName("par_first")
-	a2 := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m2}).WithName("par_second")
+	a1 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m1}).WithName("par_first")
+	a2 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m2}).WithName("par_second")
 
 	gwf, err := NewParallelGraph(context.Background(), &ParallelConfig{
 		Name:        "par_graph",
@@ -89,7 +89,7 @@ func TestGraphIntegration_LoopWorkflow(t *testing.T) {
 	m.addResp("loop iteration A")
 	m.addResp("loop iteration B")
 
-	body := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m}).WithName("loop_body")
+	body := NewReActAgent(&ReActConfig[*schema.Message]{Model: m}).WithName("loop_body")
 
 	gwf, err := NewLoopGraph(context.Background(), &LoopConfig{
 		Name:          "loop_graph",
@@ -123,8 +123,8 @@ func TestGraphIntegration_SequentialGraphWithInterrupt(t *testing.T) {
 	m2 := &mockModel{}
 	m2.addResp("agent 2 done")
 
-	a1 := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m1}).WithName("interrupt_first")
-	a2 := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m2}).WithName("interrupt_second")
+	a1 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m1}).WithName("interrupt_first")
+	a2 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m2}).WithName("interrupt_second")
 
 	gwf, err := NewSequentialGraph(context.Background(), &SequentialConfig{
 		Name:        "seq_interrupt",
@@ -155,7 +155,7 @@ func TestGraphIntegration_StreamingWorkflow(t *testing.T) {
 	m := &mockModel{}
 	m.addResp("streaming result")
 
-	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m}).WithName("stream_agent")
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{Model: m}).WithName("stream_agent")
 
 	gwf, err := NewSequentialGraph(context.Background(), &SequentialConfig{
 		Name:        "stream_graph",
@@ -210,7 +210,7 @@ func TestGraphIntegration_ReActWithCheckpointResume(t *testing.T) {
 	}
 	tool := &mockTool{name: "calculator", desc: "math tool"}
 
-	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{
 		Model:        model,
 		Tools:        []Tool{tool},
 		ToolsConfig:  &ToolsNodeConfig{Tools: []Tool{tool}},
@@ -262,7 +262,7 @@ func TestGraphIntegration_SequentialGraphCancel(t *testing.T) {
 	m1 := &mockModel{}
 	m1.addResp("agent 1 done")
 
-	a1 := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m1}).WithName("cancel_first")
+	a1 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m1}).WithName("cancel_first")
 
 	gwf, err := NewSequentialGraph(context.Background(), &SequentialConfig{
 		Name:        "cancel_graph",
@@ -289,7 +289,7 @@ func TestGraphIntegration_SequentialGraphCancel(t *testing.T) {
 func TestGraphIntegration_WorkflowGraphCompile(t *testing.T) {
 	m := &mockModel{}
 	m.addResp("compile test")
-	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: m}).WithName("compile_test")
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{Model: m}).WithName("compile_test")
 
 	gwf, err := NewSequentialGraph(context.Background(), &SequentialConfig{
 		Name:      "compile_graph",
@@ -331,11 +331,11 @@ func TestGraphIntegration_ReActToolMiddlewareChain(t *testing.T) {
 	}
 	tool := &mockTool{name: "mw_tool", desc: "middleware test"}
 
-	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{
 		Model:        model,
 		Tools:        []Tool{tool},
 		ToolsConfig:  &ToolsNodeConfig{Tools: []Tool{tool}},
-		Middlewares:  []TypedChatModelMiddleware[*schema.Message]{mw},
+		Middlewares:  []TypedReActMiddleware[*schema.Message]{mw},
 		MaxIterations: 2,
 	}).WithName("mw_react_graph")
 

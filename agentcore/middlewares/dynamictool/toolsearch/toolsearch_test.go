@@ -36,7 +36,7 @@ func TestNew_SmallToolset(t *testing.T) {
 		AllTools:        tools,
 		SearchThreshold: 10,
 	})
-	rc := &agentcore.ChatModelAgentContext{Instruction: "Help", Tools: make([]agentcore.Tool, 0)}
+	rc := &agentcore.ReActAgentContext{Instruction: "Help", Tools: make([]agentcore.Tool, 0)}
 	_, newRc, err := mw.BeforeAgent(context.Background(), rc)
 	if err != nil { t.Fatalf("BeforeAgent: %v", err) }
 	// With small toolset (<= threshold), all tools are passed through
@@ -55,7 +55,7 @@ func TestNew_LargeToolset(t *testing.T) {
 		AllTools:        tools,
 		SearchThreshold: 10,
 	})
-	rc := &agentcore.ChatModelAgentContext{Instruction: "Help", Tools: make([]agentcore.Tool, 0)}
+	rc := &agentcore.ReActAgentContext{Instruction: "Help", Tools: make([]agentcore.Tool, 0)}
 	_, newRc, err := mw.BeforeAgent(context.Background(), rc)
 	if err != nil { t.Fatalf("BeforeAgent: %v", err) }
 	// With large toolset, middleware registers a search tool
@@ -73,7 +73,7 @@ func TestBeforeModelRewrite_DeferredMode(t *testing.T) {
 		SearchThreshold: 3,
 		UseDeferred:     true,
 	})
-	rc := &agentcore.ChatModelAgentContext{Instruction: "Help", Tools: make([]agentcore.Tool, 0)}
+	rc := &agentcore.ReActAgentContext{Instruction: "Help", Tools: make([]agentcore.Tool, 0)}
 	_, _, err := mw.BeforeAgent(context.Background(), rc)
 	if err != nil {
 		t.Logf("deferred mode error: %v", err)
@@ -120,7 +120,7 @@ func TestToolNames(t *testing.T) {
 		SearchThreshold: 10,
 		MaxResults:      5,
 	})
-	rc := &agentcore.ChatModelAgentContext{Instruction: "Help", Tools: make([]agentcore.Tool, 0)}
+	rc := &agentcore.ReActAgentContext{Instruction: "Help", Tools: make([]agentcore.Tool, 0)}
 	_, newRc, err := mw.BeforeAgent(context.Background(), rc)
 	if err != nil { t.Fatalf("BeforeAgent: %v", err) }
 	if len(newRc.Tools) > 0 {

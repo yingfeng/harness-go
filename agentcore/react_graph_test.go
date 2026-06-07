@@ -26,7 +26,7 @@ func TestReActGraph_CheckpointInterruptResume(t *testing.T) {
 		firstCall: true,
 	}
 	tool := &mockTool{name: "approve", desc: "approval"}
-	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{
 		Model: model, Tools: []Tool{tool},
 		ToolsConfig: &ToolsNodeConfig{Tools: []Tool{tool}},
 		MaxIterations: 2,
@@ -66,7 +66,7 @@ func TestReActGraph_StreamWithInterrupt(t *testing.T) {
 		firstCall: true,
 	}
 	tool := &mockTool{name: "tool_s", desc: "stream test"}
-	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{
 		Model: model, Tools: []Tool{tool},
 		ToolsConfig: &ToolsNodeConfig{Tools: []Tool{tool}},
 		MaxIterations: 2,
@@ -123,7 +123,7 @@ func TestReActGraph_FullCheckpointInterruptResume(t *testing.T) {
 		firstCall: true,
 	}
 	tool := &mockTool{name: "calculator", desc: "math tool"}
-	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{
 		Model:       model,
 		Tools:       []Tool{tool},
 		ToolsConfig: &ToolsNodeConfig{Tools: []Tool{tool}},
@@ -190,7 +190,7 @@ func TestReActGraph_SerialCheckpointCycles(t *testing.T) {
 	tool1 := &mockTool{name: "step1", desc: "first step"}
 	tool2 := &mockTool{name: "step2", desc: "second step"}
 
-	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{
 		Model:       model,
 		Tools:       []Tool{tool1, tool2},
 		ToolsConfig: &ToolsNodeConfig{Tools: []Tool{tool1, tool2}},
@@ -243,7 +243,7 @@ func TestReActGraph_StreamingCheckpointEvents(t *testing.T) {
 		firstCall: true,
 	}
 	tool := &mockTool{name: "stream_tool", desc: "stream test"}
-	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{
 		Model:       model,
 		Tools:       []Tool{tool},
 		ToolsConfig: &ToolsNodeConfig{Tools: []Tool{tool}},
@@ -297,7 +297,7 @@ func TestReActGraph_ConcurrentCheckpoints(t *testing.T) {
 		go func(id int) {
 			m := &mockModel{}
 			m.addResp("concurrent result")
-			agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{
+			agent := NewReActAgent(&ReActConfig[*schema.Message]{
 				Model:  m,
 				MaxIterations: 1,
 			}).WithName("concurrent_cp_agent")
@@ -353,11 +353,11 @@ func TestReActGraph_ToolMiddlewareChain(t *testing.T) {
 		firstCall: true,
 	}
 	tool := &mockTool{name: "mw_tool", desc: "middleware test tool"}
-	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{
 		Model:       model,
 		Tools:       []Tool{tool},
 		ToolsConfig: &ToolsNodeConfig{Tools: []Tool{tool}},
-		Middlewares: []TypedChatModelMiddleware[*schema.Message]{mw},
+		Middlewares: []TypedReActMiddleware[*schema.Message]{mw},
 		MaxIterations: 2,
 	})
 	agent.name = "mw_graph_agent"

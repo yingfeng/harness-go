@@ -42,7 +42,7 @@ func (b *testBackend) Execute(command string) (string, error) { return "done", n
 
 func TestNew_NilBackend(t *testing.T) {
 	mw := New(nil)
-	rc := &agentcore.ChatModelAgentContext{Instruction: "base", Tools: make([]agentcore.Tool, 0)}
+	rc := &agentcore.ReActAgentContext{Instruction: "base", Tools: make([]agentcore.Tool, 0)}
 	_, newRc, err := mw.BeforeAgent(context.Background(), rc)
 	if err != nil { t.Fatalf("BeforeAgent: %v", err) }
 	if len(newRc.Tools) != 0 {
@@ -52,7 +52,7 @@ func TestNew_NilBackend(t *testing.T) {
 
 func TestNew_AddsAllTools(t *testing.T) {
 	mw := New(&Config{Backend: &testBackend{readResult: "hello"}})
-	rc := &agentcore.ChatModelAgentContext{Instruction: "base", Tools: make([]agentcore.Tool, 0)}
+	rc := &agentcore.ReActAgentContext{Instruction: "base", Tools: make([]agentcore.Tool, 0)}
 	_, newRc, err := mw.BeforeAgent(context.Background(), rc)
 	if err != nil { t.Fatalf("BeforeAgent: %v", err) }
 	if len(newRc.Tools) != 7 {
@@ -62,7 +62,7 @@ func TestNew_AddsAllTools(t *testing.T) {
 
 func TestTool_Read_Function(t *testing.T) {
 	mw := New(&Config{Backend: &testBackend{readResult: "file content"}})
-	rc := &agentcore.ChatModelAgentContext{}
+	rc := &agentcore.ReActAgentContext{}
 	_, newRc, _ := mw.BeforeAgent(context.Background(), rc)
 	for _, tool := range newRc.Tools {
 		if tool.Name() == "read_file" {
@@ -78,7 +78,7 @@ func TestTool_Read_Function(t *testing.T) {
 func TestTool_Write_Function(t *testing.T) {
 	backend := &testBackend{}
 	mw := New(&Config{Backend: backend})
-	rc := &agentcore.ChatModelAgentContext{}
+	rc := &agentcore.ReActAgentContext{}
 	_, newRc, _ := mw.BeforeAgent(context.Background(), rc)
 	for _, tool := range newRc.Tools {
 		if tool.Name() == "write_file" {
@@ -94,7 +94,7 @@ func TestTool_Write_Function(t *testing.T) {
 func TestTool_Edit_Function(t *testing.T) {
 	backend := &testBackend{}
 	mw := New(&Config{Backend: backend})
-	rc := &agentcore.ChatModelAgentContext{}
+	rc := &agentcore.ReActAgentContext{}
 	_, newRc, _ := mw.BeforeAgent(context.Background(), rc)
 	for _, tool := range newRc.Tools {
 		if tool.Name() == "edit_file" {
@@ -110,7 +110,7 @@ func TestTool_Edit_Function(t *testing.T) {
 func TestTool_Ls_Function(t *testing.T) {
 	backend := &testBackend{lsResult: []string{"a.txt", "b.txt"}}
 	mw := New(&Config{Backend: backend})
-	rc := &agentcore.ChatModelAgentContext{}
+	rc := &agentcore.ReActAgentContext{}
 	_, newRc, _ := mw.BeforeAgent(context.Background(), rc)
 	for _, tool := range newRc.Tools {
 		if tool.Name() == "ls" {
@@ -125,7 +125,7 @@ func TestTool_Ls_Function(t *testing.T) {
 
 func TestTool_Glob_Function(t *testing.T) {
 	mw := New(&Config{Backend: &testBackend{}})
-	rc := &agentcore.ChatModelAgentContext{}
+	rc := &agentcore.ReActAgentContext{}
 	_, newRc, _ := mw.BeforeAgent(context.Background(), rc)
 	for _, tool := range newRc.Tools {
 		if tool.Name() == "glob" {
@@ -140,7 +140,7 @@ func TestTool_Glob_Function(t *testing.T) {
 
 func TestTool_Grep_Function(t *testing.T) {
 	mw := New(&Config{Backend: &testBackend{}})
-	rc := &agentcore.ChatModelAgentContext{}
+	rc := &agentcore.ReActAgentContext{}
 	_, newRc, _ := mw.BeforeAgent(context.Background(), rc)
 	for _, tool := range newRc.Tools {
 		if tool.Name() == "grep" {
@@ -155,7 +155,7 @@ func TestTool_Grep_Function(t *testing.T) {
 
 func TestTool_Execute_Function(t *testing.T) {
 	mw := New(&Config{Backend: &testBackend{}})
-	rc := &agentcore.ChatModelAgentContext{}
+	rc := &agentcore.ReActAgentContext{}
 	_, newRc, _ := mw.BeforeAgent(context.Background(), rc)
 	for _, tool := range newRc.Tools {
 		if tool.Name() == "execute" {
@@ -170,7 +170,7 @@ func TestTool_Execute_Function(t *testing.T) {
 
 func TestTool_ReadError(t *testing.T) {
 	mw := New(&Config{Backend: &testBackend{readErr: errors.New("permission denied")}})
-	rc := &agentcore.ChatModelAgentContext{}
+	rc := &agentcore.ReActAgentContext{}
 	_, newRc, _ := mw.BeforeAgent(context.Background(), rc)
 	for _, tool := range newRc.Tools {
 		if tool.Name() == "read_file" {
@@ -191,7 +191,7 @@ func TestTool_Config_DisableTool(t *testing.T) {
 		},
 	}
 	mw := New(cfg)
-	rc := &agentcore.ChatModelAgentContext{Tools: make([]agentcore.Tool, 0)}
+	rc := &agentcore.ReActAgentContext{Tools: make([]agentcore.Tool, 0)}
 	_, newRc, _ := mw.BeforeAgent(context.Background(), rc)
 	for _, tool := range newRc.Tools {
 		if tool.Name() == "execute" {
@@ -206,7 +206,7 @@ func TestTool_ReadBytesLimit(t *testing.T) {
 		ReadBytes: 100,
 	}
 	mw := New(cfg)
-	rc := &agentcore.ChatModelAgentContext{}
+	rc := &agentcore.ReActAgentContext{}
 	_, newRc, _ := mw.BeforeAgent(context.Background(), rc)
 	for _, tool := range newRc.Tools {
 		if tool.Name() == "read_file" {

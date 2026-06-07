@@ -44,8 +44,8 @@ func DefaultConfig() *Config {
 	}
 }
 
-// NewTyped creates a new DeepAgent as a TypedChatModelAgent.
-func NewTyped(cfg *Config) *agentcore.TypedChatModelAgent[*schema.Message] {
+// NewTyped creates a new DeepAgent as a TypedReActAgent.
+func NewTyped(cfg *Config) *agentcore.ReActAgent[*schema.Message] {
 	if cfg == nil { cfg = DefaultConfig() }
 	if cfg.MaxIterations <= 0 { cfg.MaxIterations = 20 }
 	if cfg.Name == "" { cfg.Name = "deep_agent" }
@@ -77,7 +77,7 @@ func NewTyped(cfg *Config) *agentcore.TypedChatModelAgent[*schema.Message] {
 		tools = append(tools, ShellTool("."))
 	}
 
-	chatCfg := &agentcore.ChatModelConfig[*schema.Message]{
+	chatCfg := &agentcore.ReActConfig[*schema.Message]{
 		Model:         cfg.Model,
 		Tools:         tools,
 		Instruction:   instruction,
@@ -92,7 +92,7 @@ func NewTyped(cfg *Config) *agentcore.TypedChatModelAgent[*schema.Message] {
 		}
 	}
 
-	a := agentcore.NewChatModelAgent(chatCfg)
+	a := agentcore.NewReActAgent(chatCfg)
 	return a.WithName(cfg.Name).WithDescription(cfg.Description)
 }
 

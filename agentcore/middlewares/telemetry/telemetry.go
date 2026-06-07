@@ -4,7 +4,7 @@
 //
 //	import telemetrymw "github.com/infiniflow/ragflow/harness/agentcore/middlewares/telemetry"
 //
-//	cfg := agentcore.DefaultChatModelConfig[*schema.Message]()
+//	cfg := agentcore.DefaultReActConfig[*schema.Message]()
 //	cfg.Middlewares = append(cfg.Middlewares, telemetrymw.New())
 //
 // To customize:
@@ -327,6 +327,6 @@ func (m *tracedModel) BindTools(tools []*schema.ToolInfo) error {
 }
 
 // Ensure Middleware implements the agentcore middleware interface.
-var _ agentcore.ChatModelMiddleware = (*Middleware)(nil)
+var _ agentcore.ReActMiddleware = (*Middleware)(nil)
 
 

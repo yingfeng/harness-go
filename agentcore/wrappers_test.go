@@ -13,7 +13,7 @@ import (
 func TestBuildModelWrapperChain_NoConfig(t *testing.T) {
 	base := &mockModel{}
 	base.addResp("raw")
-	model := BuildModelWrapperChain(base, nil, DefaultChatModelConfig[*schema.Message]())
+	model := BuildModelWrapperChain(base, nil, DefaultReActConfig[*schema.Message]())
 	if model == nil { t.Fatal("nil model") }
 	resp, err := model.Generate(context.Background(), []Message{schema.UserMessage("hi")})
 	if err != nil { t.Fatalf("Generate: %v", err) }
@@ -23,7 +23,7 @@ func TestBuildModelWrapperChain_NoConfig(t *testing.T) {
 func TestBuildModelWrapperChain_WithRetry(t *testing.T) {
 	base := &mockModel{}
 	base.addResp("retry-ok")
-	cfg := DefaultChatModelConfig[*schema.Message]()
+	cfg := DefaultReActConfig[*schema.Message]()
 	cfg.RetryConfig = &ModelRetryConfig{MaxRetries: 2}
 	model := BuildModelWrapperChain(base, nil, cfg)
 	if model == nil { t.Fatal("nil model") }
@@ -38,7 +38,7 @@ func TestBuildModelWrapperChain_WithFailover(t *testing.T) {
 	fallback := &mockModel{}
 	fallback.addResp("fallback")
 
-	cfg := DefaultChatModelConfig[*schema.Message]()
+	cfg := DefaultReActConfig[*schema.Message]()
 	cfg.FailoverConfig = &FailoverConfigMsg{Models: []ChatModel[*schema.Message]{fallback}}
 	model := BuildModelWrapperChain(primary, nil, cfg)
 	resp, err := model.Generate(context.Background(), []Message{schema.UserMessage("hi")})
@@ -55,8 +55,8 @@ func TestBuildModelWrapperChain_WithMiddleware(t *testing.T) {
 	}
 	base := &mockModel{}
 	base.addResp("mw-ok")
-	cfg := DefaultChatModelConfig[*schema.Message]()
-	cfg.Middlewares = []ChatModelMiddleware{mw}
+	cfg := DefaultReActConfig[*schema.Message]()
+	cfg.Middlewares = []ReActMiddleware{mw}
 	model := BuildModelWrapperChain(base, nil, cfg)
 	resp, err := model.Generate(context.Background(), []Message{schema.UserMessage("hi")})
 	if err != nil { t.Fatalf("Generate: %v", err) }
@@ -77,10 +77,10 @@ func TestBuildModelWrapperChain_WithFullChain(t *testing.T) {
 	fallback := &mockModel{}
 	fallback.addResp("fallback")
 
-	cfg := DefaultChatModelConfig[*schema.Message]()
+	cfg := DefaultReActConfig[*schema.Message]()
 	cfg.RetryConfig = &ModelRetryConfig{MaxRetries: 2}
 	cfg.FailoverConfig = &FailoverConfigMsg{Models: []ChatModel[*schema.Message]{fallback}}
-	cfg.Middlewares = []ChatModelMiddleware{mw}
+	cfg.Middlewares = []ReActMiddleware{mw}
 
 	model := BuildModelWrapperChain(primary, nil, cfg)
 	resp, err := model.Generate(context.Background(), []Message{schema.UserMessage("hi")})
@@ -92,8 +92,8 @@ func TestBuildModelWrapperChain_WithFullChain(t *testing.T) {
 func TestBuildModelWrapperChain_NilMiddleware(t *testing.T) {
 	base := &mockModel{}
 	base.addResp("nil-mw")
-	cfg := DefaultChatModelConfig[*schema.Message]()
-	cfg.Middlewares = []ChatModelMiddleware{nil, nil}
+	cfg := DefaultReActConfig[*schema.Message]()
+	cfg.Middlewares = []ReActMiddleware{nil, nil}
 	model := BuildModelWrapperChain(base, nil, cfg)
 	_, err := model.Generate(context.Background(), []Message{schema.UserMessage("hi")})
 	if err != nil { t.Fatalf("Generate: %v", err) }
@@ -105,7 +105,7 @@ func TestEventSenderModelWrapper_GenerateSendsEvent(t *testing.T) {
 	base := &mockModel{}
 	base.addResp("event-test")
 	it, gen := NewAsyncIteratorPair[*TypedAgentEvent[*schema.Message]]()
-	ec := &chatModelExecCtx{generator: gen}
+	ec := &reActExecCtx{generator: gen}
 	wrapped := wrapModelWithEventSender(base, ec)
 
 	go func() {
@@ -126,7 +126,7 @@ func TestEventSenderModelWrapper_StreamSendsEvent(t *testing.T) {
 	base := &mockModel{}
 	base.addResp("stream-event")
 	it, gen := NewAsyncIteratorPair[*TypedAgentEvent[*schema.Message]]()
-	ec := &chatModelExecCtx{generator: gen}
+	ec := &reActExecCtx{generator: gen}
 	wrapped := wrapModelWithEventSender(base, ec)
 
 	go func() {
@@ -151,7 +151,7 @@ func TestEventSenderModelWrapper_SuppressEventSend(t *testing.T) {
 	base := &mockModel{}
 	base.addResp("suppressed")
 	it, gen := NewAsyncIteratorPair[*TypedAgentEvent[*schema.Message]]()
-	ec := &chatModelExecCtx{generator: gen, suppressEventSend: true}
+	ec := &reActExecCtx{generator: gen, suppressEventSend: true}
 	wrapped := wrapModelWithEventSender(base, ec)
 
 	done := make(chan struct{})
@@ -185,7 +185,7 @@ func TestEventSenderModelWrapper_NilExecCtx(t *testing.T) {
 func TestEventSenderModelWrapper_NilGenerator(t *testing.T) {
 	base := &mockModel{}
 	base.addResp("nil-gen")
-	ec := &chatModelExecCtx{generator: nil}
+	ec := &reActExecCtx{generator: nil}
 	wrapped := wrapModelWithEventSender(base, ec)
 	resp, err := wrapped.Generate(context.Background(), []Message{schema.UserMessage("hi")})
 	if err != nil { t.Fatalf("Generate: %v", err) }
@@ -203,7 +203,7 @@ func TestEventSenderModelWrapper_IsNilMessage(t *testing.T) {
 	base := &mockModel{}
 	base.addResp("")
 	it, gen := NewAsyncIteratorPair[*TypedAgentEvent[*schema.Message]]()
-	ec := &chatModelExecCtx{generator: gen}
+	ec := &reActExecCtx{generator: gen}
 	wrapped := wrapModelWithEventSender(base, ec)
 
 	done := make(chan struct{})
@@ -227,7 +227,7 @@ func TestEventSenderModelWrapper_IsNilMessage(t *testing.T) {
 
 func TestEventSenderToolWrapper_WrapTool(t *testing.T) {
 	it, gen := NewAsyncIteratorPair[*TypedAgentEvent[*schema.Message]]()
-	ec := &chatModelExecCtx{generator: gen}
+	ec := &reActExecCtx{generator: gen}
 	wrapper := NewEventSenderToolWrapper[*schema.Message]()
 
 	ep := func(ctx context.Context, args string, opts ...ToolOption) (string, error) {
@@ -235,7 +235,7 @@ func TestEventSenderToolWrapper_WrapTool(t *testing.T) {
 	}
 
 	// exec ctx must be in the context at WrapToolInvoke time because the
-	// wrapper captures ec via getTypedChatModelExecCtx from the context.
+	// wrapper captures ec via getReActExecCtx from the context.
 	runCtx := &runContext{Session: &runSession{Values: map[string]any{"__exec_ctx": ec}}}
 	ctx := context.WithValue(context.Background(), runContextKey{}, runCtx)
 
@@ -260,7 +260,7 @@ func TestEventSenderToolWrapper_WrapTool(t *testing.T) {
 
 func TestEventSenderToolWrapper_WrapToolStream(t *testing.T) {
 	it, gen := NewAsyncIteratorPair[*TypedAgentEvent[*schema.Message]]()
-	ec := &chatModelExecCtx{generator: gen}
+	ec := &reActExecCtx{generator: gen}
 	wrapper := NewEventSenderToolWrapper[*schema.Message]()
 
 	ep := func(ctx context.Context, args string, opts ...ToolOption) (*schema.StreamReader[string], error) {
@@ -294,7 +294,7 @@ func TestEventSenderToolWrapper_WrapToolStream(t *testing.T) {
 
 func TestEventSenderToolWrapper_WrapEnhancedTool(t *testing.T) {
 	it, gen := NewAsyncIteratorPair[*TypedAgentEvent[*schema.Message]]()
-	ec := &chatModelExecCtx{generator: gen}
+	ec := &reActExecCtx{generator: gen}
 	wrapper := NewEventSenderToolWrapper[*schema.Message]()
 
 	ep := func(ctx context.Context, args *schema.ToolArgument, opts ...ToolOption) (*schema.ToolResult, error) {
@@ -406,7 +406,7 @@ func TestHasUserEventSenderModelWrapper_NilSlice(t *testing.T) {
 
 func TestHasUserEventSenderModelWrapper_WithWrapper(t *testing.T) {
 	w := NewEventSenderModelWrapper[*schema.Message]()
-	handlers := []TypedChatModelMiddleware[*schema.Message]{w}
+	handlers := []TypedReActMiddleware[*schema.Message]{w}
 	if !HasUserEventSenderModelWrapper(handlers) {
 		t.Error("should detect wrapper")
 	}
@@ -414,7 +414,7 @@ func TestHasUserEventSenderModelWrapper_WithWrapper(t *testing.T) {
 
 func TestHasUserEventSenderModelWrapper_WithoutWrapper(t *testing.T) {
 	mw := &testMiddleware{}
-	handlers := []TypedChatModelMiddleware[*schema.Message]{mw}
+	handlers := []TypedReActMiddleware[*schema.Message]{mw}
 	if HasUserEventSenderModelWrapper(handlers) {
 		t.Error("should not detect non-wrapper")
 	}
@@ -422,7 +422,7 @@ func TestHasUserEventSenderModelWrapper_WithoutWrapper(t *testing.T) {
 
 func TestHasUserEventSenderToolWrapper_WithoutWrapper(t *testing.T) {
 	mw := &testMiddleware{}
-	handlers := []TypedChatModelMiddleware[*schema.Message]{mw}
+	handlers := []TypedReActMiddleware[*schema.Message]{mw}
 	if HasUserEventSenderToolWrapper(handlers) {
 		t.Error("should not detect non-wrapper")
 	}
@@ -434,7 +434,7 @@ func TestEventSenderModelWrapper_WithExecCtxGenerator(t *testing.T) {
 	base := &mockModel{}
 	base.addResp("gen-event")
 	it, gen := NewAsyncIteratorPair[*TypedAgentEvent[*schema.Message]]()
-	ec := &chatModelExecCtx{generator: gen}
+	ec := &reActExecCtx{generator: gen}
 	wrapped := wrapModelWithEventSender(base, ec)
 
 	go func() {
