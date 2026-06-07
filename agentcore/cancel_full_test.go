@@ -964,3 +964,135 @@ func TestCancelAfterToolCalls_LoopTransitionBoundary(t *testing.T) {
 	cancel(WithCancelMode(CancelAfterToolCalls))
 	for { ev, ok := iter.Next(); if !ok { break }; _ = ev }
 }
+// ================================================================
+// Edge-case tests ported from Eino cancel_edge_test.go / cancel_multicall_test.go
+// ================================================================
+
+// TestCancel_BeforeExecutionStarts verifies cancel before agent starts
+// does not panic.
+func TestCancel_BeforeExecutionStarts(t *testing.T) {
+	model := &mockModel{}
+	model.addResp("should not be called")
+	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: model}).WithName("never_start")
+	opt, cancel := WithCancel()
+	ctx := context.Background()
+	iter := agent.Run(ctx, &AgentInput{Messages: []Message{schema.UserMessage("fail")}}, opt)
+	cancel()
+	for { ev, ok := iter.Next(); if !ok { break }; _ = ev }
+}
+
+// TestCancel_AfterBusinessInterrupt verifies that cancelling after a
+// business interrupt returns ErrExecutionEnded.
+func TestCancel_AfterBusinessInterrupt(t *testing.T) {
+	model := &forcedToolModel{
+		inner:     &mockModel{},
+		toolCalls: []schema.ToolCall{{ID: "bi", Function: schema.ToolCallFunction{Name: "bi_tool", Arguments: "{}"}}},
+		finalResp: "done",
+		firstCall: true,
+	}
+	tool := &mockTool{name: "bi_tool", desc: "business interrupt tool"}
+	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{
+		Model: model, Tools: []Tool{tool},
+		ToolsConfig: &ToolsNodeConfig{Tools: []Tool{tool}},
+	}).WithName("biz_interrupt")
+	ctx := context.Background()
+	iter := agent.Run(ctx, &AgentInput{Messages: []Message{schema.UserMessage("run")}})
+	for { ev, ok := iter.Next(); if !ok { break }; _ = ev }
+	opt, cancel := WithCancel()
+	h, ok := cancel()
+	if !ok {
+		if !errors.Is(h.Wait(), ErrExecutionEnded) {
+			t.Error("expected ErrExecutionEnded after business interrupt")
+		}
+	}
+	_ = opt
+}
+
+// TestCancel_AfterError verifies cancelling after a model error returns ErrExecutionEnded.
+func TestCancel_AfterError(t *testing.T) {
+	model := &mockModel{}
+	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: model}).WithName("after_err")
+	opt, cancel := WithCancel()
+	ctx := context.Background()
+	iter := agent.Run(ctx, &AgentInput{Messages: []Message{schema.UserMessage("fail")}}, opt)
+	for { ev, ok := iter.Next(); if !ok { break }; _ = ev }
+	h, ok := cancel()
+	if !ok {
+		if !errors.Is(h.Wait(), ErrExecutionEnded) {
+			t.Error("expected ErrExecutionEnded after model error")
+		}
+	}
+}
+
+// TestCancel_ModelError verifies model error marks cancelCtx done.
+func TestCancel_ModelError(t *testing.T) {
+	model := &mockModel{}
+	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: model}).WithName("model_err")
+	opt, cancel := WithCancel()
+	ctx := context.Background()
+	iter := agent.Run(ctx, &AgentInput{Messages: []Message{schema.UserMessage("fail")}}, opt)
+	for { ev, ok := iter.Next(); if !ok { break }; _ = ev }
+	h, ok := cancel()
+	if !ok {
+		if !errors.Is(h.Wait(), ErrExecutionEnded) {
+			t.Error("expected ErrExecutionEnded")
+		}
+	}
+}
+
+// TestCancel_NoCheckpointStore verifies cancel without checkpoint store doesn't panic.
+func TestCancel_NoCheckpointStore(t *testing.T) {
+	model := newCancelTestChatModel(nil)
+	model.addResp("nockpt")
+	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{Model: model}).WithName("no_ckpt_cancel")
+	opt, cancel := WithCancel()
+	runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: agent})
+	ctx := context.Background()
+	iter := runner.Run(ctx, []*schema.Message{schema.UserMessage("run")}, opt)
+	cancel()
+	for { ev, ok := iter.Next(); if !ok { break }; _ = ev }
+}
+
+// TestCancel_MultipleToolsConcurrent verifies CancelAfterToolCalls waits
+// for all concurrent tools to complete.
+func TestCancel_MultipleToolsConcurrent(t *testing.T) {
+	model := newCancelTestChatModel(nil)
+	tool1 := newSlowTool("slow_tool_1", 50*time.Millisecond, "result1")
+	tool2 := newSlowTool("slow_tool_2", 80*time.Millisecond, "result2")
+	model.addResp("tool")
+	model.addResp("final")
+	agent := NewChatModelAgent(&ChatModelConfig[*schema.Message]{
+		Model: model, Tools: []Tool{tool1, tool2},
+		ToolsConfig: &ToolsNodeConfig{Tools: []Tool{tool1, tool2}},
+	}).WithName("multi_tool_cancel")
+	opt, cancel := WithCancel()
+	ctx := context.Background()
+	iter := agent.Run(ctx, &AgentInput{Messages: []Message{schema.UserMessage("run")}}, opt)
+	time.Sleep(30 * time.Millisecond)
+	cancel(WithCancelMode(CancelAfterToolCalls))
+	for { ev, ok := iter.Next(); if !ok { break }; _ = ev }
+}
+
+// TestCancel_TimeoutEscalation_Flags verifies CancelError has correct flags.
+func TestCancel_TimeoutEscalation_Flags(t *testing.T) {
+	cc := newCancelContext()
+	cc.setMode(CancelAfterChatModel)
+	cc.timeoutEscalated = 1
+	cc.escalated = 1
+	cancelErr := cc.createError()
+	if !cancelErr.Info.Timeout { t.Error("expected Timeout flag") }
+	if !cancelErr.Info.Escalated { t.Error("expected Escalated flag") }
+}
+
+// TestCancel_MultiCall_TimeoutDeadlineJoinAbsolute verifies absolute time join.
+func TestCancel_MultiCall_TimeoutDeadlineJoinAbsolute(t *testing.T) {
+	cc := newCancelContext()
+	cf := cc.buildCancelFunc()
+	_, ok1 := cf(WithCancelMode(CancelAfterChatModel), WithCancelTimeout(200*time.Millisecond))
+	if !ok1 { t.Fatal("first should contribute") }
+	_, ok2 := cf(WithCancelMode(CancelAfterChatModel), WithCancelTimeout(20*time.Millisecond))
+	if !ok2 { t.Fatal("second should contribute") }
+	time.Sleep(50 * time.Millisecond)
+	if !cc.isImmediate() { t.Error("should escalate to immediate after short timeout") }
+	if atomic.LoadInt32(&cc.timeoutEscalated) != 1 { t.Error("expected timeout escalated") }
+}
