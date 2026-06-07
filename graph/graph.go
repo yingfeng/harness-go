@@ -482,7 +482,7 @@ func (g *StateGraph) Compile(opts ...CompileOption) (*CompiledGraph, error) {
 		graph:         g,
 		checkpointer:  nil,
 		interrupts:    make(map[string]bool),
-		recursionLimit: 25,
+		recursionLimit: constants.DefaultRecursionLimit,
 		debug:          false,
 	}
 	
@@ -668,7 +668,7 @@ func (cg *CompiledGraph) inlineRun(ctx context.Context, input interface{}, confi
 	if cg.checkpointer != nil {
 		threadID := getThreadID(config)
 		cp, err := cg.checkpointer.Get(ctx, map[string]interface{}{
-			"thread_id": threadID,
+			constants.ConfigKeyThreadID: threadID,
 		})
 		if err == nil && cp != nil {
 			if err := channelRegistry.RestoreFromCheckpoint(cp); err != nil {
@@ -700,7 +700,7 @@ func (cg *CompiledGraph) inlineRun(ctx context.Context, input interface{}, confi
 			if cg.checkpointer != nil {
 				cp := channelRegistry.CreateCheckpoint()
 				_ = cg.checkpointer.Put(ctx, map[string]interface{}{
-					"thread_id": getThreadID(config),
+					constants.ConfigKeyThreadID: getThreadID(config),
 				}, cp)
 			}
 			return nil, &errors.GraphInterrupt{}
@@ -726,7 +726,7 @@ func (cg *CompiledGraph) inlineRun(ctx context.Context, input interface{}, confi
 		if cg.checkpointer != nil {
 			cp := channelRegistry.CreateCheckpoint()
 			_ = cg.checkpointer.Put(ctx, map[string]interface{}{
-				"thread_id": getThreadID(config),
+				constants.ConfigKeyThreadID: getThreadID(config),
 				"step":      step,
 			}, cp)
 		}
@@ -784,7 +784,7 @@ type inlineTaskResult struct {
 
 func getThreadID(config *types.RunnableConfig) string {
 	if config != nil && config.Configurable != nil {
-		if tid, ok := config.Configurable["thread_id"].(string); ok {
+		if tid, ok := config.Configurable[constants.ConfigKeyThreadID].(string); ok {
 			return tid
 		}
 	}

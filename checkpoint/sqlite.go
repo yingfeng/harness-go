@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/infiniflow/ragflow/harness/constants"
 	_ "github.com/mattn/go-sqlite3"
 )
 
@@ -84,7 +85,7 @@ func (s *SqliteSaver) setup() error {
 
 // Get retrieves the latest checkpoint for a thread.
 func (s *SqliteSaver) Get(ctx context.Context, config map[string]interface{}) (map[string]interface{}, error) {
-	threadID, ok := config["thread_id"].(string)
+	threadID, ok := config[constants.ConfigKeyThreadID].(string)
 	if !ok {
 		return nil, fmt.Errorf("thread_id is required")
 	}
@@ -92,7 +93,7 @@ func (s *SqliteSaver) Get(ctx context.Context, config map[string]interface{}) (m
 	var query string
 	var args []interface{}
 	
-	if checkpointID, ok := config["checkpoint_id"].(string); ok {
+	if checkpointID, ok := config[constants.ConfigKeyCheckpointID].(string); ok {
 		query = `SELECT checkpoint FROM checkpoints WHERE id = ? AND thread_id = ?`
 		args = []interface{}{checkpointID, threadID}
 	} else {
@@ -126,13 +127,13 @@ func (s *SqliteSaver) Get(ctx context.Context, config map[string]interface{}) (m
 
 // Put saves a new checkpoint.
 func (s *SqliteSaver) Put(ctx context.Context, config map[string]interface{}, checkpoint map[string]interface{}) error {
-	threadID, ok := config["thread_id"].(string)
+	threadID, ok := config[constants.ConfigKeyThreadID].(string)
 	if !ok {
 		return fmt.Errorf("thread_id is required")
 	}
 	
 	checkpointID := uuid.New().String()
-	if id, ok := config["checkpoint_id"].(string); ok {
+	if id, ok := config[constants.ConfigKeyCheckpointID].(string); ok {
 		checkpointID = id
 	}
 	
@@ -168,7 +169,7 @@ func (s *SqliteSaver) Put(ctx context.Context, config map[string]interface{}, ch
 
 // List lists checkpoints for a thread.
 func (s *SqliteSaver) List(ctx context.Context, config map[string]interface{}, limit int) ([]map[string]interface{}, error) {
-	threadID, ok := config["thread_id"].(string)
+	threadID, ok := config[constants.ConfigKeyThreadID].(string)
 	if !ok {
 		return nil, fmt.Errorf("thread_id is required")
 	}

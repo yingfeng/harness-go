@@ -109,11 +109,11 @@ func drawMermaid(graph GraphProvider, opts *DrawOptions) (string, error) {
 
 		// Style START and END nodes
 		if from == constants.Start && opts.ShowStartEnd {
-			fromID = "__START__"
+			fromID = "START"
 			sb.WriteString(fmt.Sprintf("    %s((\"\"))\n", fromID))
 		}
 		if to == constants.End && opts.ShowStartEnd {
-			toID = "__END__"
+			toID = "END"
 			sb.WriteString(fmt.Sprintf("    %s(((\"\")))\n", toID))
 		}
 
@@ -136,7 +136,7 @@ func drawMermaid(graph GraphProvider, opts *DrawOptions) (string, error) {
 		toID := sanitizeNodeID(to)
 
 		if to == constants.End && opts.ShowStartEnd {
-			toID = "__END__"
+			toID = "END"
 		}
 
 		label := sanitizeLabel(condition)

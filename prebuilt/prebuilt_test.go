@@ -178,7 +178,7 @@ func TestConditionalNode(t *testing.T) {
 	}
 }
 
-func TestCreateReactAgent(t *testing.T) {
+func TestNewReactAgent(t *testing.T) {
 	// Skip this test in short mode as it requires more setup
 	if testing.Short() {
 		t.Skip("Skipping ReactAgent test in short mode")
@@ -216,7 +216,7 @@ func TestCreateReactAgent(t *testing.T) {
 		StopCondition:  nil,
 	}
 	
-	agent, err := CreateReactAgent(config)
+	agent, err := NewReactAgent(config)
 	if err != nil {
 		t.Fatalf("Failed to create ReactAgent: %v", err)
 	}

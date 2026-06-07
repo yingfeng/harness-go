@@ -1,5 +1,7 @@
 package types
 
+import "github.com/infiniflow/ragflow/harness/constants"
+
 // RunnableConfig represents configuration for a runnable execution.
 type RunnableConfig struct {
 	// Configurable values that can be used by nodes and checkpointers
@@ -28,7 +30,7 @@ type RunnableConfig struct {
 func NewRunnableConfig() *RunnableConfig {
 	return &RunnableConfig{
 		Configurable:   make(map[string]interface{}),
-		RecursionLimit: 25,
+		RecursionLimit: constants.DefaultRecursionLimit,
 		Tags:           make([]string, 0),
 		Metadata:       make(map[string]interface{}),
 		Durability:     DurabilitySync,

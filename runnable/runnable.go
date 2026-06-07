@@ -466,7 +466,10 @@ func coerceFuncToRunnable(fn interface{}, fnType reflect.Type) (Runnable[any, an
 			result := results[0].Interface()
 			errVal := results[1].Interface()
 			if errVal != nil {
-				return result, errVal.(error)
+				if err, ok := errVal.(error); ok {
+					return result, err
+				}
+				return nil, fmt.Errorf("expected error, got %T", errVal)
 			}
 			return result, nil
 		}

@@ -139,8 +139,13 @@ func (a *TypedChatModelAgent[M]) executeInlineTools(
 		}
 		result, err := ep(ctx, tc.Function.Arguments)
 		var toolMsg M
-		if err != nil { toolMsg = any(schema.ToolMessage(fmt.Sprintf("Error: %v", err), tc.ID)).(M)
-		} else { toolMsg = any(schema.ToolMessage(result, tc.ID)).(M) }
+		if err != nil {
+			tm := schema.ToolMessage(fmt.Sprintf("Error: %v", err), tc.ID)
+			if tm2, ok := any(tm).(M); ok { toolMsg = tm2 } else { continue }
+		} else {
+			tm := schema.ToolMessage(result, tc.ID)
+			if tm2, ok := any(tm).(M); ok { toolMsg = tm2 } else { continue }
+		}
 		state.Messages = append(state.Messages, toolMsg)
 		if m, ok := any(toolMsg).(*schema.Message); ok { gen.Send(any(typedEventFromMessage(m, nil, schema.RoleTool, tc.Function.Name)).(*TypedAgentEvent[M])) }
 	}

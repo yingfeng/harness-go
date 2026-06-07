@@ -219,7 +219,9 @@ func injectMessageID[M MessageType](msgs []M) []M {
 			cp := copyMessage(msg)
 			copied := any(cp).(*schema.Message)
 			copied.Extra = EnsureMessageID(copied.Extra)
-			msgs[i] = any(copied).(M)
+			if c2, ok := any(copied).(M); ok {
+				msgs[i] = c2
+			}
 		}
 	}
 	return msgs

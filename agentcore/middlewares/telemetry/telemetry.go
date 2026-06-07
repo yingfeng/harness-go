@@ -74,6 +74,10 @@ func newProvider(cfg *Config) *telemetry.TelemetryProvider {
 // Middleware is an agentcore middleware that instruments agent execution with
 // OpenTelemetry tracing and metrics. It wraps model calls, tool invocations,
 // and the overall agent lifecycle.
+//
+// TODO: Make this generic (Middleware[M]) to support AgenticMessage alongside
+// *schema.Message. Currently hardcoded to *schema.Message, unlike other
+// middlewares that use BaseMiddleware[M].
 type Middleware struct {
 	agentcore.BaseMiddleware[*schema.Message]
 	cfg     *Config

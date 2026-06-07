@@ -239,7 +239,7 @@ func (e *Engine) Run(ctx context.Context, input interface{}, mode types.StreamMo
 		// Initialize or load checkpoint
 		if e.checkpointer != nil {
 			cpData, err := e.checkpointer.Get(ctx, map[string]interface{}{
-				"thread_id": threadID,
+				constants.ConfigKeyThreadID: threadID,
 			})
 			if err == nil && cpData != nil {
 				if err := channelRegistry.RestoreFromCheckpoint(cpData); err != nil {
@@ -312,7 +312,7 @@ func (e *Engine) Run(ctx context.Context, input interface{}, mode types.StreamMo
 				if e.checkpointer != nil {
 					checkpoint := channelRegistry.CreateCheckpoint()
 					if err := e.checkpointer.Put(ctx, map[string]interface{}{
-						"thread_id": threadID,
+						constants.ConfigKeyThreadID: threadID,
 					}, checkpoint); err != nil {
 						errCh <- fmt.Errorf("failed to save checkpoint: %w", err)
 						return
@@ -1184,8 +1184,8 @@ func (e *Engine) saveCheckpoint(ctx context.Context, threadID, checkpointID stri
 		return nil
 	}
 	return e.checkpointer.Put(ctx, map[string]interface{}{
-		"thread_id":     threadID,
-		"checkpoint_id": checkpointID,
+		constants.ConfigKeyThreadID:     threadID,
+		constants.ConfigKeyCheckpointID: checkpointID,
 		"step":          step,
 	}, checkpoint)
 }

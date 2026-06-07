@@ -20,6 +20,11 @@ type HistoryEntry struct {
 type HistoryRewriter func(ctx context.Context, entries []*HistoryEntry) ([]Message, error)
 
 // flowAgent wraps an Agent with orchestration (sub-agents, history, transfer, callbacks).
+//
+// TODO: flowAgent and workflowAgent share sub-agent management. workflowAgent
+// creates sub-agents AND injects them into flowAgent via SetSubAgents(),
+// causing double bookkeeping (workflowAgent.subAgents + flowAgent.subAgents).
+// Consider a single source of truth for sub-agent ownership.
 type flowAgent struct {
 	Agent
 	subAgents                []*flowAgent
@@ -126,6 +131,10 @@ func deepCopyInput(ai *AgentInput) *AgentInput {
 	return &AgentInput{Messages: append([]Message(nil), ai.Messages...), EnableStreaming: ai.EnableStreaming}
 }
 
+// TODO: On every transfer, genInput replays ALL historical events to rebuild
+// conversation history. This is O(n) per transfer, where n grows with conversation
+// length. Consider caching the reconstructed history per agent and invalidating
+// on state changes rather than re-scanning the full event list.
 func (a *flowAgent) genInput(ctx context.Context, rc *runContext, skipTransfer bool) (*AgentInput, error) {
 	input := deepCopyInput(rc.RootInput.(*AgentInput))
 	entries := make([]*HistoryEntry, 0)

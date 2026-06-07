@@ -115,6 +115,11 @@ type TypedAgent[M MessageType] interface {
 
 type Agent = TypedAgent[*schema.Message]
 
+// OnSubAgents is an optional extension point for agents that want to be
+// notified when they are placed into a multi-agent hierarchy.
+//
+// TODO: No types currently implement this interface. Determine whether it
+// should be kept as a reserved extension or removed as dead code.
 type OnSubAgents interface {
 	OnSetSubAgents(ctx context.Context, subAgents []Agent) error
 	OnSetAsSubAgent(ctx context.Context, parent Agent) error

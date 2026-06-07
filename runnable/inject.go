@@ -261,7 +261,10 @@ func (r *InjectableRunnable) executeWithArgs(args []reflect.Value) (interface{},
 		// Single return value (output or error)
 		if results[0].Type().Implements(reflect.TypeOf((*error)(nil)).Elem()) {
 			if !results[0].IsNil() {
-				return nil, results[0].Interface().(error)
+				if err, ok := results[0].Interface().(error); ok {
+					return nil, err
+				}
+				return nil, fmt.Errorf("expected error, got %T", results[0].Interface())
 			}
 			return nil, nil
 		}
@@ -271,7 +274,10 @@ func (r *InjectableRunnable) executeWithArgs(args []reflect.Value) (interface{},
 	// Two return values (output, error)
 	output := results[0].Interface()
 	if !results[1].IsNil() {
-		return output, results[1].Interface().(error)
+		if err, ok := results[1].Interface().(error); ok {
+			return output, err
+		}
+		return output, fmt.Errorf("expected error, got %T", results[1].Interface())
 	}
 	return output, nil
 }

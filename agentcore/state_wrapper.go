@@ -28,6 +28,10 @@ func newTypedStateModelWrapper[M MessageType](inner ChatModel[M], cc *cancelCont
 
 // copyMessage performs a deep copy of a Message or AgenticMessage to prevent
 // pointer-sharing bugs when the same message flows through multiple wrappers.
+//
+// TODO: The Extra map copy is shallow (values are shared references). If a
+// middleware modifies a nested map/slice inside Extra, the original message
+// will also be affected. Consider a deep-copy helper for Extra values.
 func copyMessage[M MessageType](msg M) M {
 	switch v := any(msg).(type) {
 	case *schema.Message:

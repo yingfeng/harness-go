@@ -62,8 +62,8 @@ type LLM interface {
 	GenerateStream(ctx context.Context, messages []map[string]interface{}) (<-chan string, error)
 }
 
-// CreateReactAgent creates a new ReAct (Reasoning + Acting) agent.
-func CreateReactAgent(config ReactAgentConfig) (runnable.Runnable[map[string]interface{}, map[string]interface{}], error) {
+// NewReactAgent creates a new ReAct (Reasoning + Acting) agent.
+func NewReactAgent(config ReactAgentConfig) (runnable.Runnable[map[string]interface{}, map[string]interface{}], error) {
 	if len(config.Tools) == 0 {
 		return nil, fmt.Errorf("at least one tool is required")
 	}

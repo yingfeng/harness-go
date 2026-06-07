@@ -285,8 +285,8 @@ var (
 
 // Prebuilt component functions.
 var (
-	// CreateReactAgent creates a new ReAct (Reasoning + Acting) agent.
-	CreateReactAgent = prebuilt.CreateReactAgent
+	// NewReactAgent creates a new ReAct (Reasoning + Acting) agent.
+	NewReactAgent = prebuilt.NewReactAgent
 	// ToolNode creates a node that executes a tool.
 	ToolNode = prebuilt.ToolNode
 	// ValidationNode creates a node that validates input.
@@ -445,7 +445,9 @@ func NewCommand() *Command {
 	return types.NewCommand()
 }
 
-// NewSend creates a new Send.
+// NewSend creates a new graph.Send (used for map-reduce style Pregel operations).
+// NOTE: This returns *graph.Send, which is distinct from *types.Send.
+// Users of the types package should use types.NewSend directly.
 func NewSend(node string, arg interface{}) *Send {
 	return &Send{Node: node, Arg: arg}
 }

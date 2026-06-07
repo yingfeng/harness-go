@@ -78,10 +78,16 @@ func runImpl[M MessageType](a TypedAgent[M], streaming bool, store CheckPointSto
 
 	var zero M
 	if _, ok := any(zero).(*schema.Message); ok {
-		ca, _ := any(a).(Agent)
+		ca, ok := any(a).(Agent)
+		if !ok || ca == nil {
+			return errorIter[M](fmt.Errorf("agent does not implement Agent interface"))
+		}
 		fa := toFlowAgent(ctx, ca)
 		if store != nil { fa.checkPointStore = store }
-		ci := any(input).(*AgentInput)
+		ci, ok := any(input).(*AgentInput)
+		if !ok {
+			return errorIter[M](fmt.Errorf("input type assertion failed: expected *AgentInput, got %T", input))
+		}
 		ctx = setupRunContext(ctx, input, o)
 		return wrapIterForStore(streaming, store, ctx, any(fa.Run(ctx, ci, opts...)).(*AsyncIterator[*TypedAgentEvent[M]]), o)
 	}

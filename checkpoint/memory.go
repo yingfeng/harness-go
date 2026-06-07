@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/infiniflow/ragflow/harness/constants"
 )
 
 // MemorySaver is an in-memory checkpoint saver.
@@ -40,13 +41,13 @@ func (s *MemorySaver) Get(ctx context.Context, config map[string]interface{}) (m
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	
-	threadID, ok := config["thread_id"].(string)
+	threadID, ok := config[constants.ConfigKeyThreadID].(string)
 	if !ok {
 		return nil, fmt.Errorf("thread_id is required")
 	}
 	
 	// Check for specific checkpoint_id
-	if checkpointID, ok := config["checkpoint_id"].(string); ok {
+	if checkpointID, ok := config[constants.ConfigKeyCheckpointID].(string); ok {
 		versions := s.versions[threadID]
 		for _, entry := range versions {
 			if entry.ID == checkpointID {
@@ -78,13 +79,13 @@ func (s *MemorySaver) Put(ctx context.Context, config map[string]interface{}, ch
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	
-	threadID, ok := config["thread_id"].(string)
+	threadID, ok := config[constants.ConfigKeyThreadID].(string)
 	if !ok {
 		return fmt.Errorf("thread_id is required")
 	}
 	
 	checkpointID := uuid.New().String()
-	if id, ok := config["checkpoint_id"].(string); ok {
+	if id, ok := config[constants.ConfigKeyCheckpointID].(string); ok {
 		checkpointID = id
 	}
 	
@@ -114,7 +115,7 @@ func (s *MemorySaver) List(ctx context.Context, config map[string]interface{}, l
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	
-	threadID, ok := config["thread_id"].(string)
+	threadID, ok := config[constants.ConfigKeyThreadID].(string)
 	if !ok {
 		return nil, fmt.Errorf("thread_id is required")
 	}
@@ -128,8 +129,8 @@ func (s *MemorySaver) List(ctx context.Context, config map[string]interface{}, l
 	for i := len(versions) - 1; i >= len(versions)-limit && i >= 0; i-- {
 		entry := versions[i]
 		result = append(result, map[string]interface{}{
-			"checkpoint_id": entry.ID,
-			"thread_id":     entry.ThreadID,
+			constants.ConfigKeyCheckpointID: entry.ID,
+			constants.ConfigKeyThreadID:     entry.ThreadID,
 			"metadata":      entry.Metadata,
 			"created_at":    entry.CreatedAt,
 			"parent_id":     entry.ParentID,
@@ -144,12 +145,12 @@ func (s *MemorySaver) GetState(ctx context.Context, config map[string]interface{
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	
-	threadID, ok := config["thread_id"].(string)
+	threadID, ok := config[constants.ConfigKeyThreadID].(string)
 	if !ok {
 		return nil, fmt.Errorf("thread_id is required")
 	}
 	
-	checkpointID, ok := config["checkpoint_id"].(string)
+	checkpointID, ok := config[constants.ConfigKeyCheckpointID].(string)
 	if !ok {
 		// Get latest
 		versions := s.versions[threadID]

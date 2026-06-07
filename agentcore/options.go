@@ -40,39 +40,59 @@ func getCommonOptions(o *runOptions, opts ...RunOption) *runOptions {
 	return o
 }
 
+// WithSessionValues injects session-scoped key-value pairs into the run context.
 func WithSessionValues(vals map[string]any) RunOption {
 	return runOptFn(func(o *runOptions) { o.sessionValues = vals })
 }
+
+// WithCheckPointID sets the checkpoint ID for this run, enabling interrupt/resume.
 func WithCheckPointID(id string) RunOption {
 	return runOptFn(func(o *runOptions) { o.checkPointID = &id })
 }
+
+// WithSkipTransferMessages prevents the agent from receiving messages forwarded
+// from parent agents during a transfer.
 func WithSkipTransferMessages() RunOption {
 	return runOptFn(func(o *runOptions) { o.skipTransferMessages = true })
 }
+
+// WithCallbacks registers agent lifecycle callbacks (onStart/onEnd/onError/onInterrupt).
 func WithCallbacks(cbs ...any) RunOption {
 	return runOptFn(func(o *runOptions) { o.callbacks = cbs })
 }
+
+// WithAgentNames scopes the associated options to specific agent names.
 func WithAgentNames(names ...string) RunOption {
 	return runOptFn(func(o *runOptions) { o.agentNames = names })
 }
+
+// WithSharedParentSession gives sub-agents access to the parent's session values.
 func WithSharedParentSession() RunOption {
 	return runOptFn(func(o *runOptions) { o.sharedParentSession = true })
 }
 
 // ---- ChatModel-agent-specific options ----
 
+// WithChatModelOptions passes model-level options (e.g., temperature, retry) to the underlying ChatModel.
 func WithChatModelOptions(opts []ModelOption) RunOption {
 	return WrapImplSpecificOptFn(func(o *runOptions) { o.chatModelOptions = opts })
 }
+
+// WithToolOptions passes tool-level options to tool invocations during this run.
 func WithToolOptions(opts []ToolOption) RunOption {
 	return WrapImplSpecificOptFn(func(o *runOptions) { o.toolOptions = opts })
 }
+
+// WithAgentToolOptions passes agent-level options to a specific sub-agent identified by name.
 func WithAgentToolOptions(agentName string, opts []RunOption) RunOption {
 	return WrapImplSpecificOptFn(func(o *runOptions) {
 		if o.agentToolOptions == nil { o.agentToolOptions = make(map[string][]RunOption) }
 		o.agentToolOptions[agentName] = opts
 	})
 }
+
+// WithHistoryModifier sets a function that can trim or transform message history before
+// each model call. Useful for context-window management.
 func WithHistoryModifier(fn func(context.Context, []Message) []Message) RunOption {
 	return WrapImplSpecificOptFn(func(o *runOptions) { o.historyModifier = fn })
 }

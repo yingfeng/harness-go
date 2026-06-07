@@ -463,15 +463,15 @@ func (p PregelScratchpad) Clone() PregelScratchpad {
 
 // ConfigKey represents keys used in runtime configuration.
 const (
-	ConfigKeyTaskID      = "__task_id__"
-	ConfigKeyRuntime     = "__runtime__"
-	ConfigKeyRead        = "__read__"
-	ConfigKeySend        = "__send__"
-	ConfigKeyWriter      = "__writer__"
-	ConfigKeyStore       = "__store__"
-	ConfigKeyPrevious    = "__previous__"
-	ConfigKeyCheckpointNS = "__checkpoint_ns__"
-	ConfigKeyConfigurable = "__configurable__"
+	ManagedConfigKeyTaskID      = "__task_id__"
+	ManagedConfigKeyRuntime     = "__runtime__"
+	ManagedConfigKeyRead        = "__read__"
+	ManagedConfigKeySend        = "__send__"
+	ManagedConfigKeyWriter      = "__writer__"
+	ManagedConfigKeyStore       = "__store__"
+	ManagedConfigKeyPrevious    = "__previous__"
+	ManagedConfigKeyCheckpointNS = "__checkpoint_ns__"
+	ManagedConfigKeyConfigurable = "__configurable__"
 )
 
 // Runtime provides runtime information for graph execution.
@@ -660,7 +660,7 @@ func get_runtime(config map[string]interface{}) *Runtime {
 	if config == nil {
 		return DEFAULT_RUNTIME.Clone()
 	}
-	if runtime, ok := config[ConfigKeyRuntime].(*Runtime); ok {
+	if runtime, ok := config[ManagedConfigKeyRuntime].(*Runtime); ok {
 		return runtime
 	}
 	return DEFAULT_RUNTIME.Clone()
@@ -671,7 +671,7 @@ func GetTaskID(config map[string]interface{}) string {
 	if config == nil {
 		return ""
 	}
-	if val, ok := config[ConfigKeyTaskID].(string); ok {
+	if val, ok := config[ManagedConfigKeyTaskID].(string); ok {
 		return val
 	}
 	return ""
@@ -682,7 +682,7 @@ func GetRuntime(config map[string]interface{}) *Runtime {
 	if config == nil {
 		return NewRuntime()
 	}
-	if val, ok := config[ConfigKeyRuntime].(*Runtime); ok {
+	if val, ok := config[ManagedConfigKeyRuntime].(*Runtime); ok {
 		return val
 	}
 	return NewRuntime()
@@ -693,7 +693,7 @@ func SetRuntime(config map[string]interface{}, runtime *Runtime) {
 	if config == nil {
 		return
 	}
-	config[ConfigKeyRuntime] = runtime
+	config[ManagedConfigKeyRuntime] = runtime
 }
 
 // GetReader returns the read function from config.
@@ -701,7 +701,7 @@ func GetReader(config map[string]interface{}) interface{} {
 	if config == nil {
 		return nil
 	}
-	return config[ConfigKeyRead]
+	return config[ManagedConfigKeyRead]
 }
 
 // SetReader sets the read function in config.
@@ -709,7 +709,7 @@ func SetReader(config map[string]interface{}, reader interface{}) {
 	if config == nil {
 		return
 	}
-	config[ConfigKeyRead] = reader
+	config[ManagedConfigKeyRead] = reader
 }
 
 // GetSend returns the send function from config.
@@ -717,7 +717,7 @@ func GetSend(config map[string]interface{}) func(...interface{}) {
 	if config == nil {
 		return nil
 	}
-	if val, ok := config[ConfigKeySend]; ok {
+	if val, ok := config[ManagedConfigKeySend]; ok {
 		if fn, ok := val.(func(...interface{})); ok {
 			return fn
 		}
@@ -730,7 +730,7 @@ func SetSend(config map[string]interface{}, send func(...interface{})) {
 	if config == nil {
 		return
 	}
-	config[ConfigKeySend] = send
+	config[ManagedConfigKeySend] = send
 }
 
 // GetWriter returns the writer from config.
@@ -738,7 +738,7 @@ func GetWriter(config map[string]interface{}) interface{} {
 	if config == nil {
 		return nil
 	}
-	return config[ConfigKeyWriter]
+	return config[ManagedConfigKeyWriter]
 }
 
 // SetWriter sets the writer in config.
@@ -746,7 +746,7 @@ func SetWriter(config map[string]interface{}, writer interface{}) {
 	if config == nil {
 		return
 	}
-	config[ConfigKeyWriter] = writer
+	config[ManagedConfigKeyWriter] = writer
 }
 
 
@@ -783,7 +783,7 @@ func PatchConfigurable(base map[string]interface{}, updates map[string]interface
 	
 	// Get or create configurable section
 	configurable := make(map[string]interface{})
-	if cfg, ok := base[ConfigKeyConfigurable]; ok {
+	if cfg, ok := base[ManagedConfigKeyConfigurable]; ok {
 		if cfgMap, ok := cfg.(map[string]interface{}); ok {
 			configurable = cfgMap
 		}
@@ -799,7 +799,7 @@ func PatchConfigurable(base map[string]interface{}, updates map[string]interface
 	for k, v := range base {
 		result[k] = v
 	}
-	result[ConfigKeyConfigurable] = configurable
+	result[ManagedConfigKeyConfigurable] = configurable
 	
 	return result
 }
@@ -809,7 +809,7 @@ func GetConfigurable(config map[string]interface{}) map[string]interface{} {
 	if config == nil {
 		return nil
 	}
-	if val, ok := config[ConfigKeyConfigurable]; ok {
+	if val, ok := config[ManagedConfigKeyConfigurable]; ok {
 		if cfgMap, ok := val.(map[string]interface{}); ok {
 			return cfgMap
 		}
@@ -822,7 +822,7 @@ func GetCheckpointNS(config map[string]interface{}) string {
 	if config == nil {
 		return ""
 	}
-	if val, ok := config[ConfigKeyCheckpointNS].(string); ok {
+	if val, ok := config[ManagedConfigKeyCheckpointNS].(string); ok {
 		return val
 	}
 	return ""
@@ -833,7 +833,7 @@ func SetCheckpointNS(config map[string]interface{}, ns string) {
 	if config == nil {
 		return
 	}
-	config[ConfigKeyCheckpointNS] = ns
+	config[ManagedConfigKeyCheckpointNS] = ns
 }
 
 // ParseCheckpointNS parses a checkpoint namespace to extract node path.
