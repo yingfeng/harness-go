@@ -187,18 +187,23 @@ func TestForkJoinRunCtx_Basic(t *testing.T) {
 	if child == nil {
 		t.Fatal("expected child runCtx")
 	}
-	if child.Session != rc.Session {
-		t.Error("fork should share session with parent")
+	// forkRunCtx creates a new session with its own BranchEvents for parallel isolation.
+	if child.Session == rc.Session {
+		t.Error("fork should create a new session with BranchEvents")
+	}
+	if child.Session.BranchEvents == nil {
+		t.Error("fork should set BranchEvents on child session")
 	}
 
-	// Since fork shares the session, child events are immediately visible
+	// Events in the child lane go to BranchEvents.Events.
 	child.Session.addEvent("child_event")
 
+	// joinRunCtxs collects lane events and commits them to the parent.
 	joinRunCtxs(ctx, childCtx)
 
 	events := rc.Session.getEvents()
 	if len(events) == 0 {
-		t.Error("expected at least 1 event")
+		t.Error("expected at least 1 event after join")
 	}
 	t.Logf("events after fork/join: %d", len(events))
 }

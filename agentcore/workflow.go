@@ -8,22 +8,22 @@ import (
 	"github.com/infiniflow/ragflow/harness/agentcore/schema"
 )
 
-type wfMode int
+type workflowMode int
 
 const (
-	wfModeUnknown  wfMode = iota
-	wfModeSequential
-	wfModeLoop
-	wfModeParallel
+	workflowModeUnknown  workflowMode = iota
+	workflowModeSequential
+	workflowModeLoop
+	workflowModeParallel
 )
 
-type wfState struct {
+type workflowState struct {
 	InterruptIdx int
 }
-type wfParallelState struct {
+type workflowParallelState struct {
 	SubEvents map[int][]*agentEventWrap
 }
-type wfLoopState struct {
+type workflowLoopState struct {
 	Iter int
 	Idx  int
 }
@@ -42,7 +42,7 @@ type workflowAgent struct {
 	name          string
 	desc          string
 	subAgents     []*flowAgent
-	mode          wfMode
+	mode          workflowMode
 	maxIter       int
 }
 
@@ -50,9 +50,9 @@ func (a *workflowAgent) Name(_ context.Context) string               { return a.
 func (a *workflowAgent) Description(_ context.Context) string        { return a.desc }
 func (a *workflowAgent) GetType() string {
 	switch a.mode {
-	case wfModeSequential: return "Sequential"
-	case wfModeParallel:   return "Parallel"
-	case wfModeLoop:       return "Loop"
+	case workflowModeSequential: return "Sequential"
+	case workflowModeParallel:   return "Parallel"
+	case workflowModeLoop:       return "Loop"
 	default:               return "WorkflowAgent"
 	}
 }
@@ -65,9 +65,9 @@ func (a *workflowAgent) Run(ctx context.Context, _ *AgentInput, opts ...RunOptio
 			gen.Close()
 		}()
 		switch a.mode {
-		case wfModeSequential: a.runSeq(ctx, gen, nil, nil, opts...)
-		case wfModeParallel:   a.runPar(ctx, gen, nil, nil, opts...)
-		case wfModeLoop:       a.runLoop(ctx, gen, nil, nil, opts...)
+		case workflowModeSequential: a.runSeq(ctx, gen, nil, nil, opts...)
+		case workflowModeParallel:   a.runPar(ctx, gen, nil, nil, opts...)
+		case workflowModeLoop:       a.runLoop(ctx, gen, nil, nil, opts...)
 		default:               gen.Send(&AgentEvent{Err: fmt.Errorf("unsupported mode %d", a.mode)})
 		}
 	}()
@@ -84,9 +84,9 @@ func (a *workflowAgent) Resume(ctx context.Context, info *ResumeInfo, opts ...Ru
 		st := info.InterruptState
 		if st == nil { gen.Send(&AgentEvent{Err: fmt.Errorf("no state for resume")}); return }
 		switch s := st.(type) {
-		case *wfState:         a.runSeq(ctx, gen, s, info, opts...)
-		case *wfParallelState: a.runPar(ctx, gen, s, info, opts...)
-		case *wfLoopState:     a.runLoop(ctx, gen, s, info, opts...)
+		case *workflowState:         a.runSeq(ctx, gen, s, info, opts...)
+		case *workflowParallelState: a.runPar(ctx, gen, s, info, opts...)
+		case *workflowLoopState:     a.runLoop(ctx, gen, s, info, opts...)
 		default:               gen.Send(&AgentEvent{Err: fmt.Errorf("unknown state %T", s)})
 		}
 	}()
@@ -95,7 +95,7 @@ func (a *workflowAgent) Resume(ctx context.Context, info *ResumeInfo, opts ...Ru
 
 // ---- Sequential ----
 
-func (a *workflowAgent) runSeq(ctx context.Context, gen *AsyncGenerator[*AgentEvent], st *wfState, info *ResumeInfo, opts ...RunOption) error {
+func (a *workflowAgent) runSeq(ctx context.Context, gen *AsyncGenerator[*AgentEvent], st *workflowState, info *ResumeInfo, opts ...RunOption) error {
 	start := 0
 	wfCtx := ctx
 	if st != nil { start = st.InterruptIdx; wfCtx = buildPath(ctx, a.subAgents, start, 0) }
@@ -103,7 +103,7 @@ func (a *workflowAgent) runSeq(ctx context.Context, gen *AsyncGenerator[*AgentEv
 	for i := start; i < len(a.subAgents); i++ {
 		sa := a.subAgents[i]
 		if cc := getCancelContext(ctx); cc != nil && cc.shouldCancel() {
-			gen.Send(cancelTransition(ctx, "Sequential cancel", &wfState{InterruptIdx: i})); return nil
+			gen.Send(cancelTransition(ctx, "Sequential cancel", &workflowState{InterruptIdx: i})); return nil
 		}
 		var si *AsyncIterator[*AgentEvent]
 		if st != nil {
@@ -117,7 +117,7 @@ func (a *workflowAgent) runSeq(ctx context.Context, gen *AsyncGenerator[*AgentEv
 		last := drainEvents(si, gen)
 		if last != nil {
 			if last.Action.internalInterrupted != nil {
-				s := &wfState{InterruptIdx: i}
+				s := &workflowState{InterruptIdx: i}
 				ev := CompositeInterrupt(ctx, "Seq interrupted", s, last.Action.internalInterrupted)
 				ev.Action.Interrupted.Data = &WorkflowInterruptInfo{OrigInput: inputFromCtx(ctx), SequentialIdx: i, SequentialInfo: last.Action.Interrupted}
 				ev.AgentName, ev.RunPath = last.AgentName, last.RunPath
@@ -132,7 +132,7 @@ func (a *workflowAgent) runSeq(ctx context.Context, gen *AsyncGenerator[*AgentEv
 
 // ---- Loop ----
 
-func (a *workflowAgent) runLoop(ctx context.Context, gen *AsyncGenerator[*AgentEvent], ls *wfLoopState, info *ResumeInfo, opts ...RunOption) error {
+func (a *workflowAgent) runLoop(ctx context.Context, gen *AsyncGenerator[*AgentEvent], ls *workflowLoopState, info *ResumeInfo, opts ...RunOption) error {
 	if len(a.subAgents) == 0 { return nil }
 	startIter, startIdx := 0, 0
 	wfCtx := ctx
@@ -142,7 +142,7 @@ func (a *workflowAgent) runLoop(ctx context.Context, gen *AsyncGenerator[*AgentE
 		for j := startIdx; j < len(a.subAgents); j++ {
 			sa := a.subAgents[j]
 			if cc := getCancelContext(ctx); cc != nil && cc.shouldCancel() {
-				gen.Send(cancelTransition(ctx, "Loop cancel", &wfLoopState{Iter: i, Idx: j})); return nil
+				gen.Send(cancelTransition(ctx, "Loop cancel", &workflowLoopState{Iter: i, Idx: j})); return nil
 			}
 			var si *AsyncIterator[*AgentEvent]
 			if ls != nil {
@@ -163,7 +163,7 @@ func (a *workflowAgent) runLoop(ctx context.Context, gen *AsyncGenerator[*AgentE
 					return nil
 				}
 				if last.Action.internalInterrupted != nil {
-					s := &wfLoopState{Iter: i, Idx: j}
+					s := &workflowLoopState{Iter: i, Idx: j}
 					ev := CompositeInterrupt(ctx, "Loop interrupted", s, last.Action.internalInterrupted)
 					ev.Action.Interrupted.Data = &WorkflowInterruptInfo{OrigInput: inputFromCtx(ctx), LoopIter: i, SequentialIdx: j, SequentialInfo: last.Action.Interrupted}
 					ev.AgentName, ev.RunPath = last.AgentName, last.RunPath
@@ -180,7 +180,7 @@ func (a *workflowAgent) runLoop(ctx context.Context, gen *AsyncGenerator[*AgentE
 
 // ---- Parallel ----
 
-func (a *workflowAgent) runPar(ctx context.Context, gen *AsyncGenerator[*AgentEvent], ps *wfParallelState, info *ResumeInfo, opts ...RunOption) error {
+func (a *workflowAgent) runPar(ctx context.Context, gen *AsyncGenerator[*AgentEvent], ps *workflowParallelState, info *ResumeInfo, opts ...RunOption) error {
 	if len(a.subAgents) == 0 { return nil }
 	var wg sync.WaitGroup
 	var mu sync.Mutex
@@ -205,7 +205,7 @@ func (a *workflowAgent) runPar(ctx context.Context, gen *AsyncGenerator[*AgentEv
 		}
 	}
 	if cc := getCancelContext(ctx); cc != nil && cc.shouldCancel() {
-		gen.Send(cancelTransition(ctx, "Parallel cancel", &wfParallelState{})); return nil
+		gen.Send(cancelTransition(ctx, "Parallel cancel", &workflowParallelState{})); return nil
 	}
 	for i := range a.subAgents {
 		wg.Add(1)
@@ -239,7 +239,7 @@ func (a *workflowAgent) runPar(ctx context.Context, gen *AsyncGenerator[*AgentEv
 				subEvts[i] = ws
 			}
 		}
-		st := &wfParallelState{SubEvents: subEvts}
+		st := &workflowParallelState{SubEvents: subEvts}
 		ev := CompositeInterrupt(ctx, "Parallel interrupted", st, signals...)
 		ev.Action.Interrupted.Data = &WorkflowInterruptInfo{OrigInput: inputFromCtx(ctx), ParallelInfo: dataMap}
 		ev.AgentName = a.Name(ctx); ev.RunPath = getRunCtx(ctx).getRunPath()
@@ -282,7 +282,7 @@ type SequentialConfig struct{ Name, Description string; SubAgents []Agent }
 type ParallelConfig struct{ Name, Description string; SubAgents []Agent }
 type LoopConfig struct{ Name, Description string; SubAgents []Agent; MaxIterations int }
 
-func newWf(ctx context.Context, name, desc string, subs []Agent, mode wfMode, maxIter int) (*flowAgent, error) {
+func newWf(ctx context.Context, name, desc string, subs []Agent, mode workflowMode, maxIter int) (*flowAgent, error) {
 	wa := &workflowAgent{name: name, desc: desc, mode: mode, maxIter: maxIter}
 	fas := make([]Agent, len(subs))
 	for i, s := range subs { fas[i] = toFlowAgent(ctx, s, WithDisallowTransferToParent()) }
@@ -296,16 +296,16 @@ func newWf(ctx context.Context, name, desc string, subs []Agent, mode wfMode, ma
 	return fa.(*flowAgent), nil
 }
 
-func NewSequential(ctx context.Context, cfg *SequentialConfig) (ResumableAgent, error) { return newWf(ctx, cfg.Name, cfg.Description, cfg.SubAgents, wfModeSequential, 0) }
-func NewParallel(ctx context.Context, cfg *ParallelConfig) (ResumableAgent, error)     { return newWf(ctx, cfg.Name, cfg.Description, cfg.SubAgents, wfModeParallel, 0) }
+func NewSequential(ctx context.Context, cfg *SequentialConfig) (ResumableAgent, error) { return newWf(ctx, cfg.Name, cfg.Description, cfg.SubAgents, workflowModeSequential, 0) }
+func NewParallel(ctx context.Context, cfg *ParallelConfig) (ResumableAgent, error)     { return newWf(ctx, cfg.Name, cfg.Description, cfg.SubAgents, workflowModeParallel, 0) }
 func NewLoop(ctx context.Context, cfg *LoopConfig) (ResumableAgent, error) {
 	if cfg.MaxIterations <= 0 { cfg.MaxIterations = 10 }
-	return newWf(ctx, cfg.Name, cfg.Description, cfg.SubAgents, wfModeLoop, cfg.MaxIterations)
+	return newWf(ctx, cfg.Name, cfg.Description, cfg.SubAgents, workflowModeLoop, cfg.MaxIterations)
 }
 
 func init() {
 	schema.RegisterType("_harness_wf_interrupt_info", func() any { return &WorkflowInterruptInfo{} })
-	schema.RegisterType("_harness_wf_state", func() any { return &wfState{} })
-	schema.RegisterType("_harness_wf_parallel_state", func() any { return &wfParallelState{} })
-	schema.RegisterType("_harness_wf_loop_state", func() any { return &wfLoopState{} })
+	schema.RegisterType("_harness_wf_state", func() any { return &workflowState{} })
+	schema.RegisterType("_harness_wf_parallel_state", func() any { return &workflowParallelState{} })
+	schema.RegisterType("_harness_wf_loop_state", func() any { return &workflowLoopState{} })
 }

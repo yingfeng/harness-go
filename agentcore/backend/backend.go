@@ -1,5 +1,5 @@
 // Package filesystem provides file system abstractions for agent file operations.
-package filesystem
+package backend
 
 // FileInfo provides information about a file.
 type FileInfo struct {

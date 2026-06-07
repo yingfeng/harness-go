@@ -6,6 +6,7 @@ import (
 	"encoding/gob"
 	"fmt"
 	"reflect"
+	"sort"
 	"sync"
 	"time"
 
@@ -98,9 +99,12 @@ func (e *eventWrapEntry) GobDecode(data []byte) error {
 	return nil
 }
 
-// laneEvents holds per-lane event history for parallel workflows.
-type laneEvents struct {
+// branchEvents holds per-lane event history for parallel workflows.
+// Each parallel branch in a workflow gets its own branchEvents, forming a linked
+// list via Parent. Events are collected per-lane and merged chronologically on join.
+type branchEvents struct {
 	Events []*eventWrapEntry
+	Parent *branchEvents
 }
 
 // runSession holds per-execution mutable state for an agent run.
@@ -109,8 +113,8 @@ type runSession struct {
 	Values      map[string]any
 	valuesMx    *sync.Mutex
 	events      []*eventWrapEntry
+	BranchEvents  *branchEvents
 	TypedEvents any // *[]*typedAgentEventWrapper[M] for AgenticMessage path (gob-encodable)
-	LaneEvents  *laneEvents
 }
 
 func newRunSession() *runSession {
@@ -118,21 +122,57 @@ func newRunSession() *runSession {
 }
 
 func (s *runSession) addEvent(event any) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	entry := &eventWrapEntry{Event: event, Timestamp: time.Now().UnixNano()}
-	// Consume any streaming content before storing for checkpoint safety
 	entry.consumeStream()
+
+	// If in a parallel lane, append to the lane's local event slice (lock-free).
+	if s.BranchEvents != nil {
+		s.BranchEvents.Events = append(s.BranchEvents.Events, entry)
+		return
+	}
+
+	// Otherwise, on the main path. Append to shared Events slice (with lock).
+	s.mu.Lock()
 	s.events = append(s.events, entry)
+	s.mu.Unlock()
 }
 
 func (s *runSession) getEvents() []any {
+	// If there are no in-flight lane events, return the main slice directly.
+	if s.BranchEvents == nil {
+		s.mu.Lock()
+		r := unwrapEvents(s.events)
+		s.mu.Unlock()
+		return r
+	}
+
+	// Collect committed events from main slice.
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	r := make([]any, len(s.events))
-	for i, e := range s.events {
+	committed := make([]*eventWrapEntry, len(s.events))
+	copy(committed, s.events)
+	s.mu.Unlock()
+
+	// Traverse the lane linked list to collect in-flight events.
+	var all []*eventWrapEntry
+	all = append(all, committed...)
+	for lane := s.BranchEvents; lane != nil; lane = lane.Parent {
+		all = append(all, lane.Events...)
+	}
+
+	// Sort all events by timestamp for chronological order.
+	sort.Slice(all, func(i, j int) bool {
+		return all[i].Timestamp < all[j].Timestamp
+	})
+
+	return unwrapEvents(all)
+}
+
+// unwrapEvents extracts the inner Event from eventWrapEntry slice.
+func unwrapEvents(entries []*eventWrapEntry) []any {
+	r := make([]any, 0, len(entries))
+	for _, e := range entries {
 		if e != nil {
-			r[i] = e.Event
+			r = append(r, e.Event)
 		}
 	}
 	return r
@@ -201,11 +241,31 @@ func setRunCtx(ctx context.Context, rc *runContext) context.Context {
 }
 
 func forkRunCtx(ctx context.Context) context.Context {
-	rc := getRunCtx(ctx)
-	if rc == nil {
+	parent := getRunCtx(ctx)
+	if parent == nil || parent.Session == nil {
 		return ctx
 	}
-	return context.WithValue(ctx, runContextKey{}, rc)
+
+	// Create a new session for the child lane.
+	// Share committed history (Events) and values, but give the child its own BranchEvents.
+	childSession := &runSession{
+		events:   parent.Session.events,   // Share committed history
+		Values:   parent.Session.Values,   // Share values map
+		valuesMx: parent.Session.valuesMx,
+	}
+
+	childSession.BranchEvents = &branchEvents{
+		Parent: parent.Session.BranchEvents,
+		Events: make([]*eventWrapEntry, 0),
+	}
+
+	// Create a new runContext for the child, pointing to the new session.
+	child := &runContext{
+		RootInput: parent.RootInput,
+		RunPath:   parent.getRunPath(),
+		Session:   childSession,
+	}
+	return context.WithValue(ctx, runContextKey{}, child)
 }
 
 func updateRunPathOnly(ctx context.Context, steps ...string) context.Context {
@@ -223,15 +283,57 @@ func updateRunPathOnly(ctx context.Context, steps ...string) context.Context {
 
 func joinRunCtxs(ctx context.Context, childCtxs ...context.Context) {
 	parent := getRunCtx(ctx)
-	if parent == nil { return }
-	for _, cc := range childCtxs {
-		child := getRunCtx(cc)
-		if child == nil { continue }
-		if child.Session == nil { continue }
-		for _, ev := range child.Session.getEvents() {
-			parent.Session.addEvent(ev)
+	if parent == nil || parent.Session == nil {
+		return
+	}
+
+	switch len(childCtxs) {
+	case 0:
+		return
+	case 1:
+		// Optimization: single branch, no sorting needed.
+		newEvents := unwindLaneEvents(childCtxs...)
+		commitEvents(parent, newEvents)
+		return
+	}
+
+	// Collect events from all child lanes.
+	newEvents := unwindLaneEvents(childCtxs...)
+
+	// Sort by timestamp for chronological order.
+	sort.Slice(newEvents, func(i, j int) bool {
+		return newEvents[i].Timestamp < newEvents[j].Timestamp
+	})
+
+	commitEvents(parent, newEvents)
+}
+
+// commitEvents appends events to the correct parent lane or main event log.
+func commitEvents(rc *runContext, entries []*eventWrapEntry) {
+	if rc == nil || rc.Session == nil {
+		return
+	}
+	if rc.Session.BranchEvents != nil {
+		// If committing to a lane, append to its event slice.
+		rc.Session.BranchEvents.Events = append(rc.Session.BranchEvents.Events, entries...)
+	} else {
+		// Otherwise, commit to main shared Events slice with lock.
+		rc.Session.mu.Lock()
+		rc.Session.events = append(rc.Session.events, entries...)
+		rc.Session.mu.Unlock()
+	}
+}
+
+// unwindLaneEvents collects all events from the BranchEvents of the given contexts.
+func unwindLaneEvents(ctxs ...context.Context) []*eventWrapEntry {
+	var all []*eventWrapEntry
+	for _, ctx := range ctxs {
+		rc := getRunCtx(ctx)
+		if rc != nil && rc.Session != nil && rc.Session.BranchEvents != nil {
+			all = append(all, rc.Session.BranchEvents.Events...)
 		}
 	}
+	return all
 }
 
 func getSession(ctx context.Context) *runSession {

@@ -102,7 +102,7 @@ func TestWorkflow_LoopAgent(t *testing.T) {
 }
 
 func TestWorkflow_UnsupportedMode(t *testing.T) {
-	wf := &workflowAgent{name: "bad", mode: wfModeUnknown}
+	wf := &workflowAgent{name: "bad", mode: workflowModeUnknown}
 	iter := wf.Run(context.Background(), &AgentInput{})
 	ev, ok := iter.Next()
 	if !ok {
