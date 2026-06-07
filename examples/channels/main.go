@@ -6,7 +6,7 @@ import (
 	"log"
 
 	"github.com/infiniflow/ragflow/harness"
-	"github.com/infiniflow/ragflow/harness/channels"
+	"github.com/infiniflow/ragflow/harness/graphengine/channels"
 )
 
 func main() {

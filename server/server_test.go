@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/infiniflow/ragflow/harness/constants"
-	"github.com/infiniflow/ragflow/harness/graph"
+	"github.com/infiniflow/ragflow/harness/graphengine/constants"
+	"github.com/infiniflow/ragflow/harness/graphengine/graph"
 )
 
 // SimpleState is a simple state for testing

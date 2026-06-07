@@ -15,7 +15,7 @@
 //	import (
 //	    "context"
 //	    "github.com/infiniflow/ragflow/harness"
-//	    "github.com/infiniflow/ragflow/harness/channels"
+//	    "github.com/infiniflow/ragflow/harness/graphengine/channels"
 //	)
 //
 //	// Define state schema
@@ -58,15 +58,15 @@ import (
 	"context"
 
 	"github.com/infiniflow/ragflow/harness/agentcore"
-	"github.com/infiniflow/ragflow/harness/channels"
-	"github.com/infiniflow/ragflow/harness/checkpoint"
-	"github.com/infiniflow/ragflow/harness/constants"
-	"github.com/infiniflow/ragflow/harness/errors"
-	"github.com/infiniflow/ragflow/harness/graph"
-	"github.com/infiniflow/ragflow/harness/interrupt"
+	"github.com/infiniflow/ragflow/harness/graphengine/channels"
+	"github.com/infiniflow/ragflow/harness/graphengine/checkpoint"
+	"github.com/infiniflow/ragflow/harness/graphengine/constants"
+	"github.com/infiniflow/ragflow/harness/graphengine/errors"
+	"github.com/infiniflow/ragflow/harness/graphengine/graph"
+	"github.com/infiniflow/ragflow/harness/graphengine/interrupt"
 	"github.com/infiniflow/ragflow/harness/prebuilt"
-	"github.com/infiniflow/ragflow/harness/pregel"
-	"github.com/infiniflow/ragflow/harness/types"
+	"github.com/infiniflow/ragflow/harness/graphengine/pregel"
+	"github.com/infiniflow/ragflow/harness/graphengine/types"
 )
 
 // Re-export main types for convenience.

@@ -20,8 +20,8 @@ import (
 	"log"
 
 	"github.com/infiniflow/ragflow/harness"
-	"github.com/infiniflow/ragflow/harness/checkpoint"
-	"github.com/infiniflow/ragflow/harness/constants"
+	"github.com/infiniflow/ragflow/harness/graphengine/checkpoint"
+	"github.com/infiniflow/ragflow/harness/graphengine/constants"
 )
 
 // ---- Shared State ----
@@ -45,7 +45,7 @@ func simulateHumanReview(state *ExpenseState) {
 	fmt.Printf("Approve? (simulating approval...)\n")
 	state.Approved = true
 	state.ReviewerNote = "Approved by manager after review"
-	fmt.Println("===== REVIEW COMPLETE =====\n")
+	fmt.Println("===== REVIEW COMPLETE =====")
 }
 
 func main() {

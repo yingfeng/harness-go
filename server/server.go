@@ -12,9 +12,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/infiniflow/ragflow/harness/checkpoint"
-	"github.com/infiniflow/ragflow/harness/graph"
-	"github.com/infiniflow/ragflow/harness/types"
+	"github.com/infiniflow/ragflow/harness/graphengine/checkpoint"
+	"github.com/infiniflow/ragflow/harness/graphengine/graph"
+	"github.com/infiniflow/ragflow/harness/graphengine/types"
 )
 
 // Server implements the Agent Harness API server compatible with agent-harness-sdk.

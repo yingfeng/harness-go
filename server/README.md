@@ -26,8 +26,8 @@ import (
     "context"
     "log"
 
-    "github.com/infiniflow/ragflow/harness/constants"
-    "github.com/infiniflow/ragflow/harness/graph"
+    "github.com/infiniflow/ragflow/harness/graphengine/constants"
+    "github.com/infiniflow/ragflow/harness/graphengine/graph"
     "github.com/infiniflow/ragflow/harness/server"
 )
 

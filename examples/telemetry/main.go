@@ -7,10 +7,10 @@ import (
 	"log"
 	"time"
 
-	"github.com/infiniflow/ragflow/harness/pregel"
+	"github.com/infiniflow/ragflow/harness/graphengine/pregel"
 	"github.com/infiniflow/ragflow/harness/telemetry"
-	"github.com/infiniflow/ragflow/harness/runnable"
-	"github.com/infiniflow/ragflow/harness/types"
+	"github.com/infiniflow/ragflow/harness/graphengine/runnable"
+	"github.com/infiniflow/ragflow/harness/graphengine/types"
 )
 
 func main() {

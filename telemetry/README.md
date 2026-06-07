@@ -79,7 +79,7 @@ defer shutdown(context.Background())
 
 ```go
 import (
-    "github.com/infiniflow/ragflow/harness/runnable"
+    "github.com/infiniflow/ragflow/harness/graphengine/runnable"
     "github.com/infiniflow/ragflow/harness/telemetry"
 )
 
@@ -134,7 +134,7 @@ result, err := tracedNode(ctx, input)
 ### Adding Configuration Context
 
 ```go
-import "github.com/infiniflow/ragflow/harness/types"
+import "github.com/infiniflow/ragflow/harness/graphengine/types"
 
 // Create configuration
 config := &types.RunnableConfig{

@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/infiniflow/ragflow/harness/agentcore/schema"
-	"github.com/infiniflow/ragflow/harness/types"
+	"github.com/infiniflow/ragflow/harness/graphengine/types"
 )
 
 var (

@@ -22,11 +22,11 @@ import (
 	"fmt"
 
 	"github.com/infiniflow/ragflow/harness/agentcore/schema"
-	"github.com/infiniflow/ragflow/harness/channels"
-	"github.com/infiniflow/ragflow/harness/constants"
-	"github.com/infiniflow/ragflow/harness/graph"
-	"github.com/infiniflow/ragflow/harness/pregel"
-	"github.com/infiniflow/ragflow/harness/types"
+	"github.com/infiniflow/ragflow/harness/graphengine/channels"
+	"github.com/infiniflow/ragflow/harness/graphengine/constants"
+	"github.com/infiniflow/ragflow/harness/graphengine/graph"
+	"github.com/infiniflow/ragflow/harness/graphengine/pregel"
+	"github.com/infiniflow/ragflow/harness/graphengine/types"
 )
 
 func init() {
@@ -348,8 +348,13 @@ func NewReActGraph(agent *TypedChatModelAgent[*schema.Message], cfg *ReActGraphC
 }
 
 // Invoke runs the graph-level ReAct loop synchronously via the Pregel engine.
+// When input is nil (resume path), the graph restores state from the checkpoint;
+// buildInitialState returns nil to let the engine handle it.
 func (rg *ReActGraph) Invoke(ctx context.Context, input *AgentInput, config *types.RunnableConfig) (*ReActGraphState, error) {
-	state := rg.buildInitialState(input)
+	var state interface{}
+	if input != nil {
+		state = rg.buildInitialState(input)
+	}
 
 	result, err := rg.compiled.Invoke(ctx, state)
 	if err != nil {

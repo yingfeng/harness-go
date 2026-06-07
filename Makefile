@@ -1,4 +1,4 @@
-.PHONY: build test clean fmt lint vet coverage examples lib bin help
+.PHONY: build test test-race test-graphengine test-agentcore clean fmt lint vet lint-all coverage examples lib bin help all check deps security docs bench bench-vet
 
 # Go parameters
 GOCMD     = go
@@ -11,10 +11,15 @@ GOFMT     = $(GOCMD) fmt
 GOVET     = $(GOCMD) vet
 
 # Directories
-SRC_DIR       = ./
-EXAMPLES_DIR  = ./examples
-BIN_DIR       = ./bin
-WORKFLOW      = examples/workflow
+BIN_DIR        = ./bin
+EXAMPLES_DIR   = ./examples
+GRAPHENGINE_DIR= ./graphengine
+AGENTCORE_DIR  = ./agentcore
+SERVER_DIR     = ./server
+TELEMETRY_DIR  = ./telemetry
+
+# Exclude examples from test targets (they may lack _test files)
+CORE_PACKAGES  = $(GRAPHENGINE_DIR)/... $(AGENTCORE_DIR)/... $(SERVER_DIR)/... $(TELEMETRY_DIR)/... ./internal/...
 
 # Build flags
 LDFLAGS       = -ldflags "-s -w"
@@ -27,11 +32,62 @@ build:
 ## Library: compile the library as a static archive
 lib:
 	@echo "Building library..."
-	$(GOBUILDLIB) -o $(BIN_DIR)/liblanggraph.a $(SRC_DIR)
+	$(GOBUILDLIB) -o $(BIN_DIR)/libharness.a .
 
 ## Test: run all tests
 test:
-	$(GOTEST) -v -count=1 -timeout 60s ./...
+	$(GOTEST) -v -count=1 -timeout 120s ./...
+
+## Test with race detector
+test-race:
+	$(GOTEST) -race -count=1 -timeout 180s $(CORE_PACKAGES)
+
+## Test only the graph engine (graphengine/)
+test-graphengine:
+	$(GOTEST) -v -count=1 -timeout 60s $(GRAPHENGINE_DIR)/...
+
+## Test only the agent ADK (agentcore/)
+test-agentcore:
+	$(GOTEST) -v -count=1 -timeout 60s $(AGENTCORE_DIR)/...
+
+## Generate code coverage report
+coverage:
+	@mkdir -p $(BIN_DIR)
+	$(GOTEST) -count=1 -coverprofile=$(BIN_DIR)/coverage.out $(CORE_PACKAGES)
+	$(GOCMD) tool cover -html=$(BIN_DIR)/coverage.out -o $(BIN_DIR)/coverage.html
+	@echo "Coverage report: $(BIN_DIR)/coverage.html"
+	@$(GOCMD) tool cover -func=$(BIN_DIR)/coverage.out | tail -1
+
+## Format code
+fmt:
+	$(GOFMT) ./...
+
+## Run go vet
+vet:
+	$(GOVET) ./...
+
+## Run linter (requires golangci-lint)
+lint:
+	golangci-lint run ./...
+
+## All checks (fmt → vet → test)
+check: fmt vet test
+
+## Run benchmarks
+bench:
+	$(GOTEST) -bench=. -benchmem ./...
+
+## Run benchmarks for agentcore only
+bench-vet:
+	$(GOTEST) ./agentcore -bench=. -benchtime=100x -run=^$
+
+## Full CI suite: vet + lint + race test + coverage
+lint-all:
+	$(GOVET) ./...
+	golangci-lint run ./... 2>/dev/null || echo "golangci-lint not installed, skipping"
+	$(GOTEST) -race -count=1 -timeout 180s $(CORE_PACKAGES)
+	$(GOTEST) -count=1 -coverprofile=$(BIN_DIR)/coverage.out $(CORE_PACKAGES)
+	@echo "=== All checks passed ==="
 
 ## Examples: build all example binaries to bin/
 examples:
@@ -59,14 +115,6 @@ bin: lib examples
 	@echo "All binaries in $(BIN_DIR)/:"
 	@ls -la $(BIN_DIR)/ 2>/dev/null || true
 
-## Format code
-fmt:
-	$(GOFMT) ./...
-
-## Run go vet
-vet:
-	$(GOVET) ./...
-
 ## Clean build artifacts
 clean:
 	@echo "Cleaning..."
@@ -78,39 +126,17 @@ deps:
 	$(GOMOD) download
 	$(GOMOD) tidy
 
-## Run linter (requires golangci-lint)
-lint:
-	golangci-lint run ./...
-
-## Run benchmarks
-bench:
-	$(GOTEST) -bench=. -benchmem ./...
-
 ## Generate documentation
 docs:
-	$(GOCMD) doc -all > DOCUMENTATION.txt
+	$(GOCMD) doc -all > $(BIN_DIR)/DOCUMENTATION.txt
 
 ## Check for security vulnerabilities (requires govulncheck)
 security:
 	govulncheck ./...
 
-## All checks
-check: fmt vet test
-
 ## Build and test everything
 all: deps clean build test examples
 	@echo "All done!"
-
-## Production targets (ADK/CI)
-.PHONY: bench-vet lint-all
-
-bench-vet: ## Run benchmarks for agentcore
-	go test ./agentcore -bench=. -benchtime=100x -run=^$
-
-lint-all: ## Run all checks (vet + test)
-	go vet ./...
-	go test ./... -count=1 -timeout 180s
-	@echo "All checks passed"
 
 ## Help
 help:

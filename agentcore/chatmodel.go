@@ -9,7 +9,7 @@ import (
 
 	"github.com/infiniflow/ragflow/harness/agentcore/schema"
 	"github.com/infiniflow/ragflow/harness/agentcore/internal"
-	"github.com/infiniflow/ragflow/harness/graph"
+	"github.com/infiniflow/ragflow/harness/graphengine/graph"
 )
 
 // ChatModelConfig holds configuration for TypedChatModelAgent.
