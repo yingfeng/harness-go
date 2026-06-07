@@ -10,10 +10,10 @@ import (
 	"github.com/infiniflow/ragflow/harness/agentcore/schema"
 )
 
-// ======================== ChatModel Agent Tests ========================
+// ======================== Model Agent Tests ========================
 
 // reActAgentSetup creates a basic agent with given model and optional tools
-func reActAgentSetup(model ChatModel[*schema.Message], tools []Tool) *ReActAgent[*schema.Message] {
+func reActAgentSetup(model Model[*schema.Message], tools []Tool) *ReActAgent[*schema.Message] {
 	cfg := &ReActConfig[*schema.Message]{Model: model}
 	if len(tools) > 0 { cfg.Tools = tools }
 	a := NewReActAgent(cfg)
@@ -386,7 +386,7 @@ func TestMiddleware_ErrorPropagation(t *testing.T) {
 func TestMiddleware_WrapModel(t *testing.T) {
 	var wrapped bool
 	mw := &testMiddleware{}
-	mw.wrapModel = func(ctx context.Context, m ChatModel[*schema.Message], mc *ModelContext) (ChatModel[*schema.Message], error) {
+	mw.wrapModel = func(ctx context.Context, m Model[*schema.Message], mc *ModelContext) (Model[*schema.Message], error) {
 		wrapped = true; return m, nil
 	}
 	model := &mockModel{}; model.addResp("wrapped")

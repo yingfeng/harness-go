@@ -107,7 +107,7 @@ func TestWorkflow_ParallelAgentConcurrency(t *testing.T) {
 func TestTurnLoop_ConcurrentPushStop(t *testing.T) {
 	ctx := context.Background()
 
-	loop := NewTurnLoop[*schema.Message](TurnLoopConfig[*schema.Message]{
+	loop := NewAgentLoop[*schema.Message](AgentLoopConfig[*schema.Message]{
 		GenInput: func(_ context.Context, l *AgentLoop[*schema.Message], items []*schema.Message) (*GenInputResult[*schema.Message], error) {
 			return &GenInputResult[*schema.Message]{
 				Input:     &AgentInput{Messages: items},

@@ -39,7 +39,7 @@ func TestBuildModelWrapperChain_WithFailover(t *testing.T) {
 	fallback.addResp("fallback")
 
 	cfg := DefaultReActConfig[*schema.Message]()
-	cfg.FailoverConfig = &FailoverConfigMsg{Models: []ChatModel[*schema.Message]{fallback}}
+	cfg.FailoverConfig = &FailoverConfigMsg{Models: []Model[*schema.Message]{fallback}}
 	model := BuildModelWrapperChain(primary, nil, cfg)
 	resp, err := model.Generate(context.Background(), []Message{schema.UserMessage("hi")})
 	if err != nil { t.Fatalf("Generate: %v", err) }
@@ -49,7 +49,7 @@ func TestBuildModelWrapperChain_WithFailover(t *testing.T) {
 func TestBuildModelWrapperChain_WithMiddleware(t *testing.T) {
 	var wrapCalled bool
 	mw := &testMiddleware{}
-	mw.wrapModel = func(ctx context.Context, m ChatModel[*schema.Message], mc *ModelContext) (ChatModel[*schema.Message], error) {
+	mw.wrapModel = func(ctx context.Context, m Model[*schema.Message], mc *ModelContext) (Model[*schema.Message], error) {
 		wrapCalled = true
 		return m, nil
 	}
@@ -67,7 +67,7 @@ func TestBuildModelWrapperChain_WithMiddleware(t *testing.T) {
 func TestBuildModelWrapperChain_WithFullChain(t *testing.T) {
 	var wrapCalled bool
 	mw := &testMiddleware{}
-	mw.wrapModel = func(ctx context.Context, m ChatModel[*schema.Message], mc *ModelContext) (ChatModel[*schema.Message], error) {
+	mw.wrapModel = func(ctx context.Context, m Model[*schema.Message], mc *ModelContext) (Model[*schema.Message], error) {
 		wrapCalled = true
 		return m, nil
 	}
@@ -79,7 +79,7 @@ func TestBuildModelWrapperChain_WithFullChain(t *testing.T) {
 
 	cfg := DefaultReActConfig[*schema.Message]()
 	cfg.RetryConfig = &ModelRetryConfig{MaxRetries: 2}
-	cfg.FailoverConfig = &FailoverConfigMsg{Models: []ChatModel[*schema.Message]{fallback}}
+	cfg.FailoverConfig = &FailoverConfigMsg{Models: []Model[*schema.Message]{fallback}}
 	cfg.Middlewares = []ReActMiddleware{mw}
 
 	model := BuildModelWrapperChain(primary, nil, cfg)

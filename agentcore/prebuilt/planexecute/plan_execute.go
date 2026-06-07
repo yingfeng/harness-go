@@ -71,21 +71,21 @@ func defaultNewPlan(_ context.Context) Plan {
 
 // PlannerConfig configures the planner agent.
 type PlannerConfig struct {
-	Model       agentcore.ChatModel[*schema.Message]
+	Model       agentcore.Model[*schema.Message]
 	Instruction string // overrides default PlannerPrompt
 	NewPlan     NewPlan
 }
 
 // ExecutorConfig configures the executor agent.
 type ExecutorConfig struct {
-	Model       agentcore.ChatModel[*schema.Message]
+	Model       agentcore.Model[*schema.Message]
 	Instruction string // overrides default ExecutorPrompt
 	Tools       []agentcore.Tool
 }
 
 // ReplannerConfig configures the replanner agent.
 type ReplannerConfig struct {
-	Model       agentcore.ChatModel[*schema.Message]
+	Model       agentcore.Model[*schema.Message]
 	Instruction string // overrides default ReplannerPrompt
 	Tools       []agentcore.Tool
 }

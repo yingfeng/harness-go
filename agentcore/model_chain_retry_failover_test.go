@@ -246,7 +246,7 @@ func TestFailover_GetFailoverModelNil(t *testing.T) {
 	m1 := &alwaysFailsModelFailover{name: "m1"}
 	m2 := &alwaysFailsModelFailover{name: "m2"}
 
-	failoverWrapped := newFailoverModel([]ChatModel[Message]{m1, m2}, &FailoverConfig[Message]{
+	failoverWrapped := newFailoverModel([]Model[Message]{m1, m2}, &FailoverConfig[Message]{
 		ShouldFailover: func(ctx context.Context, err error) bool { return true },
 	})
 
@@ -282,7 +282,7 @@ func TestBuildModelWrapperChain_RetryThenFailover_Integration(t *testing.T) {
 	cfg := &ReActConfig[Message]{
 		Model:          m1,
 		RetryConfig:    &ModelRetryConfig{MaxRetries: 3, IsRetryAble: func(_ context.Context, err error) bool { return true }},
-		FailoverConfig: &FailoverConfig[Message]{Models: []ChatModel[Message]{m2}},
+		FailoverConfig: &FailoverConfig[Message]{Models: []Model[Message]{m2}},
 	}
 
 	wrapped := BuildModelWrapperChain(m1, nil, cfg)

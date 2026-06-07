@@ -11,10 +11,10 @@ import (
 	"github.com/infiniflow/ragflow/harness/agentcore/schema"
 )
 
-// MockModel returns a placeholder ChatModel that simulates LLM responses.
+// MockModel returns a placeholder Model that simulates LLM responses.
 // When LLM_API_KEY env is set, it returns a simple OpenAI-compatible model
 // stub. Without the env, it returns a mock that echoes the agent's instruction.
-func MockModel(name string) agentcore.ChatModel[*schema.Message] {
+func MockModel(name string) agentcore.Model[*schema.Message] {
 	apiKey := os.Getenv("LLM_API_KEY")
 	baseURL := os.Getenv("LLM_BASE_URL")
 	if apiKey != "" {
@@ -59,7 +59,7 @@ func (m *mockChatModel) Stream(ctx context.Context, msgs []*schema.Message, opts
 
 func (m *mockChatModel) BindTools(tools []*schema.ToolInfo) error { return nil }
 
-// openAIModel is a minimal OpenAI-compatible ChatModel adapter.
+// openAIModel is a minimal OpenAI-compatible Model adapter.
 type openAIModel struct {
 	apiKey  string
 	baseURL string

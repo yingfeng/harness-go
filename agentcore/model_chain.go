@@ -10,11 +10,11 @@ import (
 // ---- EventSenderModelWrapper ----
 
 type eventSenderModelWrapper[M MessageType] struct {
-	inner   ChatModel[M]
+	inner   Model[M]
 	execCtx *reActExecCtx
 }
 
-func wrapModelWithEventSender[M MessageType](inner ChatModel[M], ec *reActExecCtx) ChatModel[M] {
+func wrapModelWithEventSender[M MessageType](inner Model[M], ec *reActExecCtx) Model[M] {
 	return &eventSenderModelWrapper[M]{inner: inner, execCtx: ec}
 }
 
@@ -62,7 +62,7 @@ func (w *eventSenderModelWrapper[M]) BindTools(tools []*schema.ToolInfo) error {
 // ---- CallbackInjectionModelWrapper (for tracing/monitoring) ----
 
 type callbackModelWrapper[M MessageType] struct {
-	inner ChatModel[M]
+	inner Model[M]
 }
 
 func (w *callbackModelWrapper[M]) Generate(ctx context.Context, msgs []M, opts ...ModelOption) (M, error) {
@@ -164,7 +164,7 @@ func (w *callbackModelWrapper[M]) BindTools(tools []*schema.ToolInfo) error { re
 //	base → failover → retry → eventSender → user wrappers → callback
 //
 // The chain is built from innermost (closest to model) to outermost.
-func BuildModelWrapperChain[M MessageType](base ChatModel[M], ec *reActExecCtx, cfg *ReActConfig[M]) ChatModel[M] {
+func BuildModelWrapperChain[M MessageType](base Model[M], ec *reActExecCtx, cfg *ReActConfig[M]) Model[M] {
 	model := base
 
 	// 1. Event sender (skip if user middlewares provide their own to avoid duplicates)
@@ -179,7 +179,7 @@ func BuildModelWrapperChain[M MessageType](base ChatModel[M], ec *reActExecCtx, 
 
 	// 3. Failover (wraps retry so each failover attempt gets retry behavior)
 	if cfg.FailoverConfig != nil && len(cfg.FailoverConfig.Models) > 0 {
-		allModels := append([]ChatModel[M]{base}, cfg.FailoverConfig.Models...)
+		allModels := append([]Model[M]{base}, cfg.FailoverConfig.Models...)
 		model = newFailoverModel(allModels, cfg.FailoverConfig)
 	}
 

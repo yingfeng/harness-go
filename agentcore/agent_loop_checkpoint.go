@@ -14,7 +14,7 @@ type CheckPointDeleter interface {
 	Delete(ctx context.Context, key string) error
 }
 
-func marshalTurnLoopCheckpoint[T any](c *turnLoopCheckpoint[T]) ([]byte, error) {
+func marshalTurnLoopCheckpoint[T any](c *agentLoopCheckpoint[T]) ([]byte, error) {
 	buf := new(bytes.Buffer)
 	if err := gob.NewEncoder(buf).Encode(c); err != nil {
 		return nil, err
@@ -22,15 +22,15 @@ func marshalTurnLoopCheckpoint[T any](c *turnLoopCheckpoint[T]) ([]byte, error) 
 	return buf.Bytes(), nil
 }
 
-func unmarshalTurnLoopCheckpoint[T any](data []byte) (*turnLoopCheckpoint[T], error) {
-	var c turnLoopCheckpoint[T]
+func unmarshalTurnLoopCheckpoint[T any](data []byte) (*agentLoopCheckpoint[T], error) {
+	var c agentLoopCheckpoint[T]
 	if err := gob.NewDecoder(bytes.NewReader(data)).Decode(&c); err != nil {
 		return nil, err
 	}
 	return &c, nil
 }
 
-func (l *AgentLoop[T]) saveTurnLoopCheckpoint(ctx context.Context, checkPointID string, c *turnLoopCheckpoint[T]) error {
+func (l *AgentLoop[T]) saveTurnLoopCheckpoint(ctx context.Context, checkPointID string, c *agentLoopCheckpoint[T]) error {
 	if l.config.Store == nil {
 		return errors.New("checkpoint store is nil")
 	}
@@ -67,7 +67,7 @@ func (l *AgentLoop[T]) tryLoadCheckpoint(ctx context.Context) error {
 		return nil
 	}
 
-	var cp *turnLoopCheckpoint[T]
+	var cp *agentLoopCheckpoint[T]
 	if len(data) == 0 {
 		return nil
 	}
@@ -83,7 +83,7 @@ func (l *AgentLoop[T]) tryLoadCheckpoint(ctx context.Context) error {
 			l.buffer.PushFront(newItems)
 			return fmt.Errorf("checkpoint[%s] has runner state but bytes are empty", checkPointID)
 		}
-		l.pendingResume = &turnLoopPendingResume[T]{
+		l.pendingResume = &agentLoopPendingResume[T]{
 			interrupted: append([]T{}, cp.CanceledItems...),
 			unhandled:   append([]T{}, cp.UnhandledItems...),
 			newItems:    append([]T{}, newItems...),

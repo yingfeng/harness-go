@@ -416,7 +416,7 @@ func (h *cancelMonitoredToolHandler) WrapToolStream(next StreamableToolEndpoint)
 }
 
 type cancelMonitoredModel[M MessageType] struct {
-	inner ChatModel[M]
+	inner Model[M]
 	cc    *cancelContext
 }
 

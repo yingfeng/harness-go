@@ -101,7 +101,7 @@ func New(opts ...Option) *Middleware {
 }
 
 // WrapModel wraps the model call with a tracing span and execution duration metric.
-func (m *Middleware) WrapModel(ctx context.Context, model agentcore.ChatModel[*schema.Message], mc *agentcore.ModelContext) (agentcore.ChatModel[*schema.Message], error) {
+func (m *Middleware) WrapModel(ctx context.Context, model agentcore.Model[*schema.Message], mc *agentcore.ModelContext) (agentcore.Model[*schema.Message], error) {
 	if m.tracer == nil {
 		return model, nil
 	}
@@ -252,9 +252,9 @@ func (m *Middleware) WrapEnhancedStreamableToolCall(ctx context.Context, ep agen
 	}, nil
 }
 
-// tracedModel wraps a ChatModel with OpenTelemetry tracing and metrics.
+// tracedModel wraps a Model with OpenTelemetry tracing and metrics.
 type tracedModel struct {
-	inner   agentcore.ChatModel[*schema.Message]
+	inner   agentcore.Model[*schema.Message]
 	mw      *Middleware
 	toolCnt int
 }

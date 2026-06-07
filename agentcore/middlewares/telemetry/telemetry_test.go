@@ -121,7 +121,7 @@ func TestWrapEnhancedToolCallNoTracer(t *testing.T) {
 	}
 }
 
-// mockModel is a minimal ChatModel implementation for testing.
+// mockModel is a minimal Model implementation for testing.
 type mockModel struct {
 	generateFn func(ctx context.Context, msgs []*schema.Message, opts ...agentcore.ModelOption) (*schema.Message, error)
 	streamFn   func(ctx context.Context, msgs []*schema.Message, opts ...agentcore.ModelOption) (*schema.StreamReader[*schema.Message], error)

@@ -69,7 +69,7 @@ type TypedRetryDecision[M MessageType] struct {
 
 type RetryDecision = TypedRetryDecision[*schema.Message]
 
-// ModelRetryConfig configures retry behavior for the ChatModel.
+// ModelRetryConfig configures retry behavior for the Model.
 type TypedModelRetryConfig[M MessageType] struct {
 	MaxRetries  int
 	ShouldRetry func(ctx context.Context, retryCtx *TypedRetryContext[M]) *TypedRetryDecision[M]
@@ -91,13 +91,13 @@ func defaultBackoff(_ context.Context, attempt int) time.Duration {
 	return p.CalculateBackoff(attempt)
 }
 
-// typedRetryModelWrapper wraps a ChatModel with retry logic.
+// typedRetryModelWrapper wraps a Model with retry logic.
 type typedRetryModelWrapper[M MessageType] struct {
-	inner  ChatModel[M]
+	inner  Model[M]
 	config *TypedModelRetryConfig[M]
 }
 
-func newTypedRetryModelWrapper[M MessageType](inner ChatModel[M], config *TypedModelRetryConfig[M]) *typedRetryModelWrapper[M] {
+func newTypedRetryModelWrapper[M MessageType](inner Model[M], config *TypedModelRetryConfig[M]) *typedRetryModelWrapper[M] {
 	return &typedRetryModelWrapper[M]{inner: inner, config: config}
 }
 
@@ -313,7 +313,7 @@ func (r *typedRetryModelWrapper[M]) streamWithShouldRetry(ctx context.Context, i
 
 func (r *typedRetryModelWrapper[M]) BindTools(tools []*schema.ToolInfo) error { return r.inner.BindTools(tools) }
 
-func WithModelRetry[M MessageType](inner ChatModel[M], cfg *TypedModelRetryConfig[M]) ChatModel[M] {
+func WithModelRetry[M MessageType](inner Model[M], cfg *TypedModelRetryConfig[M]) Model[M] {
 	if cfg == nil || (cfg.MaxRetries <= 0 && cfg.ShouldRetry == nil) { return inner }
 	return newTypedRetryModelWrapper(inner, cfg)
 }

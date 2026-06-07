@@ -20,7 +20,7 @@ type TriggerCondition struct {
 
 // TypedConfig configures the summarization middleware.
 type TypedConfig[M agentcore.MessageType] struct {
-	Model              agentcore.ChatModel[M]
+	Model              agentcore.Model[M]
 	Trigger            *TriggerCondition
 	TokenCounter       func(ctx context.Context, msgs []M) (int, error)
 	GenModelInput      func(ctx context.Context, instruction string, msgs []M) ([]M, error)

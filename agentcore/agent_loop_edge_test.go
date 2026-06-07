@@ -29,7 +29,7 @@ func TestTurnLoop_UnhandledItemsOnStop(t *testing.T) {
 // TestTurnLoop_PrepareAgentError_RecoverItems verifies prepare error recovers items.
 func TestTurnLoop_PrepareAgentError_RecoverItems(t *testing.T) {
 	var callCount atomic.Int32
-	loop := NewTurnLoop[*schema.Message](TurnLoopConfig[*schema.Message]{
+	loop := NewAgentLoop[*schema.Message](AgentLoopConfig[*schema.Message]{
 		GenInput: func(_ context.Context, _ *AgentLoop[*schema.Message], items []*schema.Message) (*GenInputResult[*schema.Message], error) {
 			return &GenInputResult[*schema.Message]{
 				Input: &AgentInput{Messages: items}, Consumed: items, Remaining: nil,
@@ -52,7 +52,7 @@ func TestTurnLoop_PrepareAgentError_RecoverItems(t *testing.T) {
 
 // TestTurnLoop_GetAgentError_RecoverConsumed verifies agent error recovers consumed.
 func TestTurnLoop_GetAgentError_RecoverConsumed(t *testing.T) {
-	loop := NewTurnLoop[*schema.Message](TurnLoopConfig[*schema.Message]{
+	loop := NewAgentLoop[*schema.Message](AgentLoopConfig[*schema.Message]{
 		GenInput: func(_ context.Context, _ *AgentLoop[*schema.Message], items []*schema.Message) (*GenInputResult[*schema.Message], error) {
 			return &GenInputResult[*schema.Message]{
 				Input: &AgentInput{Messages: items}, Consumed: items, Remaining: nil,
@@ -127,7 +127,7 @@ func TestFailover_AllModelsFail_Stream(t *testing.T) {
 // ---- helpers ----
 
 func newTurnLoop(name, resp string) *AgentLoop[*schema.Message] {
-	return NewTurnLoop[*schema.Message](TurnLoopConfig[*schema.Message]{
+	return NewAgentLoop[*schema.Message](AgentLoopConfig[*schema.Message]{
 		GenInput: func(_ context.Context, _ *AgentLoop[*schema.Message], items []*schema.Message) (*GenInputResult[*schema.Message], error) {
 			return &GenInputResult[*schema.Message]{
 				Input:     &AgentInput{Messages: items},

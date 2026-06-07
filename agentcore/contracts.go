@@ -30,9 +30,9 @@ type ToolOption interface{ applyTool() }
 
 type toolOption = ToolOption
 
-// ---- ChatModel interface ----
+// ---- Model interface ----
 
-type ChatModel[M MessageType] interface {
+type Model[M MessageType] interface {
 	Generate(ctx context.Context, messages []M, opts ...ModelOption) (M, error)
 	Stream(ctx context.Context, messages []M, opts ...ModelOption) (*schema.StreamReader[M], error)
 	BindTools(tools []*schema.ToolInfo) error
@@ -116,7 +116,7 @@ type TypedReActMiddleware[M MessageType] interface {
 	// Enhanced tool wrappers: called for tools that return structured *schema.ToolResult
 	WrapEnhancedInvokableToolCall(ctx context.Context, ep EnhancedInvokableToolEndpoint, tc *ToolContext) (EnhancedInvokableToolEndpoint, error)
 	WrapEnhancedStreamableToolCall(ctx context.Context, ep EnhancedStreamableToolEndpoint, tc *ToolContext) (EnhancedStreamableToolEndpoint, error)
-	WrapModel(ctx context.Context, m ChatModel[M], mc *TypedModelContext[M]) (ChatModel[M], error)
+	WrapModel(ctx context.Context, m Model[M], mc *TypedModelContext[M]) (Model[M], error)
 }
 
 type ReActMiddleware = TypedReActMiddleware[*schema.Message]
@@ -140,4 +140,4 @@ func (b *BaseMiddleware[M]) WrapToolInvoke(_ context.Context, ep InvokableToolEn
 func (b *BaseMiddleware[M]) WrapToolStream(_ context.Context, ep StreamableToolEndpoint, _ *ToolContext) (StreamableToolEndpoint, error) { return ep, nil }
 func (b *BaseMiddleware[M]) WrapEnhancedInvokableToolCall(_ context.Context, ep EnhancedInvokableToolEndpoint, _ *ToolContext) (EnhancedInvokableToolEndpoint, error) { return ep, nil }
 func (b *BaseMiddleware[M]) WrapEnhancedStreamableToolCall(_ context.Context, ep EnhancedStreamableToolEndpoint, _ *ToolContext) (EnhancedStreamableToolEndpoint, error) { return ep, nil }
-func (b *BaseMiddleware[M]) WrapModel(_ context.Context, m ChatModel[M], _ *TypedModelContext[M]) (ChatModel[M], error) { return m, nil }
+func (b *BaseMiddleware[M]) WrapModel(_ context.Context, m Model[M], _ *TypedModelContext[M]) (Model[M], error) { return m, nil }

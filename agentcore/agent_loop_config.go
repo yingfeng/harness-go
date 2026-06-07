@@ -119,8 +119,8 @@ func (s cancelRequestState) cancelOptions(now time.Time) []CancelOption {
 	return opts
 }
 
-// TurnLoopConfig is the configuration for creating a AgentLoop.
-type TurnLoopConfig[T any] struct {
+// AgentLoopConfig is the configuration for creating a AgentLoop.
+type AgentLoopConfig[T any] struct {
 	GenInput func(ctx context.Context, loop *AgentLoop[T], items []T) (*GenInputResult[T], error)
 
 	GenResume func(ctx context.Context, loop *AgentLoop[T], interruptedItems, unhandledItems, newItems []T) (*GenResumeResult[T], error)
@@ -168,8 +168,8 @@ type turnPlan[T any] struct {
 	spec      *turnRunSpec[T]
 }
 
-// TurnLoopState is returned when AgentLoop exits.
-type TurnLoopState[T any] struct {
+// AgentLoopState is returned when AgentLoop exits.
+type AgentLoopState[T any] struct {
 	ExitReason          error
 	UnhandledItems      []T
 	InterruptedItems    []T
@@ -188,14 +188,14 @@ type TurnContext[T any] struct {
 	StopCause func() string
 }
 
-type turnLoopCheckpoint[T any] struct {
+type agentLoopCheckpoint[T any] struct {
 	RunnerCheckpoint []byte
 	HasRunnerState   bool
 	UnhandledItems   []T
 	CanceledItems    []T
 }
 
-type turnLoopPendingResume[T any] struct {
+type agentLoopPendingResume[T any] struct {
 	interrupted []T
 	unhandled   []T
 	newItems    []T

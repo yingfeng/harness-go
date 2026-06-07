@@ -25,13 +25,13 @@ type SubAgentSpec struct {
 type Config struct {
 	Name          string
 	Description   string
-	Model         agentcore.ChatModel[*schema.Message]
+	Model         agentcore.Model[*schema.Message]
 	Tools         []agentcore.Tool
 	MaxIterations int
 	Instruction   string // Custom system prompt (overrides default)
 	EnableShell   bool   // Enable shell command execution tool
 	SubAgents     []SubAgentSpec            // NEW: Sub-agents for task delegation
-	FailoverModel agentcore.ChatModel[*schema.Message] // NEW: Failover model
+	FailoverModel agentcore.Model[*schema.Message] // NEW: Failover model
 	OutputKey     string                    // NEW: Session output storage key
 }
 
@@ -88,7 +88,7 @@ func NewTyped(cfg *Config) *agentcore.ReActAgent[*schema.Message] {
 	// Set up failover if configured
 	if cfg.FailoverModel != nil {
 		chatCfg.FailoverConfig = &agentcore.FailoverConfig[*schema.Message]{
-			Models: []agentcore.ChatModel[*schema.Message]{cfg.FailoverModel},
+			Models: []agentcore.Model[*schema.Message]{cfg.FailoverModel},
 		}
 	}
 

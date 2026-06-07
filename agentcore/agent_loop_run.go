@@ -12,7 +12,7 @@ func (l *AgentLoop[T]) planTurn(
 	ctx context.Context,
 	isResume bool,
 	items []T,
-	pr *turnLoopPendingResume[T],
+	pr *agentLoopPendingResume[T],
 ) (*turnPlan[T], error) {
 	if !isResume {
 		result, err := l.config.GenInput(ctx, l, items)
@@ -108,7 +108,7 @@ func (l *AgentLoop[T]) run(ctx context.Context) {
 		}
 
 		isResume := false
-		var pr *turnLoopPendingResume[T]
+		var pr *agentLoopPendingResume[T]
 		var items []T
 		var pushBack []T
 

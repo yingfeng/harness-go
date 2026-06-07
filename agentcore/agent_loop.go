@@ -10,7 +10,7 @@ import (
 
 // ---- AgentLoop core: struct, lifecycle, cleanup ----
 //
-// Configuration types (TurnLoopConfig, preemptController, stopController, etc.)
+// Configuration types (AgentLoopConfig, preemptController, stopController, etc.)
 // are defined in turn_loop_config.go, turn_loop_preempt.go, and turn_loop_stop.go.
 // Execution logic is split into:
 //   - turn_loop_run.go     (planTurn, run, defaultTurnLoopOnAgentEvents)
@@ -19,9 +19,9 @@ import (
 //   - turn_loop_checkpoint.go (checkpoint serialization, tryLoadCheckpoint)
 
 // AgentLoop executes agent turns in a push-based loop.
-// See TurnLoopConfig for configuration details and TurnLoopState for results.
+// See AgentLoopConfig for configuration details and AgentLoopState for results.
 type AgentLoop[T any] struct {
-	config TurnLoopConfig[T]
+	config AgentLoopConfig[T]
 
 	buffer *turnBuffer[T]
 
@@ -30,7 +30,7 @@ type AgentLoop[T any] struct {
 
 	done chan struct{}
 
-	result *TurnLoopState[T]
+	result *AgentLoopState[T]
 
 	runOnce sync.Once
 
@@ -46,7 +46,7 @@ type AgentLoop[T any] struct {
 	interruptContexts     []*InterruptCtx
 	capturedCancelErr     *CancelError
 
-	pendingResume *turnLoopPendingResume[T]
+	pendingResume *agentLoopPendingResume[T]
 
 	loadCheckpointID string
 
@@ -57,13 +57,13 @@ type AgentLoop[T any] struct {
 	lateSealed bool
 }
 
-// NewTurnLoop creates a new AgentLoop without starting it.
-func NewTurnLoop[T any](cfg TurnLoopConfig[T]) *AgentLoop[T] {
+// NewAgentLoop creates a new AgentLoop without starting it.
+func NewAgentLoop[T any](cfg AgentLoopConfig[T]) *AgentLoop[T] {
 	if cfg.GenInput == nil {
-		panic("agentcore: NewTurnLoop: GenInput is required")
+		panic("agentcore: NewAgentLoop: GenInput is required")
 	}
 	if cfg.PrepareAgent == nil {
-		panic("agentcore: NewTurnLoop: PrepareAgent is required")
+		panic("agentcore: NewAgentLoop: PrepareAgent is required")
 	}
 
 	l := &AgentLoop[T]{
@@ -137,7 +137,7 @@ func (l *AgentLoop[T]) finishStopCommit() {
 }
 
 // Wait blocks until the loop exits and returns the result.
-func (l *AgentLoop[T]) Wait() *TurnLoopState[T] {
+func (l *AgentLoop[T]) Wait() *AgentLoopState[T] {
 	<-l.done
 	return l.result
 }
@@ -159,7 +159,7 @@ func (l *AgentLoop[T]) cleanup(ctx context.Context) {
 	var checkpointErr error
 
 	if shouldSaveCheckpoint {
-		cp := &turnLoopCheckpoint[T]{
+		cp := &agentLoopCheckpoint[T]{
 			RunnerCheckpoint: l.checkPointRunnerBytes,
 			HasRunnerState:   len(l.checkPointRunnerBytes) > 0,
 			UnhandledItems:   unhandled,
@@ -174,7 +174,7 @@ func (l *AgentLoop[T]) cleanup(ctx context.Context) {
 	var takeLateOnce sync.Once
 	var takeLateResult []T
 
-	l.result = &TurnLoopState[T]{
+	l.result = &AgentLoopState[T]{
 		ExitReason:          l.runErr,
 		UnhandledItems:      unhandled,
 		InterruptedItems:    l.interruptedItems,

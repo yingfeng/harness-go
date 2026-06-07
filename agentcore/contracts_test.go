@@ -311,7 +311,7 @@ func TestMiddleware_AfterAgentError(t *testing.T) {
 func TestMiddleware_WrapModelReturnsError(t *testing.T) {
 	expectedErr := errors.New("wrap model error")
 	mw := &testMiddleware{}
-	mw.wrapModel = func(ctx context.Context, m ChatModel[*schema.Message], mc *ModelContext) (ChatModel[*schema.Message], error) {
+	mw.wrapModel = func(ctx context.Context, m Model[*schema.Message], mc *ModelContext) (Model[*schema.Message], error) {
 		return nil, expectedErr
 	}
 	model := &mockModel{}

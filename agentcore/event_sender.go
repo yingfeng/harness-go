@@ -19,7 +19,7 @@ func NewEventSenderModelWrapper[M MessageType]() *eventSenderModelHandler[M] {
 
 type eventSenderModelHandler[M MessageType] struct{}
 
-func (h *eventSenderModelHandler[M]) WrapModel(ctx context.Context, m ChatModel[M], mc *TypedModelContext[M]) (ChatModel[M], error) {
+func (h *eventSenderModelHandler[M]) WrapModel(ctx context.Context, m Model[M], mc *TypedModelContext[M]) (Model[M], error) {
 	ec := getReActExecCtx[M](ctx)
 	if ec == nil { return m, nil }
 	return wrapModelWithEventSender(m, ec), nil
@@ -184,7 +184,7 @@ func (h *eventSenderToolHandler[M]) BeforeAgent(ctx context.Context, rc *ReActAg
 func (h *eventSenderToolHandler[M]) AfterAgent(ctx context.Context, state *TypedReActAgentState[M]) (context.Context, error) { return ctx, nil }
 func (h *eventSenderToolHandler[M]) BeforeModelRewrite(ctx context.Context, state *TypedReActAgentState[M], mc *TypedModelContext[M]) (context.Context, *TypedReActAgentState[M], error) { return ctx, state, nil }
 func (h *eventSenderToolHandler[M]) AfterModelRewrite(ctx context.Context, state *TypedReActAgentState[M], mc *TypedModelContext[M]) (context.Context, *TypedReActAgentState[M], error) { return ctx, state, nil }
-func (h *eventSenderToolHandler[M]) WrapModel(ctx context.Context, m ChatModel[M], mc *TypedModelContext[M]) (ChatModel[M], error) { return m, nil }
+func (h *eventSenderToolHandler[M]) WrapModel(ctx context.Context, m Model[M], mc *TypedModelContext[M]) (Model[M], error) { return m, nil }
 
 // HasUserEventSenderToolWrapper checks if the handlers list contains a user-provided
 // NewEventSenderToolWrapper. When present, the framework skips its internal default

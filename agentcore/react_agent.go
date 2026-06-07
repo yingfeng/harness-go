@@ -14,7 +14,7 @@ import (
 
 // ReActConfig holds configuration for TypedReActAgent.
 type ReActConfig[M MessageType] struct {
-	Model              ChatModel[M]
+	Model              Model[M]
 	Tools              []Tool
 	Instruction        string
 	MaxIterations      int
@@ -179,7 +179,7 @@ type reActExecCtx struct {
 	cancelCtx         *cancelContext
 	suppressEventSend bool
 	retrySignal       *retrySignal
-	failoverLastModel ChatModel[*schema.Message]
+	failoverLastModel Model[*schema.Message]
 	afterToolCallsHook func(ctx context.Context) error
 }
 

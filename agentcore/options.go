@@ -75,9 +75,9 @@ func WithSharedParentSession() RunOption {
 	return runOptFn(func(o *runOptions) { o.sharedParentSession = true })
 }
 
-// ---- ChatModel-agent-specific options ----
+// ---- Model-agent-specific options ----
 
-// WithChatModelOptions passes model-level options (e.g., temperature, retry) to the underlying ChatModel.
+// WithChatModelOptions passes model-level options (e.g., temperature, retry) to the underlying Model.
 func WithChatModelOptions(opts []ModelOption) RunOption {
 	return WrapImplSpecificOptFn(func(o *runOptions) { o.chatModelOptions = opts })
 }
@@ -102,7 +102,7 @@ func WithHistoryModifier(fn func(context.Context, []Message) []Message) RunOptio
 }
 
 // WithAfterToolCallsHook registers a per-run hook that fires synchronously after
-// all tool calls in a react iteration complete, before the next ChatModel call.
+// all tool calls in a react iteration complete, before the next Model call.
 // This is suitable for AgentLoop Push+Preempt patterns where the pushed item
 // must be visible to the next turn's GenInput.
 func WithAfterToolCallsHook(fn func(ctx context.Context) error) RunOption {

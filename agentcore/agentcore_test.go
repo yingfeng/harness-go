@@ -10,7 +10,7 @@ import (
 	"github.com/infiniflow/ragflow/harness/agentcore/schema"
 )
 
-// ---- Mock ChatModel ----
+// ---- Mock Model ----
 
 type mockModel struct {
 	responses   []string
@@ -144,7 +144,7 @@ type testMiddleware struct {
 	beforeModel        func(context.Context, *ReActAgentState, *ModelContext) (context.Context, *ReActAgentState, error)
 	afterModel         func(context.Context, *ReActAgentState, *ModelContext) (context.Context, *ReActAgentState, error)
 	afterAgent         func(context.Context, *ReActAgentState) (context.Context, error)
-	wrapModel          func(context.Context, ChatModel[*schema.Message], *ModelContext) (ChatModel[*schema.Message], error)
+	wrapModel          func(context.Context, Model[*schema.Message], *ModelContext) (Model[*schema.Message], error)
 	wrapToolInvoke     func(context.Context, InvokableToolEndpoint, *ToolContext) (InvokableToolEndpoint, error)
 	wrapToolStream     func(context.Context, StreamableToolEndpoint, *ToolContext) (StreamableToolEndpoint, error)
 	wrapEnhancedInvoke   func(context.Context, EnhancedInvokableToolEndpoint, *ToolContext) (EnhancedInvokableToolEndpoint, error)
@@ -167,7 +167,7 @@ func (m *testMiddleware) AfterAgent(ctx context.Context, state *ReActAgentState)
 	if m.afterAgent != nil { return m.afterAgent(ctx, state) }
 	return ctx, nil
 }
-func (m *testMiddleware) WrapModel(ctx context.Context, c ChatModel[*schema.Message], mc *ModelContext) (ChatModel[*schema.Message], error) {
+func (m *testMiddleware) WrapModel(ctx context.Context, c Model[*schema.Message], mc *ModelContext) (Model[*schema.Message], error) {
 	if m.wrapModel != nil { return m.wrapModel(ctx, c, mc) }
 	return c, nil
 }

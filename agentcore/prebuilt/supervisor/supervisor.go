@@ -16,7 +16,7 @@ import (
 type Config struct {
 	Name        string
 	Description string
-	Model       agentcore.ChatModel[*schema.Message]
+	Model       agentcore.Model[*schema.Message]
 	Agents      []AgentSpec  // Available sub-agents
 	OutputKey   string       // Store final answer to session under this key
 }
@@ -100,6 +100,6 @@ You should always try to route to a specialist agent when one matches the reques
 
 // NewWithRouter creates a supervisor using a pure routing approach:
 // the LLM chooses which agent handles the request, then transfers to it.
-func NewWithRouter(ctx context.Context, model agentcore.ChatModel[*schema.Message], agents []AgentSpec) (agentcore.ResumableAgent, error) {
+func NewWithRouter(ctx context.Context, model agentcore.Model[*schema.Message], agents []AgentSpec) (agentcore.ResumableAgent, error) {
 	return New(ctx, &Config{Model: model, Agents: agents})
 }

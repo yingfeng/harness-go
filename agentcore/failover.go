@@ -10,25 +10,25 @@ import (
 // FailoverConfig configures model failover behavior.
 type FailoverConfig[M MessageType] struct {
 	// Models contains backup models tried in order after the primary.
-	Models []ChatModel[M]
+	Models []Model[M]
 	// ShouldFailover is called to decide whether to try the next model.
 	ShouldFailover func(ctx context.Context, err error) bool
 	// GetFailoverModel is called to dynamically select a failover model.
-	GetFailoverModel func(ctx context.Context, err error) ChatModel[M]
+	GetFailoverModel func(ctx context.Context, err error) Model[M]
 }
 
 type FailoverConfigMsg = FailoverConfig[*schema.Message]
 
 // failoverModel provides failover across multiple chat models.
 type failoverModel[M MessageType] struct {
-	models           []ChatModel[M]
+	models           []Model[M]
 	shouldFailover   func(ctx context.Context, err error) bool
-	getFailoverModel func(ctx context.Context, err error) ChatModel[M]
+	getFailoverModel func(ctx context.Context, err error) Model[M]
 }
 
-func newFailoverModel[M MessageType](models []ChatModel[M], cfg *FailoverConfig[M]) ChatModel[M] {
+func newFailoverModel[M MessageType](models []Model[M], cfg *FailoverConfig[M]) Model[M] {
 	var sf func(ctx context.Context, err error) bool
-	var gf func(ctx context.Context, err error) ChatModel[M]
+	var gf func(ctx context.Context, err error) Model[M]
 	if cfg != nil {
 		sf = cfg.ShouldFailover
 		gf = cfg.GetFailoverModel
@@ -76,7 +76,7 @@ func (m *failoverModel[M]) BindTools(tools []*schema.ToolInfo) error {
 }
 
 // WithModelFailover creates a failover-wrapped model.
-func WithModelFailover[M MessageType](primary ChatModel[M], secondaries ...ChatModel[M]) ChatModel[M] {
-	all := append([]ChatModel[M]{primary}, secondaries...)
+func WithModelFailover[M MessageType](primary Model[M], secondaries ...Model[M]) Model[M] {
+	all := append([]Model[M]{primary}, secondaries...)
 	return newFailoverModel(all, nil)
 }

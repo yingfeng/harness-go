@@ -104,12 +104,12 @@ func TestFailover_WithShouldFailoverCallback(t *testing.T) {
 	secondary.addResp("fallback")
 
 	cfg := &FailoverConfig[*schema.Message]{
-		Models: []ChatModel[*schema.Message]{secondary},
+		Models: []Model[*schema.Message]{secondary},
 		ShouldFailover: func(ctx context.Context, err error) bool {
 			return false // Skip failover
 		},
 	}
-	model := newFailoverModel([]ChatModel[*schema.Message]{primary, secondary}, cfg)
+	model := newFailoverModel([]Model[*schema.Message]{primary, secondary}, cfg)
 	resp, err := model.Generate(context.Background(), []*schema.Message{{Content: "hi"}})
 	if err != nil {
 		t.Fatalf("Generate: %v", err)
@@ -126,12 +126,12 @@ func TestFailover_ShouldFailoverSkipsSecondary(t *testing.T) {
 	secondary.addResp("fallback")
 
 	cfg := &FailoverConfig[*schema.Message]{
-		Models: []ChatModel[*schema.Message]{secondary},
+		Models: []Model[*schema.Message]{secondary},
 		ShouldFailover: func(ctx context.Context, err error) bool {
 			return false // Skip failover
 		},
 	}
-	model := newFailoverModel([]ChatModel[*schema.Message]{primary, secondary}, cfg)
+	model := newFailoverModel([]Model[*schema.Message]{primary, secondary}, cfg)
 
 	// Primary fails, shouldFailover returns false, so we expect an error, not fallback
 	_, err := model.Generate(context.Background(), []*schema.Message{{Content: "hi"}})

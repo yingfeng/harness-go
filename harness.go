@@ -172,7 +172,7 @@ type (
 )
 
 // AgentCore types (selectively re-exported).
-// Generic types like ChatModel[M] and RunnerConfig[M] must be imported directly.
+// Generic types like Model[M] and RunnerConfig[M] must be imported directly.
 type (
 	// Agent is the core agent interface (Message type).
 	Agent = agentcore.Agent

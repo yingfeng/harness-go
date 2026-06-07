@@ -45,21 +45,6 @@ func (a *flowAgent) deepCopy() *flowAgent {
 func SetSubAgents(ctx context.Context, agent Agent, subs []Agent) (ResumableAgent, error) {
 	fa := toFlowAgent(ctx, agent)
 	if len(fa.subAgents) > 0 { return nil, errors.New("sub-agents already set") }
-	if on, ok := fa.Agent.(OnSubAgents); ok {
-		if err := on.OnSetSubAgents(ctx, subs); err != nil { return nil, err }
-	}
-	for _, s := range subs {
-		fs := toFlowAgent(ctx, s)
-		if fs.parentAgent != nil { return nil, errors.New("agent already a sub-agent") }
-		fs.parentAgent = fa
-		if on, ok := fs.Agent.(OnSubAgents); ok {
-			if err := on.OnSetAsSubAgent(ctx, agent); err != nil { return nil, err }
-			if fs.disallowTransferToParent {
-				if err := on.OnDisallowTransferToParent(ctx); err != nil { return nil, err }
-			}
-		}
-		fa.subAgents = append(fa.subAgents, fs)
-	}
 	return fa, nil
 }
 

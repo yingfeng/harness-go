@@ -19,11 +19,11 @@ import (
 //   - Model output event emission
 //   - BeforeModelRewrite / AfterModelRewrite orchestration (via chatmodel.go loop)
 type typedStateModelWrapper[M MessageType] struct {
-	inner      ChatModel[M]
+	inner      Model[M]
 	cancelCtx  *cancelContext
 }
 
-func newTypedStateModelWrapper[M MessageType](inner ChatModel[M], cc *cancelContext) ChatModel[M] {
+func newTypedStateModelWrapper[M MessageType](inner Model[M], cc *cancelContext) Model[M] {
 	return &typedStateModelWrapper[M]{inner: inner, cancelCtx: cc}
 }
 
