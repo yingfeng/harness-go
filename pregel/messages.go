@@ -6,7 +6,7 @@ import (
 	"io"
 	"sync"
 
-	"github.com/infiniflow/ragflow/harness/stream"
+	"github.com/infiniflow/ragflow/harness/types"
 )
 
 // StreamMessagesHandler handles streaming of messages from LLM nodes.
@@ -291,7 +291,7 @@ func (a *MessageAggregator) AddEmitter(emitter MessageEmitter) {
 }
 
 // StreamToChannel emits messages to a stream channel.
-func StreamToChannel(ch *stream.ChannelStream) MessageEmitter {
+func StreamToChannel(ch *types.ChannelStream) MessageEmitter {
 	return func(ctx context.Context, node string, chunk *MessageChunk) error {
 		chunkData := map[string]interface{}{
 			"node":      node,
@@ -306,8 +306,8 @@ func StreamToChannel(ch *stream.ChannelStream) MessageEmitter {
 		if len(chunk.Metadata) > 0 {
 			chunkData["metadata"] = chunk.Metadata
 		}
-		return ch.Emit(ctx, &stream.StreamChunk{
-			Mode: stream.StreamModeMessages,
+		return ch.Emit(ctx, &types.StreamChunk{
+			Mode: types.StreamModeMessages,
 			Data: chunkData,
 			Node: node,
 		})
@@ -428,12 +428,12 @@ func ConvertToTaskResult(node string, chunks []*MessageChunk) *TaskResult {
 // MessageStreamWrapper wraps a stream protocol to handle messages.
 type MessageStreamWrapper struct {
 	handler *StreamMessagesHandler
-	stream  *stream.ChannelStream
+	stream  *types.ChannelStream
 	ctx     context.Context
 }
 
 // NewMessageStreamWrapper creates a new message stream wrapper.
-func NewMessageStreamWrapper(ctx context.Context, stream *stream.ChannelStream, opts ...StreamMessagesOption) *MessageStreamWrapper {
+func NewMessageStreamWrapper(ctx context.Context, stream *types.ChannelStream, opts ...StreamMessagesOption) *MessageStreamWrapper {
 	handler := NewStreamMessagesHandler(opts...)
 	handler.AddEmitter(StreamToChannel(stream))
 

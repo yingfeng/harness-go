@@ -1,5 +1,5 @@
 // Package stream provides tests for the stream protocol.
-package stream
+package types
 
 import (
 	"context"

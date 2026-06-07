@@ -1,4 +1,4 @@
-package scratchpad
+package types
 
 import (
 	"testing"

@@ -1,28 +1,10 @@
-package stream
+package types
 
 import (
 	"context"
 	"io"
 	"sync"
 	"time"
-)
-
-// StreamMode represents the type of stream to emit.
-type StreamMode string
-
-const (
-	// StreamModeValues emits the full state values
-	StreamModeValues StreamMode = "values"
-	// StreamModeUpdates emits state updates (diffs)
-	StreamModeUpdates StreamMode = "updates"
-	// StreamModeCheckpoints emits checkpoint data
-	StreamModeCheckpoints StreamMode = "checkpoints"
-	// StreamModeTasks emits task execution events
-	StreamModeTasks StreamMode = "tasks"
-	// StreamModeDebug emits debug information
-	StreamModeDebug StreamMode = "debug"
-	// StreamModeMessages emits message events
-	StreamModeMessages StreamMode = "messages"
 )
 
 // StreamChunk represents a single chunk of data from a stream.

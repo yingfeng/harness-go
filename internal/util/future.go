@@ -1,4 +1,6 @@
-package future
+// Package util provides reusable utility types and functions.
+// This file implements generic Future/Promise primitives.
+package util
 
 import (
 	"context"
