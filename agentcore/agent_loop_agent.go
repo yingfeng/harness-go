@@ -10,9 +10,9 @@ import (
 	"github.com/infiniflow/ragflow/harness/agentcore/schema"
 )
 
-// ---- TurnLoop agent execution and event handling ----
+// ---- AgentLoop agent execution and event handling ----
 
-func (l *TurnLoop[T]) setupBridgeStore(spec *turnRunSpec[T], runOpts []RunOption) ([]RunOption, *bridgeStore, error) {
+func (l *AgentLoop[T]) setupBridgeStore(spec *turnRunSpec[T], runOpts []RunOption) ([]RunOption, *bridgeStore, error) {
 	store := l.config.Store
 	if store == nil && spec.isResume {
 		return nil, nil, fmt.Errorf("failed to resume agent: checkpoint store is nil")
@@ -31,7 +31,7 @@ func (l *TurnLoop[T]) setupBridgeStore(spec *turnRunSpec[T], runOpts []RunOption
 }
 
 // watchPreempt runs for the lifetime of a single active turn.
-func (l *TurnLoop[T]) watchPreempt(done <-chan struct{}, agentCancelFunc AgentCancelFunc, preemptDone chan struct{}) {
+func (l *AgentLoop[T]) watchPreempt(done <-chan struct{}, agentCancelFunc AgentCancelFunc, preemptDone chan struct{}) {
 	preemptDoneClosed := false
 	for {
 		select {
@@ -53,7 +53,7 @@ func (l *TurnLoop[T]) watchPreempt(done <-chan struct{}, agentCancelFunc AgentCa
 }
 
 // watchStop runs for the lifetime of a single active turn.
-func (l *TurnLoop[T]) watchStop(done <-chan struct{}, agentCancelFunc AgentCancelFunc, stoppedDone chan struct{}) {
+func (l *AgentLoop[T]) watchStop(done <-chan struct{}, agentCancelFunc AgentCancelFunc, stoppedDone chan struct{}) {
 	stoppedClosed := false
 
 	submit := func(req *stopCancelRequest) {
@@ -78,7 +78,7 @@ func (l *TurnLoop[T]) watchStop(done <-chan struct{}, agentCancelFunc AgentCance
 	}
 }
 
-func (l *TurnLoop[T]) runAgentAndHandleEvents(
+func (l *AgentLoop[T]) runAgentAndHandleEvents(
 	ctx context.Context,
 	agent Agent,
 	spec *turnRunSpec[T],
@@ -229,7 +229,7 @@ func (l *TurnLoop[T]) runAgentAndHandleEvents(
 	}
 }
 
-func (l *TurnLoop[T]) applyFrameworkCapturedError(handleErr error) error {
+func (l *AgentLoop[T]) applyFrameworkCapturedError(handleErr error) error {
 	if handleErr != nil {
 		return handleErr
 	}

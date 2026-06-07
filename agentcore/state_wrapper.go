@@ -11,7 +11,7 @@ import (
 // typedStateModelWrapper unifies message deep copy, ID injection, cancel checking,
 // and event sending into a single wrapper layer for the model call.
 //
-// In Eino ADK this is the central wrapper (typedStateModelWrapper) that sits between
+// This is the central wrapper (typedStateModelWrapper) that sits between
 // middlewares and the retry/failover chain, adding:
 //   - Message deep copy (prevent pointer-sharing in middleware chain)
 //   - Message ID auto-assignment

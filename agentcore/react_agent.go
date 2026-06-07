@@ -58,7 +58,7 @@ type ReActAgentResumeData struct {
 //   - Enhanced Tool (4 endpoint types) support via handler interface
 //   - DeferredToolInfos for server-side tool search
 //   - EmitInternalEvents for AgentTool event forwarding
-//   - AfterToolCallsHook for TurnLoop integration
+//   - AfterToolCallsHook for AgentLoop integration
 //   - ResumeWithData / HistoryModifier for resume customization
 //   - gob encodability check on SetRunLocalValue
 type ReActAgent[M MessageType] struct {

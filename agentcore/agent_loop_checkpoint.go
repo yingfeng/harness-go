@@ -8,7 +8,7 @@ import (
 	"fmt"
 )
 
-// ---- TurnLoop checkpoint serialization and lifecycle ----
+// ---- AgentLoop checkpoint serialization and lifecycle ----
 
 type CheckPointDeleter interface {
 	Delete(ctx context.Context, key string) error
@@ -30,7 +30,7 @@ func unmarshalTurnLoopCheckpoint[T any](data []byte) (*turnLoopCheckpoint[T], er
 	return &c, nil
 }
 
-func (l *TurnLoop[T]) saveTurnLoopCheckpoint(ctx context.Context, checkPointID string, c *turnLoopCheckpoint[T]) error {
+func (l *AgentLoop[T]) saveTurnLoopCheckpoint(ctx context.Context, checkPointID string, c *turnLoopCheckpoint[T]) error {
 	if l.config.Store == nil {
 		return errors.New("checkpoint store is nil")
 	}
@@ -41,7 +41,7 @@ func (l *TurnLoop[T]) saveTurnLoopCheckpoint(ctx context.Context, checkPointID s
 	return l.config.Store.Set(ctx, checkPointID, data)
 }
 
-func (l *TurnLoop[T]) deleteTurnLoopCheckpoint(ctx context.Context, checkPointID string) error {
+func (l *AgentLoop[T]) deleteTurnLoopCheckpoint(ctx context.Context, checkPointID string) error {
 	if l.config.Store == nil {
 		return nil
 	}
@@ -51,7 +51,7 @@ func (l *TurnLoop[T]) deleteTurnLoopCheckpoint(ctx context.Context, checkPointID
 	return nil
 }
 
-func (l *TurnLoop[T]) tryLoadCheckpoint(ctx context.Context) error {
+func (l *AgentLoop[T]) tryLoadCheckpoint(ctx context.Context) error {
 	checkPointID := l.config.CheckpointID
 	if checkPointID == "" || l.config.Store == nil {
 		return nil

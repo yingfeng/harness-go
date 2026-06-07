@@ -2,7 +2,7 @@ package agentcore
 
 import "sync"
 
-// turnBuffer is a thread-safe blocking buffer used internally by TurnLoop.
+// turnBuffer is a thread-safe blocking buffer used internally by AgentLoop.
 type turnBuffer[T any] struct {
 	buf      []T
 	mu       sync.Mutex

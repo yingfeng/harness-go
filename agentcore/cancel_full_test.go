@@ -965,7 +965,7 @@ func TestCancelAfterToolCalls_LoopTransitionBoundary(t *testing.T) {
 	for { ev, ok := iter.Next(); if !ok { break }; _ = ev }
 }
 // ================================================================
-// Edge-case tests ported from Eino cancel_edge_test.go / cancel_multicall_test.go
+// Edge-case tests from the ADK cancel_edge_test.go / cancel_multicall_test.go
 // ================================================================
 
 // TestCancel_BeforeExecutionStarts verifies cancel before agent starts

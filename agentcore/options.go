@@ -99,7 +99,7 @@ func WithHistoryModifier(fn func(context.Context, []Message) []Message) RunOptio
 
 // WithAfterToolCallsHook registers a per-run hook that fires synchronously after
 // all tool calls in a react iteration complete, before the next ChatModel call.
-// This is suitable for TurnLoop Push+Preempt patterns where the pushed item
+// This is suitable for AgentLoop Push+Preempt patterns where the pushed item
 // must be visible to the next turn's GenInput.
 func WithAfterToolCallsHook(fn func(ctx context.Context) error) RunOption {
 	return runOptFn(func(o *runOptions) { o.afterToolCallsHook = fn })

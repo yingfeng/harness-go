@@ -121,8 +121,8 @@ type TypedReActMiddleware[M MessageType] interface {
 
 type ReActMiddleware = TypedReActMiddleware[*schema.Message]
 
-// Alias names for Eino ADK compatibility.
-// These allow middlewares to use the same naming convention as Eino's ADK.
+// Alias names for backward compatibility.
+// These allow middlewares to use the same naming convention as the ADK.
 type (
 	BeforeModelRewriteState[M MessageType] = TypedReActAgentState[M]
 	AfterModelRewriteState[M MessageType]  = TypedReActAgentState[M]

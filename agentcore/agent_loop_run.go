@@ -6,9 +6,9 @@ import (
 	"time"
 )
 
-// ---- TurnLoop main run loop and turn planning ----
+// ---- AgentLoop main run loop and turn planning ----
 
-func (l *TurnLoop[T]) planTurn(
+func (l *AgentLoop[T]) planTurn(
 	ctx context.Context,
 	isResume bool,
 	items []T,
@@ -84,7 +84,7 @@ func defaultTurnLoopOnAgentEvents[T any](_ context.Context, _ *TurnContext[T], e
 	return nil
 }
 
-func (l *TurnLoop[T]) run(ctx context.Context) {
+func (l *AgentLoop[T]) run(ctx context.Context) {
 	defer l.cleanup(ctx)
 
 	if err := l.tryLoadCheckpoint(ctx); err != nil {

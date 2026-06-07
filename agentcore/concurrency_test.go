@@ -100,22 +100,22 @@ func TestWorkflow_ParallelAgentConcurrency(t *testing.T) {
 	}
 }
 
-// ---- TurnLoop concurrent Push/Stop ----
+// ---- AgentLoop concurrent Push/Stop ----
 
-// TestTurnLoop_ConcurrentPushStop verifies TurnLoop handles concurrent
+// TestTurnLoop_ConcurrentPushStop verifies AgentLoop handles concurrent
 // Push and Stop operations safely.
 func TestTurnLoop_ConcurrentPushStop(t *testing.T) {
 	ctx := context.Background()
 
 	loop := NewTurnLoop[*schema.Message](TurnLoopConfig[*schema.Message]{
-		GenInput: func(_ context.Context, l *TurnLoop[*schema.Message], items []*schema.Message) (*GenInputResult[*schema.Message], error) {
+		GenInput: func(_ context.Context, l *AgentLoop[*schema.Message], items []*schema.Message) (*GenInputResult[*schema.Message], error) {
 			return &GenInputResult[*schema.Message]{
 				Input:     &AgentInput{Messages: items},
 				Consumed:  items,
 				Remaining: nil,
 			}, nil
 		},
-		PrepareAgent: func(_ context.Context, _ *TurnLoop[*schema.Message], consumed []*schema.Message) (Agent, error) {
+		PrepareAgent: func(_ context.Context, _ *AgentLoop[*schema.Message], consumed []*schema.Message) (Agent, error) {
 			m := &mockModel{}
 			m.addResp("turn loop conc response")
 			return NewReActAgent(&ReActConfig[*schema.Message]{Model: m}).WithName("conc_loop"), nil

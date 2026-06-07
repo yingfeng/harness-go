@@ -11,7 +11,7 @@ import (
 )
 
 // ================================================================
-// Edge TurnLoop tests ported from Eino turn_loop_test.go
+// Edge AgentLoop tests from the ADK turn_loop_test.go
 // These tests fill gaps not covered in turn_loop_test.go
 // ================================================================
 
@@ -30,12 +30,12 @@ func TestTurnLoop_UnhandledItemsOnStop(t *testing.T) {
 func TestTurnLoop_PrepareAgentError_RecoverItems(t *testing.T) {
 	var callCount atomic.Int32
 	loop := NewTurnLoop[*schema.Message](TurnLoopConfig[*schema.Message]{
-		GenInput: func(_ context.Context, _ *TurnLoop[*schema.Message], items []*schema.Message) (*GenInputResult[*schema.Message], error) {
+		GenInput: func(_ context.Context, _ *AgentLoop[*schema.Message], items []*schema.Message) (*GenInputResult[*schema.Message], error) {
 			return &GenInputResult[*schema.Message]{
 				Input: &AgentInput{Messages: items}, Consumed: items, Remaining: nil,
 			}, nil
 		},
-		PrepareAgent: func(_ context.Context, _ *TurnLoop[*schema.Message], _ []*schema.Message) (Agent, error) {
+		PrepareAgent: func(_ context.Context, _ *AgentLoop[*schema.Message], _ []*schema.Message) (Agent, error) {
 			if callCount.Add(1) <= 1 {
 				return nil, errors.New("prepare error on first call")
 			}
@@ -53,12 +53,12 @@ func TestTurnLoop_PrepareAgentError_RecoverItems(t *testing.T) {
 // TestTurnLoop_GetAgentError_RecoverConsumed verifies agent error recovers consumed.
 func TestTurnLoop_GetAgentError_RecoverConsumed(t *testing.T) {
 	loop := NewTurnLoop[*schema.Message](TurnLoopConfig[*schema.Message]{
-		GenInput: func(_ context.Context, _ *TurnLoop[*schema.Message], items []*schema.Message) (*GenInputResult[*schema.Message], error) {
+		GenInput: func(_ context.Context, _ *AgentLoop[*schema.Message], items []*schema.Message) (*GenInputResult[*schema.Message], error) {
 			return &GenInputResult[*schema.Message]{
 				Input: &AgentInput{Messages: items}, Consumed: items, Remaining: nil,
 			}, nil
 		},
-		PrepareAgent: func(_ context.Context, _ *TurnLoop[*schema.Message], _ []*schema.Message) (Agent, error) {
+		PrepareAgent: func(_ context.Context, _ *AgentLoop[*schema.Message], _ []*schema.Message) (Agent, error) {
 			return nil, errors.New("agent init error")
 		},
 	})
@@ -126,16 +126,16 @@ func TestFailover_AllModelsFail_Stream(t *testing.T) {
 
 // ---- helpers ----
 
-func newTurnLoop(name, resp string) *TurnLoop[*schema.Message] {
+func newTurnLoop(name, resp string) *AgentLoop[*schema.Message] {
 	return NewTurnLoop[*schema.Message](TurnLoopConfig[*schema.Message]{
-		GenInput: func(_ context.Context, _ *TurnLoop[*schema.Message], items []*schema.Message) (*GenInputResult[*schema.Message], error) {
+		GenInput: func(_ context.Context, _ *AgentLoop[*schema.Message], items []*schema.Message) (*GenInputResult[*schema.Message], error) {
 			return &GenInputResult[*schema.Message]{
 				Input:     &AgentInput{Messages: items},
 				Consumed:  items,
 				Remaining: nil,
 			}, nil
 		},
-		PrepareAgent: func(_ context.Context, _ *TurnLoop[*schema.Message], _ []*schema.Message) (Agent, error) {
+		PrepareAgent: func(_ context.Context, _ *AgentLoop[*schema.Message], _ []*schema.Message) (Agent, error) {
 			m := &mockModel{}
 			m.addResp(resp)
 			return NewReActAgent(&ReActConfig[*schema.Message]{Model: m}).WithName(name), nil

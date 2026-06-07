@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// ---- TurnLoop core: struct, lifecycle, cleanup ----
+// ---- AgentLoop core: struct, lifecycle, cleanup ----
 //
 // Configuration types (TurnLoopConfig, preemptController, stopController, etc.)
 // are defined in turn_loop_config.go, turn_loop_preempt.go, and turn_loop_stop.go.
@@ -18,9 +18,9 @@ import (
 //   - turn_loop_push.go    (Push, pushWithStrategy, pushWithConfig, appendLate)
 //   - turn_loop_checkpoint.go (checkpoint serialization, tryLoadCheckpoint)
 
-// TurnLoop executes agent turns in a push-based loop.
+// AgentLoop executes agent turns in a push-based loop.
 // See TurnLoopConfig for configuration details and TurnLoopState for results.
-type TurnLoop[T any] struct {
+type AgentLoop[T any] struct {
 	config TurnLoopConfig[T]
 
 	buffer *turnBuffer[T]
@@ -57,8 +57,8 @@ type TurnLoop[T any] struct {
 	lateSealed bool
 }
 
-// NewTurnLoop creates a new TurnLoop without starting it.
-func NewTurnLoop[T any](cfg TurnLoopConfig[T]) *TurnLoop[T] {
+// NewTurnLoop creates a new AgentLoop without starting it.
+func NewTurnLoop[T any](cfg TurnLoopConfig[T]) *AgentLoop[T] {
 	if cfg.GenInput == nil {
 		panic("agentcore: NewTurnLoop: GenInput is required")
 	}
@@ -66,7 +66,7 @@ func NewTurnLoop[T any](cfg TurnLoopConfig[T]) *TurnLoop[T] {
 		panic("agentcore: NewTurnLoop: PrepareAgent is required")
 	}
 
-	l := &TurnLoop[T]{
+	l := &AgentLoop[T]{
 		config:      cfg,
 		buffer:      newTurnBuffer[T](),
 		done:        make(chan struct{}),
@@ -81,7 +81,7 @@ func NewTurnLoop[T any](cfg TurnLoopConfig[T]) *TurnLoop[T] {
 	return l
 }
 
-func (l *TurnLoop[T]) start(ctx context.Context) {
+func (l *AgentLoop[T]) start(ctx context.Context) {
 	l.runOnce.Do(func() {
 		atomic.StoreInt32(&l.started, 1)
 		go l.run(ctx)
@@ -89,12 +89,12 @@ func (l *TurnLoop[T]) start(ctx context.Context) {
 }
 
 // Run starts the loop's processing goroutine. It is non-blocking.
-func (l *TurnLoop[T]) Run(ctx context.Context) {
+func (l *AgentLoop[T]) Run(ctx context.Context) {
 	l.start(ctx)
 }
 
 // Stop signals the loop to stop and returns immediately (non-blocking).
-func (l *TurnLoop[T]) Stop(opts ...StopOption) {
+func (l *AgentLoop[T]) Stop(opts ...StopOption) {
 	cfg := &stopConfig{}
 	for _, opt := range opts {
 		opt(cfg)
@@ -124,25 +124,25 @@ func (l *TurnLoop[T]) Stop(opts ...StopOption) {
 	}
 }
 
-func (l *TurnLoop[T]) commitStop() {
+func (l *AgentLoop[T]) commitStop() {
 	if !l.stopCtrl.commit() {
 		return
 	}
 	l.finishStopCommit()
 }
 
-func (l *TurnLoop[T]) finishStopCommit() {
+func (l *AgentLoop[T]) finishStopCommit() {
 	atomic.StoreInt32(&l.stopped, 1)
 	l.buffer.Close()
 }
 
 // Wait blocks until the loop exits and returns the result.
-func (l *TurnLoop[T]) Wait() *TurnLoopState[T] {
+func (l *AgentLoop[T]) Wait() *TurnLoopState[T] {
 	<-l.done
 	return l.result
 }
 
-func (l *TurnLoop[T]) cleanup(ctx context.Context) {
+func (l *AgentLoop[T]) cleanup(ctx context.Context) {
 	atomic.StoreInt32(&l.stopped, 1)
 
 	unhandled := l.buffer.TakeAll()

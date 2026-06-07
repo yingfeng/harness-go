@@ -7,7 +7,7 @@ import (
 
 const bridgeCheckpointID = "__adk_turnloop_bridge_cp__"
 
-// bridgeStore is a minimal CheckPointStore used to bridge TurnLoop with Runner
+// bridgeStore is a minimal CheckPointStore used to bridge AgentLoop with Runner
 // checkpoints without using the actual Store.
 type bridgeStore struct {
 	cpID string

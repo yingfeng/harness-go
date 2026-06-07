@@ -6,20 +6,20 @@ import (
 	"time"
 )
 
-// ---- TurnLoop push operations ----
+// ---- AgentLoop push operations ----
 
-func (l *TurnLoop[T]) appendLate(item T) {
+func (l *AgentLoop[T]) appendLate(item T) {
 	l.lateMu.Lock()
 	defer l.lateMu.Unlock()
 	if l.lateSealed {
-		panic("TurnLoop: Push called after TakeLateItems")
+		panic("AgentLoop: Push called after TakeLateItems")
 	}
 	l.lateItems = append(l.lateItems, item)
 }
 
 // Push adds an item to the loop's buffer for processing.
 // Returns false if the loop has stopped. When preemptive, returns an ack channel.
-func (l *TurnLoop[T]) Push(item T, opts ...PushOption[T]) (bool, <-chan struct{}) {
+func (l *AgentLoop[T]) Push(item T, opts ...PushOption[T]) (bool, <-chan struct{}) {
 	cfg := &pushConfig[T]{}
 	for _, opt := range opts {
 		opt(cfg)
@@ -34,7 +34,7 @@ func (l *TurnLoop[T]) Push(item T, opts ...PushOption[T]) (bool, <-chan struct{}
 
 // pushWithStrategy snapshots the current target turn while the strategy decides
 // how to enqueue the item.
-func (l *TurnLoop[T]) pushWithStrategy(item T, cfg *pushConfig[T]) (bool, <-chan struct{}) {
+func (l *AgentLoop[T]) pushWithStrategy(item T, cfg *pushConfig[T]) (bool, <-chan struct{}) {
 	strategy := cfg.pushStrategy
 
 	snapshot := l.preemptCtrl.beginPush()
@@ -94,7 +94,7 @@ func (l *TurnLoop[T]) pushWithStrategy(item T, cfg *pushConfig[T]) (bool, <-chan
 	return true, ack
 }
 
-func (l *TurnLoop[T]) pushWithConfig(item T, cfg *pushConfig[T]) (bool, <-chan struct{}) {
+func (l *AgentLoop[T]) pushWithConfig(item T, cfg *pushConfig[T]) (bool, <-chan struct{}) {
 	if atomic.LoadInt32(&l.stopped) != 0 {
 		l.appendLate(item)
 		return false, nil

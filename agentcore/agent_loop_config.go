@@ -119,13 +119,13 @@ func (s cancelRequestState) cancelOptions(now time.Time) []CancelOption {
 	return opts
 }
 
-// TurnLoopConfig is the configuration for creating a TurnLoop.
+// TurnLoopConfig is the configuration for creating a AgentLoop.
 type TurnLoopConfig[T any] struct {
-	GenInput func(ctx context.Context, loop *TurnLoop[T], items []T) (*GenInputResult[T], error)
+	GenInput func(ctx context.Context, loop *AgentLoop[T], items []T) (*GenInputResult[T], error)
 
-	GenResume func(ctx context.Context, loop *TurnLoop[T], interruptedItems, unhandledItems, newItems []T) (*GenResumeResult[T], error)
+	GenResume func(ctx context.Context, loop *AgentLoop[T], interruptedItems, unhandledItems, newItems []T) (*GenResumeResult[T], error)
 
-	PrepareAgent func(ctx context.Context, loop *TurnLoop[T], consumed []T) (Agent, error)
+	PrepareAgent func(ctx context.Context, loop *AgentLoop[T], consumed []T) (Agent, error)
 
 	OnAgentEvents func(ctx context.Context, tc *TurnContext[T], events *AsyncIterator[*AgentEvent]) error
 
@@ -168,7 +168,7 @@ type turnPlan[T any] struct {
 	spec      *turnRunSpec[T]
 }
 
-// TurnLoopState is returned when TurnLoop exits.
+// TurnLoopState is returned when AgentLoop exits.
 type TurnLoopState[T any] struct {
 	ExitReason          error
 	UnhandledItems      []T
@@ -181,7 +181,7 @@ type TurnLoopState[T any] struct {
 
 // TurnContext provides per-turn context to the OnAgentEvents callback.
 type TurnContext[T any] struct {
-	Loop      *TurnLoop[T]
+	Loop      *AgentLoop[T]
 	Consumed  []T
 	Preempted <-chan struct{}
 	Stopped   <-chan struct{}

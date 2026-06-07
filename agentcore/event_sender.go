@@ -210,10 +210,9 @@ func HasUserEventSenderModelWrapper[M MessageType](handlers []TypedReActMiddlewa
 	return false
 }
 
-// ---- Tool event constructors (ported from Eino ADK wrappers.go) ----
+// ---- Tool event constructors (adapted from the ADK wrappers.go) ----
 //
 // These constructors create properly typed events for different tool invocation
-// patterns. Eino ADK provides 6 types; we provide the 4 essential ones here.
 
 // TypedToolInvokeEvent creates an event for a synchronous tool result.
 func TypedToolInvokeEvent[M MessageType](result string, tc *ToolContext) *TypedAgentEvent[M] {
