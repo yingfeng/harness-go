@@ -48,6 +48,24 @@ type Tool interface {
 	Stream(ctx context.Context, argumentsInJSON string, opts ...ToolOption) (*schema.StreamReader[string], error)
 }
 
+// ToolCapability describes a tool's access pattern for concurrency control.
+type ToolCapability int
+
+const (
+	ToolCapReadOnly   ToolCapability = iota // Safe to run in parallel
+	ToolCapWritesFiles                       // File mutation, serialize
+	ToolCapExecutesCode                      // Code execution, serialize
+	ToolCapNetwork                            // Network access, serialize
+)
+
+// CapableTool is an optional interface that tools can implement to declare
+// their capability for concurrency-aware scheduling. Tools without this
+// interface default to ToolCapWritesFiles (safe serialization).
+type CapableTool interface {
+	Tool
+	Capability() ToolCapability
+}
+
 // EnhancedTool is an optional interface that tools can implement to return
 // structured *schema.ToolResult instead of raw strings.
 // When a Tool also satisfies EnhancedTool, the framework will call the enhanced

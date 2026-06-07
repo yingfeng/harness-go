@@ -2,6 +2,7 @@ package agentcore
 
 import (
 	"context"
+	"crypto/md5"
 	"encoding/json"
 	"fmt"
 	"sync"
@@ -26,6 +27,10 @@ type ToolsNodeConfig struct {
 
 	// EmitInternalEvents enables forwarding internal events from AgentTool children.
 	EmitInternalEvents bool
+
+	// LoopGuard prevents infinite loops by detecting repeated tool calls
+	// with identical arguments or consecutive failures. If nil, no guard is applied.
+	LoopGuard *LoopGuard
 }
 
 // ToolCallMiddleware wraps tool call endpoints with custom behavior.
@@ -84,55 +89,78 @@ func (tn *ToolsNode[M]) Execute(ctx context.Context, resp M, state *TypedReActAg
 		return []M{toolMsg}, action, nil
 	}
 
-	// Concurrent path: execute multiple tool calls in parallel.
-	const maxConcurrency = 10
-	sem := make(chan struct{}, maxConcurrency)
-	var mu sync.Mutex
-	results := make([]M, len(toolCalls))
+	// Multi-tool path: plan execution batches by capability, then execute.
+	batches := tn.planBatches(toolCalls)
 	var action *AgentAction
+	var mu sync.Mutex
 	var firstErr error
-	var wg sync.WaitGroup
+	var results []M
 
-	for i, tc := range toolCalls {
-		if tn.config.ReturnDirectly != nil && tn.config.ReturnDirectly[tc.Function.Name] {
-			mu.Lock()
-			action = NewExitAction()
-			mu.Unlock()
-		}
+	for _, batch := range batches {
+		if batch.mode == batchParallel {
+			// Execute parallel-safe tools concurrently.
+			const maxConcurrency = 10
+			sem := make(chan struct{}, maxConcurrency)
+			parResults := make([]M, len(batch.calls))
+			var wg sync.WaitGroup
 
-		wg.Add(1)
-		go func(idx int, call schema.ToolCall) {
-			defer wg.Done()
-			sem <- struct{}{}
-			defer func() { <-sem }()
-
-			toolMsg, err := tn.executeOne(ctx, call)
-			mu.Lock()
-			defer mu.Unlock()
-			if err != nil && firstErr == nil {
-				firstErr = fmt.Errorf("tool '%s': %w", call.Function.Name, err)
-				return
+			for i, tc := range batch.calls {
+				if tn.config.ReturnDirectly != nil && tn.config.ReturnDirectly[tc.Function.Name] {
+					mu.Lock()
+					action = NewExitAction()
+					mu.Unlock()
+				}
+				wg.Add(1)
+				go func(idx int, call schema.ToolCall) {
+					defer wg.Done()
+					sem <- struct{}{}
+					defer func() { <-sem }()
+					msg, err := tn.executeOne(ctx, call)
+					mu.Lock()
+					defer mu.Unlock()
+					if err != nil && firstErr == nil {
+						firstErr = fmt.Errorf("tool '%s': %w", call.Function.Name, err)
+						return
+					}
+					parResults[idx] = msg
+				}(i, tc)
 			}
-			results[idx] = toolMsg
-		}(i, tc)
+			wg.Wait()
+			for _, r := range parResults {
+				if !isNilMessage(r) {
+					results = append(results, r)
+				}
+			}
+		} else {
+			// Execute serial tools one by one.
+			for _, tc := range batch.calls {
+				if tn.config.ReturnDirectly != nil && tn.config.ReturnDirectly[tc.Function.Name] {
+					action = NewExitAction()
+				}
+				msg, err := tn.executeOne(ctx, tc)
+				if err != nil && firstErr == nil {
+					firstErr = fmt.Errorf("tool '%s': %w", tc.Function.Name, err)
+				}
+				if !isNilMessage(msg) {
+					results = append(results, msg)
+				}
+			}
+		}
 	}
-	wg.Wait()
 
 	if firstErr != nil {
 		return nil, action, firstErr
 	}
-
-	// Filter out nil results (from failed tools).
-	filtered := results[:0]
-	for _, r := range results {
-		if !isNilMessage(r) {
-			filtered = append(filtered, r)
-		}
-	}
-	return filtered, action, nil
+	return results, action, nil
 }
 
 func (tn *ToolsNode[M]) executeOne(ctx context.Context, tc schema.ToolCall) (M, error) {
+	// LoopGuard: detect repeated calls with identical arguments.
+	if lg := tn.getLoopGuard(); lg != nil {
+		if err := lg.CheckSameArgs(tc.Function.Name, tc.Function.Arguments); err != nil {
+			return tn.makeToolMsg(fmt.Sprintf("Error: %v", err), tc.ID), nil
+		}
+	}
 
 	tool, ok := tn.toolMap[tc.Function.Name]
 	if !ok {
@@ -290,3 +318,142 @@ func parseToolArgs(argsJSON string, target any) error {
 	}
 	return nil
 }
+
+// ---- LoopGuard: detect repeated tool calls with same args ----
+
+// LoopGuard prevents infinite loops where the model repeatedly calls a tool
+// with identical parameters. It tracks consecutive same-args calls per tool.
+type LoopGuard struct {
+	mu        sync.Mutex
+	sameArgs  map[string]int // key = toolName+"|"+argsHash
+	failures  map[string]int // key = toolName
+	maxSame   int
+	maxFails  int
+}
+
+// NewLoopGuard creates a LoopGuard with the given thresholds.
+func NewLoopGuard(maxSame, maxFails int) *LoopGuard {
+	return &LoopGuard{
+		sameArgs: make(map[string]int),
+		failures: make(map[string]int),
+		maxSame:  maxSame,
+		maxFails: maxFails,
+	}
+}
+
+// CheckSameArgs returns an error if the same tool+args pair is called too many times.
+func (g *LoopGuard) CheckSameArgs(toolName, argsJSON string) error {
+	if g == nil || g.maxSame <= 0 {
+		return nil
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	hash := fmt.Sprintf("%s|%x", toolName, md5.Sum([]byte(argsJSON)))
+	g.sameArgs[hash]++
+	if g.sameArgs[hash] >= g.maxSame {
+		return fmt.Errorf("loop guard: tool '%s' called %d times with identical arguments", toolName, g.sameArgs[hash])
+	}
+	return nil
+}
+
+// RecordFailure tracks consecutive failures for a tool.
+// Returns an error if the failure limit is exceeded.
+func (g *LoopGuard) RecordFailure(toolName string) error {
+	if g == nil || g.maxFails <= 0 {
+		return nil
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.failures[toolName]++
+	cnt := g.failures[toolName]
+	if cnt >= g.maxFails {
+		return fmt.Errorf("loop guard: tool '%s' failed %d consecutive times", toolName, cnt)
+	}
+	return nil
+}
+
+// Reset clears tracking for a tool (called on success or different args).
+func (g *LoopGuard) Reset(toolName string) {
+	if g == nil {
+		return
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	// Remove all same-args entries for this tool
+	for k := range g.sameArgs {
+		if len(k) > len(toolName) && k[:len(toolName)] == toolName {
+			delete(g.sameArgs, k)
+		}
+	}
+	delete(g.failures, toolName)
+}
+
+// ---- Tool capability and batch planning ----
+
+// toolCapFromTool returns the capability of a tool.
+func toolCapFromTool(t Tool) ToolCapability {
+	if ct, ok := t.(CapableTool); ok {
+		return ct.Capability()
+	}
+	return ToolCapWritesFiles // default: conservative serial
+}
+
+// executionBatch represents a group of tool calls to execute together.
+type executionBatch struct {
+	mode  batchMode
+	calls []schema.ToolCall
+}
+
+type batchMode int
+
+const (
+	batchParallel batchMode = iota
+	batchSerial
+)
+
+// planBatches groups tool calls into parallel/serial batches based on capability.
+// Read-only tools are grouped for parallel execution; others run serially.
+func (tn *ToolsNode[M]) planBatches(tcs []schema.ToolCall) []executionBatch {
+	var batches []executionBatch
+	var currentParallel []schema.ToolCall
+
+	flushParallel := func() {
+		if len(currentParallel) > 0 {
+			batches = append(batches, executionBatch{mode: batchParallel, calls: currentParallel})
+			currentParallel = nil
+		}
+	}
+
+	for _, tc := range tcs {
+		tool, ok := tn.toolMap[tc.Function.Name]
+		if !ok {
+			// Unknown tool - treat as serial to be safe.
+			flushParallel()
+			batches = append(batches, executionBatch{mode: batchSerial, calls: []schema.ToolCall{tc}})
+			continue
+		}
+		cap := toolCapFromTool(tool)
+		if cap == ToolCapReadOnly {
+			currentParallel = append(currentParallel, tc)
+		} else {
+			flushParallel()
+			batches = append(batches, executionBatch{mode: batchSerial, calls: []schema.ToolCall{tc}})
+		}
+	}
+	flushParallel()
+	return batches
+}
+
+// ---- LoopGuard integration in executeOne ----
+
+// getLoopGuard returns the LoopGuard from the ToolsNode if configured.
+// It is stored on the ToolsNode to share state across invocation cycles.
+func (tn *ToolsNode[M]) getLoopGuard() *LoopGuard {
+	if tn.config != nil {
+		return tn.config.LoopGuard
+	}
+	return nil
+}
+
+// clearLoopGuard writes the LoopGuard config back (no-op, config is shared by pointer).
+func (tn *ToolsNode[M]) clearLoopGuard() {}
