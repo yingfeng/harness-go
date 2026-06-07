@@ -2,12 +2,12 @@
 
 ## Overview
 
-AgentCore is the production-grade Agent Development Kit (ADK) layer of the Harness-Go framework.
-It wraps a StateGraph/Pregel execution engine with high-level Agent abstractions (ChatModelAgent,
-Runner, Middleware, Tools) for building complex LLM-powered agents.
+AgentCore is a production-grade Agent Development Kit (ADK) layer built on top of a StateGraph/Pregel
+execution engine. It provides high-level Agent abstractions (ReActAgent, Runner, Middleware, Tools)
+for building complex LLM-powered agents.
 
 The code lives under `agentcore/` and is imported as `github.com/infiniflow/ragflow/harness/agentcore`.
-Public types are re-exported from the top-level `harness` package in `/home/infominer/codebase/harness-go/harness.go`.
+Public types are re-exported from the top-level `harness` package in `harness.go`.
 
 ---
 
@@ -15,11 +15,12 @@ Public types are re-exported from the top-level `harness` package in `/home/info
 
 ### Layer 1: Agent Interface
 
-The base interface `TypedAgent[M]` (defined in `interface.go`) is the contract all agents implement:
+The base interface `Agent` (type alias for `TypedAgent[*schema.Message]`, defined in `interface.go`)
+is the contract all agents implement:
 
 - `Name(ctx)` / `Description(ctx)` — agent metadata
-- `Run(ctx, input, opts...)` — returns `AsyncIterator[*TypedAgentEvent[M]]` for event streaming
-- `Resume(ctx, info, opts...)` — for agents implementing `TypedResumableAgent[M]`
+- `Run(ctx, input, opts...)` — returns `AsyncIterator[*AgentEvent]` for event streaming
+- `Resume(ctx, info, opts...)` — for agents implementing `ResumableAgent`
 
 **Key types:**
 
@@ -27,20 +28,21 @@ The base interface `TypedAgent[M]` (defined in `interface.go`) is the contract a
 |---|---|
 | `TypedAgent[M]` | Generic agent interface (M = `*schema.Message` or `*schema.AgenticMessage`) |
 | `Agent` | Type alias for `TypedAgent[*schema.Message]` |
-| `TypedResumableAgent[M]` | Extends TypedAgent with Resume for interrupt handling |
-| `TypedAgentInput[M]` | Input with Messages + EnableStreaming flag |
-| `TypedAgentEvent[M]` | Event with Output (Message or MessageStream), Action, AgentName, RunPath |
+| `ResumableAgent` | Extends Agent with Resume for interrupt handling |
+| `AgentInput` | Input with Messages + EnableStreaming flag |
+| `AgentEvent` | Event with Output (Message or MessageStream), Action, AgentName, RunPath |
 | `AgentAction` | Action emitted by agent: Exit, Interrupted, TransferToAgent, BreakLoop |
 
 ### Layer 2: Execution Engine
 
-**ChatModelAgent** (defined in `chatmodel.go`) implements the ReAct (Reasoning + Acting) pattern:
+**ReActAgent** (defined in `react_agent.go`) implements the ReAct (Reasoning + Acting) pattern:
 
 1. `freeze()` — after first Run/Resume, configuration is frozen via atomic flag to prevent mutation during execution.
 
 2. `buildRunFunc` — lazy-init that detects whether tools are configured and selects the appropriate runner:
    - `buildReActRunFunc` — full ReAct loop with tool execution
    - `buildNoToolsRunFunc` — single model call without tool dispatch
+   - `buildGraphReActRunFunc` — graph-based ReAct using the project's own StateGraph/Pregel engine
 
 3. **ReAct loop flow** (buildReActRunFunc):
    ```
@@ -58,7 +60,7 @@ The base interface `TypedAgent[M]` (defined in `interface.go`) is the contract a
    AfterAgent (middleware)
    ```
 
-4. **Model Wrapper Chain** (built in `BuildModelWrapperChain` in `wrappers.go`):
+4. **Model Wrapper Chain** (built in `BuildModelWrapperChain` in `model_chain.go`):
    ```
    base model
      → EventSender (emits model output events)
@@ -88,7 +90,8 @@ The base interface `TypedAgent[M]` (defined in `interface.go`) is the contract a
 **workflowAgent** (defined in `workflow.go`):
 - Orchestrates multiple agents in predefined patterns:
   - **Sequential** — runs sub-agents one after another
-  - **Parallel** — runs sub-agents concurrently with `sync.WaitGroup`
+  - **Parallel** — runs sub-agents concurrently with `sync.WaitGroup`; each branch gets its
+    own `BranchEvents` for event isolation; on join, events are merged chronologically
   - **Loop** — repeats a sequence of sub-agents up to MaxIterations
 - All patterns support interrupt/resume with state serialization via gob
 - Constructors: `NewSequential`, `NewParallel`, `NewLoop`
@@ -103,11 +106,11 @@ The base interface `TypedAgent[M]` (defined in `interface.go`) is the contract a
 
 ### Layer 4: Middleware System
 
-Defined in `handler.go`, middlewares implement `TypedChatModelMiddleware[M]` with 9 hook points:
+Defined in `contracts.go`, middlewares implement `ReActMiddleware` interface with 9 hook points:
 
 | Hook | Signature | Purpose |
 |---|---|---|
-| BeforeAgent | `(ctx, *ChatModelAgentContext)` | Modify instruction, tools, return-directly map |
+| BeforeAgent | `(ctx, *ReActAgentContext)` | Modify instruction, tools, return-directly map |
 | AfterAgent | `(ctx, state)` | Post-execution cleanup |
 | BeforeModelRewrite | `(ctx, state, *ModelContext)` | Transform state before model call |
 | AfterModelRewrite | `(ctx, state, *ModelContext)` | Transform state after model call |
@@ -119,14 +122,19 @@ Defined in `handler.go`, middlewares implement `TypedChatModelMiddleware[M]` wit
 
 **BaseMiddleware** provides default no-op implementations for all hooks. Embed it and override only needed methods.
 
-**Event Sender Middlewares** (in `event_sender.go`):
-- `NewEventSenderModelWrapper` — emits model output events (position in chain controls event timing)
-- `NewEventSenderToolWrapper` — emits tool result events
-- Detection via `HasUserEventSenderToolWrapper` / `HasUserEventSenderModelWrapper` — skips built-in sender to avoid duplicates
+**Prebuilt middlewares** (in `agentcore/middlewares/`):
+- `agentsmd` — inject Agents.md file contents into model input
+- `filesystem` — provide filesystem tools (ls, read, write, edit, grep, execute)
+- `patchtoolcalls` — fix dangling tool calls in message history
+- `plantask` — task management tools (CRUD) for coding sessions
+- `reduction` — offload large tool results to backend when token limits are exceeded
+- `skill` — load and execute skills from SKILL.md files
+- `summarization` — auto-summarize conversation history on token overflow
+- `telemetry` — OpenTelemetry tracing/monitoring
 
-### Layer 5: TurnLoop (Push-based Execution)
+### Layer 5: AgentLoop (Push-based Execution)
 
-Defined in `turn_loop.go`, TurnLoop enables push-based agent interaction where external events
+Defined in `agent_loop.go`, AgentLoop enables push-based agent interaction where external events
 can be injected while the agent is running — useful for chat/streaming applications.
 
 **Lifecycle:**
@@ -139,7 +147,7 @@ idle ──beginPlanningTurn──▶ planning ──beginActiveTurn──▶ ac
 **Key components:**
 - `preemptController` — turn-targeted preempt with snapshot/ack mechanism
 - `stopController` — global terminal stop with optional active-turn cancel
-- `bridgeStore` — bridges TurnLoop checkpoints with Runner checkpoints
+- `bridgeStore` — bridges AgentLoop checkpoints with Runner checkpoints
 - `TurnContext[T]` — provides per-turn Preempted/Stopped channels, StopCause
 - `GenInput` callback — decides which buffered items to consume
 - `GenResume` callback — plans resume from checkpoint state
@@ -200,20 +208,20 @@ Checkpoints are serialized via gob encoding with type registration (`schema.Regi
 **Checkpoint payload includes:**
 - Run context (run path, session values)
 - Interrupt info (state data, interrupt signal)
-- Agent state (`*TypedChatModelAgentState[M]`)
+- Agent state (`*ReActAgentState[M]`)
 
 **Resume flow:**
 1. `Runner.Resume` → loads checkpoint from store via `loadCheckpoint`
 2. Reconstructs run context from checkpoint data
 3. Calls `ResumableAgent.Resume` with `ResumeInfo`
-4. `ChatModelAgent.Resume` restores state from `InterruptState` and re-enters run function
-5. `ChatModelAgentResumeData.HistoryModifier` allows input modification on resume
+4. `ReActAgent.Resume` restores state from `InterruptState` and re-enters run function
+5. `ReActAgentResumeData.HistoryModifier` allows input modification on resume
 
 **Gob encodability check:**
 - `checkGobEncodability` in `callback.go` proactively validates values at `SetRunLocalValue` time
 - Catches unregistered types early with actionable error message including `RegisterType` code snippet
 
-**TurnLoop checkpoint** (`turnLoopCheckpoint[T]`):
+**AgentLoop checkpoint** (`agentLoopCheckpoint[T]`):
 - Stores runner checkpoint bytes, has-runner-state flag, unhandled items, canceled items
 - Saved during stop/business-interrupt, cleaned up on normal exit
 
@@ -230,14 +238,30 @@ Checkpoints are serialized via gob encoding with type registration (`schema.Regi
 - `Action events` — on interrupt, transfer, exit, break-loop
 
 **Event constructors** (in `event_sender.go`):
-- `TypedToolInvokeEvent` / `TypedToolStreamEvent` — for standard tools
-- `TypedEnhancedToolInvokeEvent` / `TypedEnhancedToolStreamEvent` — for enhanced tools (preserve Extra metadata for multimodal)
+- `ToolInvokeEvent` / `ToolStreamEvent` — for standard tools
+- `EnhancedToolInvokeEvent` / `EnhancedToolStreamEvent` — for enhanced tools (preserve Extra metadata for multimodal)
+
+---
+
+## Session & Branch Events System
+
+Defined in `session.go`, the session system manages per-execution mutable state:
+
+- **`runSession`** — stores agent metadata, events, values, and branch events
+- **`branchEvents`** — per-parallel-branch event isolation with parent-linked list
+- **`forkRunCtx`** — creates a child session with its own `BranchEvents` for parallel lanes
+- **`joinRunCtxs`** — collects events from child branches, sorts by timestamp, commits to parent
+- **`AddSessionValues`** / `getSession` — context-based value access
+
+When `BranchEvents` is set on a session:
+- `addEvent()` appends to the branch's local event slice (lock-free)
+- `getEvents()` merges committed + branch events and sorts chronologically
 
 ---
 
 ## ReActGraph (Graph-level Integration)
 
-Defined in `react_graph.go`, wraps a ChatModelAgent's loop into StateGraph nodes:
+Defined in `react_graph.go`, wraps a ReActAgent's loop into StateGraph nodes:
 
 ```
 prepare_input → model_generate → execute_tools → check_done
@@ -254,7 +278,7 @@ prepare_input → model_generate → execute_tools → check_done
 ## Retry & Failover
 
 **Retry** (in `retry.go`):
-- `TypedModelRetryConfig[M]` — MaxRetries, ShouldRetry callback, IsRetryAble, BackoffFunc
+- `ModelRetryConfig[M]` — MaxRetries, ShouldRetry callback, IsRetryAble, BackoffFunc
 - Default backoff: exponential with jitter (100ms base, up to 10s + 5s jitter)
 - Legacy path (no ShouldRetry) and modern path (with ShouldRetry decision)
 - Stream retry: first-chunk verification, retry signal propagation via `retrySignal`
@@ -273,49 +297,62 @@ prepare_input → model_generate → execute_tools → check_done
 | File | Purpose |
 |---|---|
 | `interface.go` | Agent interface, event types, type aliases, MessageType constraint |
-| `chatmodel.go` | ChatModelAgent: ReAct loop, freeze, run/resume, model wrapper chain builder |
-| `handler.go` | Middleware interface (TypedChatModelMiddleware), ChatModel/Tool interfaces, BaseMiddleware |
-| `handler_conversion.go` | Middleware conversion between generic types |
+| `react_agent.go` | ReActAgent: ReAct loop, freeze, run/resume, model wrapper chain builder |
+| `react.go` | ReAct loop implementation (for-loop + graph-based) |
+| `contracts.go` | Middleware interface (ReActMiddleware), ChatModel/Tool interfaces, BaseMiddleware, BaseTool |
+| `contracts_conversion.go` | Middleware conversion between generic types |
 | `cancel.go` | CancelContext state machine, cancel modes, stream cancel wrapping |
 | `callback.go` | Callback handler, run-local values, gob encodability check |
 | `options.go` | RunOption types (session values, checkpoint ID, cancel, callbacks, etc.) |
 | `tools_node.go` | ToolsNode: tool dispatch, middleware chain, standard/enhanced tool paths |
 | `event_sender.go` | Event sender middlewares (model + tool), event constructors |
-| `wrappers.go` | EventSenderModelWrapper, CallbackModelWrapper, BuildModelWrapperChain |
+| `model_chain.go` | BuildModelWrapperChain, EventSenderModelWrapper, CallbackModelWrapper |
 | `retry.go` | Model retry with backoff, ShouldRetry, stream retry |
 | `failover.go` | Model failover across backup models |
 | `flow.go` | flowAgent: sub-agent management, history rewriting, transfer routing |
 | `workflow.go` | workflowAgent: Sequential/Parallel/Loop orchestration |
 | `runner.go` | Runner: entry point, run/resume, checkpoint save, event handling |
-| `turn_loop.go` | TurnLoop: push-based agent execution, preempt/stop controllers |
+| `agent_loop.go` | AgentLoop: push-based agent execution, preempt/stop controllers |
 | `state_wrapper.go` | StateModelWrapper: message deep copy, ID injection, cancel check |
 | `config.go` | Agent option types, configuration |
 | `instruction.go` | Instruction management |
 | `interrupt.go` | Interrupt types and signals |
 | `resume_data.go` | Resume data types |
-| `transfer.go` | Agent transfer logic |
-| `turn_buffer.go` | TurnLoop buffer implementation |
-| `runctx.go` | Run context, session management |
+| `agent_handoff.go` | Deterministic agent-to-agent transfer, message ID utilities |
+| `turn_buffer.go` | AgentLoop buffer implementation |
+| `session.go` | Run context, session management, BranchEvents for parallel isolation |
 | `react_graph.go` | ReActGraph: graph-level ReAct loop with StateGraph |
-| `utils.go` | Utility functions |
+| `utils.go` | Utility functions (AsyncIterator, AsyncGenerator) |
 | `tool.go` | Tool-related helpers |
-| `react.go` | ReAct loop helpers |
+
+**Test files:**
+
+| File | Purpose |
+|---|---|
+| `contracts_test.go` | Middleware/interface tests |
+| `session_test.go` | Session, RunPath, BranchEvents, Fork/Join tests |
+| `model_chain_test.go` | Wrapper chain tests |
+| `model_chain_retry_failover_test.go` | Retry+failover combined integration tests |
+| `agent_loop_test.go` | AgentLoop lifecycle tests |
+| `agent_loop_edge_test.go` | AgentLoop edge cases |
+| `agent_loop_ctrl_test.go` | AgentLoop controller tests |
+| `agentic_integration_test.go` | Workflow + agentic integration tests |
+| `agent_tool_test.go` | AgentTool tests |
+| `cancel_full_test.go` | Cancel system full suite (75 tests) |
+| `chatmodel_retry_test.go` | Chat model retry tests |
+| `concurrency_test.go` | AgentCore concurrency tests |
 | `deterministic_transfer_test.go` | Deterministic transfer tests |
-| `agentcore_test.go` | Mock implementations (mockModel, mockTool, memStore, etc.) |
-| `agentcore_full_test.go` | Comprehensive integration tests |
-| `cancel_full_test.go` | Cancel system tests |
 | `event_sender_test.go` | Event sender tests |
-| `retry_test.go` | Retry tests |
-| `handler_test.go` | Handler/middleware tests |
-| `tools_node_test.go` | ToolsNode tests |
-| `turn_loop_test.go` | TurnLoop tests |
-| `wrappers_test.go` | Wrapper tests |
-| `failover_test.go` | Failover tests |
-| `callback_test.go` | Callback tests |
+| `graph_integration_test.go` | Graph-based ReAct integration tests |
+| `react_graph_test.go` | ReActGraph tests |
+| `turn_loop_edge_test.go` | AgentLoop edge tests (ported) |
 
 **Sub-packages:**
-- `filesystem/` — filesystem utilities
-- `internal/` — internal helpers (default system prompt)
-- `middlewares/` — middleware implementations (25 files)
-- `prebuilt/` — prebuilt agent components
-- `schema/` — schema types (Message, ToolCall, ToolResult, StreamReader, etc.)
+
+| Directory | Purpose |
+|---|---|
+| `backend/` | Filesystem backend abstraction (Backend interface, InMemoryBackend) |
+| `internal/` | Internal helpers (default system prompt) |
+| `middlewares/` | 9 middleware implementations (agentsmd, filesystem, patchtoolcalls, plantask, reduction, skill, summarization, telemetry, dynamictool) |
+| `prebuilt/` | Prebuilt agent components (deep, supervisor, planexecute) |
+| `schema/` | Schema types (Message, ToolCall, ToolResult, StreamReader, etc.) |
