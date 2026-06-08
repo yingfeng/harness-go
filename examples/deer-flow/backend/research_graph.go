@@ -216,19 +216,6 @@ func coordinatorNode(llm ChatModel) func(ctx context.Context, state interface{})
 func plannerNode(llm ChatModel) func(ctx context.Context, state interface{}) (interface{}, error) {
 	return func(ctx context.Context, state interface{}) (interface{}, error) {
 		s := state.(*DeerState)
-		if len(s.PlanSteps) > 0 && s.CurrentStepIdx >= len(s.PlanSteps) {
-			s.IterationCount++
-			if s.IterationCount >= 3 {
-				s.Goto = NodeReporter
-				s.Messages = append(s.Messages, "[Planner] Sufficient research collected, generating report")
-				return s, nil
-			}
-			s.CurrentStepIdx = 0
-			s.PlanSteps = generateDefaultPlan(s.UserInput)
-			s.Messages = append(s.Messages, "[Planner] Additional research needed, continuing")
-			s.Goto = NodeResearchTeam
-			return s, nil
-		}
 
 		msgs := buildLLMMessages(s, PlannerPrompt)
 		planStr, err := llm.Generate(ctx, msgs, []MockTool{planTool()})
@@ -240,13 +227,8 @@ func plannerNode(llm ChatModel) func(ctx context.Context, state interface{}) (in
 		s.PlanSteps = generateDefaultPlan(s.UserInput)
 		s.MaxIterations = len(s.PlanSteps) * 2
 		s.CurrentStepIdx = 0
-		s.IterationCount = 0
 		s.Messages = append(s.Messages, fmt.Sprintf("[Planner] Research Plan:\n%s", planStr))
-		if s.PlanAutoApproved {
-			s.Goto = NodeResearchTeam
-		} else {
-			s.Goto = NodeHuman
-		}
+		s.Goto = NodeResearchTeam
 		return s, nil
 	}
 }
@@ -263,16 +245,10 @@ func humanFeedbackNode() func(ctx context.Context, state interface{}) (interface
 func researchTeamNode() func(ctx context.Context, state interface{}) (interface{}, error) {
 	return func(ctx context.Context, state interface{}) (interface{}, error) {
 		s := state.(*DeerState)
-		s.IterationCount++
 
 		if s.CurrentStepIdx >= len(s.PlanSteps) {
-			s.Goto = NodePlanner
-			s.Messages = append(s.Messages, "[ResearchTeam] All steps completed, checking if more research needed")
-			return s, nil
-		}
-		if s.IterationCount > s.MaxIterations {
 			s.Goto = NodeReporter
-			s.Messages = append(s.Messages, "[ResearchTeam] Max iterations reached, compiling report")
+			s.Messages = append(s.Messages, "[ResearchTeam] All steps completed, preparing report")
 			return s, nil
 		}
 
@@ -362,10 +338,9 @@ func reporterNode(llm ChatModel) func(ctx context.Context, state interface{}) (i
 func BuildResearchGraph(ctx context.Context, llm ChatModel) (*ResearchWorkflow, error) {
 	sg := graph.NewStateGraph(&DeerState{})
 
-	// Add 7 nodes with their logic
+	// Add 6 nodes with their logic
 	sg.AddNode(NodeCoordinator, coordinatorNode(llm))
 	sg.AddNode(NodePlanner, plannerNode(llm))
-	sg.AddNode(NodeHuman, humanFeedbackNode())
 	sg.AddNode(NodeResearchTeam, researchTeamNode())
 	sg.AddNode(NodeResearcher, researcherNode(llm))
 	sg.AddNode(NodeCoder, coderNode(llm))
@@ -380,14 +355,11 @@ func BuildResearchGraph(ctx context.Context, llm ChatModel) (*ResearchWorkflow, 
 
 	// Planner → conditional routing
 	sg.AddConditionalEdges(NodePlanner, plannerRouter,
-		makeMap([]string{NodeHuman, NodeResearchTeam, NodeReporter}))
-
-	// Human → research_team
-	sg.AddEdge(NodeHuman, NodeResearchTeam)
+		makeMap([]string{NodeResearchTeam}))
 
 	// ResearchTeam → conditional routing
 	sg.AddConditionalEdges(NodeResearchTeam, researchTeamRouter,
-		makeMap([]string{NodeResearcher, NodeCoder, NodeResearchTeam, NodePlanner, NodeReporter}))
+		makeMap([]string{NodeResearcher, NodeCoder, NodeReporter}))
 
 	// Researcher/Coder → back to research_team
 	sg.AddEdge(NodeResearcher, NodeResearchTeam)
@@ -471,10 +443,8 @@ func truncate(s string, n int) string {
 
 func generateDefaultPlan(input string) []Step {
 	return []Step{
-		{Description: fmt.Sprintf("Research background and context for: %s", truncate(input, 40)), Type: "research"},
-		{Description: "Analyze key findings and trends", Type: "processing"},
-		{Description: "Research additional sources and perspectives", Type: "research"},
-		{Description: "Synthesize all findings into coherent analysis", Type: "processing"},
+		{Description: fmt.Sprintf("Research: %s", truncate(input, 40)), Type: "research"},
+		{Description: "Synthesize findings into report", Type: "processing"},
 	}
 }
 

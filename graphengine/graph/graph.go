@@ -956,9 +956,9 @@ func inlineGetNextTasks(registry *channels.Registry, completedTasks map[string]b
 				if targetNode == constants.End {
 					return tasks, nil
 				}
-				if !completedTasks[targetNode] {
-					nextNodes[targetNode] = true
-				}
+				// BSP mode: always schedule conditional edge targets, even if previously completed.
+				// The conditional router can dynamically route to different nodes each time.
+				nextNodes[targetNode] = true
 			}
 		}
 		if len(nextNodes) == 0 {
@@ -967,9 +967,10 @@ func inlineGetNextTasks(registry *channels.Registry, completedTasks map[string]b
 					if edge.To == constants.End {
 						return tasks, nil
 					}
-					if !completedTasks[edge.To] {
-						nextNodes[edge.To] = true
-					}
+					// BSP loop edges: always schedule, even if previously completed.
+					// completedTasks only prevents re-scheduling the SAME node,
+					// not nodes reached via outgoing edges (support loops).
+					nextNodes[edge.To] = true
 				}
 			}
 		}

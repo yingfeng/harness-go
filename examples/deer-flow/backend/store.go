@@ -91,9 +91,10 @@ type Store struct {
 	skills   []*Skill
 	msgSeq   map[string]int
 	compiled *ResearchWorkflow
+	llm      ChatModel
 }
 
-func NewStoreWithConfig(cfg *Config) *Store {
+func NewStoreWithConfig(cfg *Config, llm ChatModel) *Store {
 	s := &Store{
 		threads:  make(map[string]*AgentThread),
 		runs:     make(map[string]*Run),
@@ -106,6 +107,7 @@ func NewStoreWithConfig(cfg *Config) *Store {
 			LastUpdated: time.Now(),
 			Facts:       make([]*Fact, 0),
 		},
+		llm: llm,
 	}
 	s.agents["lead_agent"] = &Agent{
 		Name:        "lead_agent",
@@ -721,7 +723,7 @@ func (s *Store) handleTokenUsage(w http.ResponseWriter, r *http.Request) {
 // ====================================================================
 
 func (s *Store) executeResearchGraph(runID, input string) {
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 	state := &DeerState{
 		UserInput:        input,
@@ -751,12 +753,13 @@ func (s *Store) executeResearchGraph(runID, input string) {
 }
 
 func (s *Store) executeResearchGraphStreaming(runID, input string, events chan<- string) {
+	llm := s.llm
 	defer func() {
 		fmt.Printf("[execute] goroutine ending for run=%s\n", runID)
 		close(events)
 	}()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 	state := &DeerState{
 		UserInput:        input,
@@ -767,63 +770,172 @@ func (s *Store) executeResearchGraphStreaming(runID, input string, events chan<-
 		ResearchResults:  make(map[string]string),
 	}
 
-	// Add user message
-	seq := s.addMsg(runID, "human", input, "user")
-	// Add user message event: LangGraph SDK 期望 {event:"messages", data:[message, metadata]}
-	humanID := uuid.NewString()
-	events <- fmt.Sprintf(`{"type":"messages","data":[{"type":"human","content":%q,"id":%q},null],"seq":%d}`, input, humanID, seq)
-
-	fmt.Printf("[execute] calling compiled.Invoke for run=%s\n", runID)
-	t0 := time.Now()
-	final, err := s.compiled.Invoke(ctx, state)
-	fmt.Printf("[execute] compiled.Invoke returned for run=%s, err=%v, elapsed=%v\n", runID, err, time.Since(t0))
-	s.mu.Lock()
-	run := s.runs[runID]
-	if run == nil {
-		s.mu.Unlock()
-		return
+	// Helper: emit a complete messages event (for non-streaming case like human msg)
+	emitMsg := func(role, content string) string {
+		seq := s.addMsg(runID, role, content, role)
+		msgID := uuid.NewString()
+		events <- fmt.Sprintf(`{"type":"messages","data":[{"type":"%s","content":%q,"id":%q},null],"seq":%d}`, role, content, msgID, seq)
+		return msgID
 	}
+
+	// Helper: stream an AI message token by token via GenerateStream.
+	// Emits values events after each chunk to trigger UI re-renders.
+	streamMsg := func(label string, tools []MockTool, msgs []map[string]string) (string, error) {
+		msgID := uuid.NewString()
+		accumulated := label
+		onChunk := func(chunk string) {
+			accumulated += chunk
+			// 每次 chunk 后发送 values 事件（含当前累积文本）以触发 UI 重渲染
+			events <- fmt.Sprintf(`{"type":"values","data":{"messages":[{"type":"ai","content":%q,"id":%q}]}}`, accumulated, msgID)
+		}
+		full, err := llm.GenerateStream(ctx, msgs, tools, onChunk)
+		if err != nil {
+			return "", err
+		}
+		content := label + full
+		seq2 := s.addMsg(runID, "ai", content, "ai")
+		// 发送 complete 事件标记消息完成
+		events <- fmt.Sprintf(`{"type":"messages","data":[{"type":"ai","content":%q,"id":%q},null],"seq":%d}`, content, msgID, seq2)
+		state.Messages = append(state.Messages, content)
+		return full, nil
+	}
+
+	// Send user message immediately
+	humanID := emitMsg("human", input)
+
+	fmt.Printf("[execute] starting streaming research for run=%s\n", runID)
+
+	// ====== Step 1: Coordinator ======
+	coordMsgs := buildLLMMessages(state, CoordinatorPrompt)
+	coordOutput, _, err := llm.GenerateWithTool(ctx, coordMsgs, []MockTool{handToPlannerTool()})
 	if err != nil {
-		run.Status = "failed"
-		run.Error = err.Error()
-		run.UpdatedAt = time.Now().UTC().Format(time.RFC3339Nano)
-		s.mu.Unlock()
+		s.failRun(runID, fmt.Sprintf("coordinator: %v", err))
 		events <- fmt.Sprintf(`{"type":"error","data":%q}`, err.Error())
 		events <- `{"type":"done","data":"failed"}`
 		return
 	}
-
-	// 先更新 run 状态，然后尽快解锁，避免后续 addMsg 死锁
-	run.Status = "completed"
-	run.Output = final.Report
-	run.UpdatedAt = time.Now().UTC().Format(time.RFC3339Nano)
-	s.mu.Unlock()
-
-	// 在锁外调用 addMsg（内部自己加锁），避免嵌套锁死锁
-	var allMessages []interface{}
-	allMessages = append(allMessages, map[string]interface{}{"type": "human", "content": input, "id": humanID})
-	for _, msg := range final.Messages {
-		seq := s.addMsg(runID, "ai", msg, "agent")
-		msgID := uuid.NewString()
-		events <- fmt.Sprintf(`{"type":"messages","data":[{"type":"ai","content":%q,"id":%q},null],"seq":%d}`, msg, msgID, seq)
-		allMessages = append(allMessages, map[string]interface{}{"type": "ai", "content": msg, "id": msgID})
+	if toolName, toolArgs, isTool := ParseToolResult(coordOutput); isTool && toolName == "hand_to_planner" {
+		emitMsg("ai", fmt.Sprintf("[Coordinator] Routing to planner. Input: %s", toolArgs))
+	} else {
+		// 非研究请求：流式返回 coordinator 回复
+		_, err := streamMsg("[Coordinator] ", nil, coordMsgs)
+		if err != nil {
+			s.failRun(runID, fmt.Sprintf("coordinator: %v", err))
+			events <- fmt.Sprintf(`{"type":"error","data":%q}`, err.Error())
+			events <- `{"type":"done","data":"failed"}`
+			return
+		}
+		s.completeRun(runID, state)
+		s.emitValues(runID, events, humanID, input, state)
+		events <- fmt.Sprintf(`{"type":"metadata","data":{"run_id":%q}}`, runID)
+		events <- `{"type":"done","data":"completed"}`
+		return
 	}
 
-	if final.Report != "" {
-		seq := s.addMsg(runID, "ai", final.Report, "reporter")
-		msgID := uuid.NewString()
-		events <- fmt.Sprintf(`{"type":"messages","data":[{"type":"ai","content":%q,"id":%q},null],"seq":%d}`, final.Report, msgID, seq)
-		allMessages = append(allMessages, map[string]interface{}{"type": "ai", "content": final.Report, "id": msgID})
+	// ====== Step 2: Planner (streaming) ======
+	planMsgs := buildLLMMessages(state, PlannerPrompt)
+	_, err = streamMsg("[Planner] Research Plan:\n", []MockTool{planTool()}, planMsgs)
+	if err != nil {
+		s.failRun(runID, fmt.Sprintf("planner: %v", err))
+		events <- fmt.Sprintf(`{"type":"error","data":%q}`, err.Error())
+		events <- `{"type":"done","data":"failed"}`
+		return
+	}
+	state.PlanTitle = fmt.Sprintf("Research Plan: %s", truncate(state.UserInput, 40))
+	state.PlanThought = "Systematic research approach"
+	state.PlanSteps = generateDefaultPlan(state.UserInput)
+	state.MaxIterations = len(state.PlanSteps) * 2
+	state.CurrentStepIdx = 0
+
+	// ====== Step 3: ResearchTeam - execute all steps (streaming) ======
+	for state.CurrentStepIdx < len(state.PlanSteps) && state.IterationCount < state.MaxIterations {
+		step := &state.PlanSteps[state.CurrentStepIdx]
+		emitMsg("ai", fmt.Sprintf("[ResearchTeam] Executing step %d: %s (%s)", state.CurrentStepIdx+1, step.Description, step.Type))
+
+		var result string
+		switch step.Type {
+		case "research":
+			resMsgs := buildStepMessages(state, *step, ResearcherPrompt)
+			agentName := "[Researcher] Findings for '" + step.Description + "':\n"
+			result, err = streamMsg(agentName, []MockTool{searchTool()}, resMsgs)
+		case "processing":
+			codMsgs := buildStepMessages(state, *step, CoderPrompt)
+			agentName := "[Coder] Analysis for '" + step.Description + "':\n"
+			result, err = streamMsg(agentName, []MockTool{pythonREPLTool()}, codMsgs)
+		default:
+			state.CurrentStepIdx++
+			continue
+		}
+		if err != nil {
+			s.failRun(runID, fmt.Sprintf("step %d: %v", state.CurrentStepIdx, err))
+			events <- fmt.Sprintf(`{"type":"error","data":%q}`, err.Error())
+			events <- `{"type":"done","data":"failed"}`
+			return
+		}
+		step.ExecutionRes = result
+		if state.ResearchResults == nil {
+			state.ResearchResults = make(map[string]string)
+		}
+		state.ResearchResults[step.Description] = result
+		state.CurrentStepIdx++
+		state.IterationCount++
 	}
 
-	// LangGraph SDK useStream 需要 values 事件来触发 UI 重渲染
-	valuesJSON, _ := json.Marshal(map[string]interface{}{
-		"messages": allMessages,
-		"title":    final.PlanTitle,
-	})
-	events <- fmt.Sprintf(`{"type":"values","data":%s}`, string(valuesJSON))
+	// ====== Step 4: Reporter (streaming) ======
+	repMsgs := buildReportMessages(state, ReporterPrompt)
+	report, err := streamMsg("[Reporter] Final Report:\n", nil, repMsgs)
+	if err != nil {
+		s.failRun(runID, fmt.Sprintf("reporter: %v", err))
+		events <- fmt.Sprintf(`{"type":"error","data":%q}`, err.Error())
+		events <- `{"type":"done","data":"failed"}`
+		return
+	}
+	state.Report = report
+
+	// Complete
+	s.completeRun(runID, state)
+	s.emitValues(runID, events, humanID, input, state)
 	events <- fmt.Sprintf(`{"type":"metadata","data":{"run_id":%q}}`, runID)
 	events <- `{"type":"done","data":"completed"}`
+}
+
+// Helper: update run status to failed
+func (s *Store) failRun(runID, errMsg string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if run := s.runs[runID]; run != nil {
+		run.Status = "failed"
+		run.Error = errMsg
+		run.UpdatedAt = time.Now().UTC().Format(time.RFC3339Nano)
+	}
+}
+
+// Helper: update run status to completed
+func (s *Store) completeRun(runID string, state *DeerState) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if run := s.runs[runID]; run != nil {
+		run.Status = "completed"
+		run.Output = state.Report
+		run.UpdatedAt = time.Now().UTC().Format(time.RFC3339Nano)
+	}
+}
+
+// Helper: emit values event for UI refresh
+func (s *Store) emitValues(runID string, events chan<- string, humanID, input string, state *DeerState) {
+	var allMessages []interface{}
+	allMessages = append(allMessages, map[string]interface{}{"type": "human", "content": input, "id": humanID})
+	for _, msg := range state.Messages {
+		allMessages = append(allMessages, map[string]interface{}{"type": "ai", "content": msg, "id": uuid.NewString()})
+	}
+	if state.Report != "" {
+		allMessages = append(allMessages, map[string]interface{}{"type": "ai", "content": state.Report, "id": uuid.NewString()})
+	}
+	valuesJSON, _ := json.Marshal(map[string]interface{}{
+		"messages": allMessages,
+		"title":    state.PlanTitle,
+	})
+	events <- fmt.Sprintf(`{"type":"values","data":%s}`, string(valuesJSON))
 }
 
 func (s *Store) addMsg(runID, role, content, caller string) int {
