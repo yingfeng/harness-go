@@ -1004,7 +1004,16 @@ func inlineExecuteTasks(ctx context.Context, tasks []*inlineTask, g *StateGraph)
 		if !ok {
 			return nil, &errors.NodeNotFoundError{NodeName: t.nodeName}
 		}
-		output, err := node.Function(ctx, t.input)
+		var output interface{}
+		var err error
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					err = fmt.Errorf("node %s panic: %v", t.nodeName, r)
+				}
+			}()
+			output, err = node.Function(ctx, t.input)
+		}()
 		results = append(results, &inlineTaskResult{taskID: t.id, nodeName: t.nodeName, output: output, err: err})
 	}
 	return results, nil
