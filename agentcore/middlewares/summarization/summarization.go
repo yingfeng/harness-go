@@ -1,5 +1,7 @@
 // Package summarization provides a middleware that automatically summarizes
 // conversation history when token/message thresholds are exceeded.
+// Uses Compactor for safe message splitting, Supersede for removing stale
+// file operations, and priority-based summary compression.
 package summarization
 
 import (
@@ -31,22 +33,47 @@ type TypedConfig[M agentcore.MessageType] struct {
 	MaxRetries         int
 	MaxTokens          int
 	SummaryLang        string
+	// EnableSupersede enables Trident-like stale file operation removal.
+	EnableSupersede bool
+	// EnableCompression enables priority-based summary compression.
+	EnableCompression bool
+	// CompactionCfg configures the Compactor (token threshold, preserve count).
+	CompactionCfg *CompactionConfig
+	// SummaryBudget configures summary compression budget.
+	SummaryBudget *SummaryBudget
 }
 
 type Config = TypedConfig[*schema.Message]
 
 type middleware[M agentcore.MessageType] struct {
 	agentcore.BaseMiddleware[M]
-	cfg   *TypedConfig[M]
+	cfg       *TypedConfig[M]
+	compactor *Compactor
 }
 
 func NewTyped[M agentcore.MessageType](cfg *TypedConfig[M]) agentcore.TypedReActMiddleware[M] {
-	if cfg == nil { cfg = &TypedConfig[M]{MaxTokens: 160000} }
-	if cfg.Trigger == nil { cfg.Trigger = &TriggerCondition{MaxTokens: 160000} }
-	if cfg.MaxTokens <= 0 { cfg.MaxTokens = 160000 }
-	if cfg.Trigger.MaxTokens <= 0 { cfg.Trigger.MaxTokens = cfg.MaxTokens }
-	if cfg.TokenCounter == nil { cfg.TokenCounter = defaultTokenCounter[M] }
-	return &middleware[M]{cfg: cfg}
+	if cfg == nil {
+		cfg = &TypedConfig[M]{MaxTokens: 160000}
+	}
+	if cfg.Trigger == nil {
+		cfg.Trigger = &TriggerCondition{MaxTokens: 160000}
+	}
+	if cfg.MaxTokens <= 0 {
+		cfg.MaxTokens = 160000
+	}
+	if cfg.Trigger.MaxTokens <= 0 {
+		cfg.Trigger.MaxTokens = cfg.MaxTokens
+	}
+	if cfg.TokenCounter == nil {
+		cfg.TokenCounter = defaultTokenCounter[M]
+	}
+	if cfg.CompactionCfg == nil {
+		cfg.CompactionCfg = &CompactionConfig{
+			TriggerTokens: 100000,
+			PreserveRecent: 4,
+		}
+	}
+	return &middleware[M]{cfg: cfg, compactor: &Compactor{}}
 }
 
 func New(cfg *Config) agentcore.TypedReActMiddleware[*schema.Message] {
@@ -54,7 +81,17 @@ func New(cfg *Config) agentcore.TypedReActMiddleware[*schema.Message] {
 }
 
 func (m *middleware[M]) BeforeModelRewrite(ctx context.Context, state *agentcore.TypedReActAgentState[M], mc *agentcore.TypedModelContext[M]) (context.Context, *agentcore.TypedReActAgentState[M], error) {
-	if !m.shouldSummarize(ctx, state) { return ctx, state, nil }
+	// Phase 1: Supersede — remove stale file operations before checking thresholds.
+	if m.cfg.EnableSupersede {
+		msgs := typedToSchemaMessages(state.Messages)
+		filtered := ApplySupersede(msgs)
+		state.Messages = schemaMessagesToTyped[M](filtered)
+	}
+
+	// Phase 2: Check if compaction is needed.
+	if !m.shouldCompact(ctx, state) {
+		return ctx, state, nil
+	}
 
 	// Fire before event if enabled
 	if m.cfg.EmitInternalEvents {
@@ -64,31 +101,47 @@ func (m *middleware[M]) BeforeModelRewrite(ctx context.Context, state *agentcore
 		_ = agentcore.TypedSendEvent(ctx, ev)
 	}
 
-	// Perform summarization
-	summaryMsgs, err := m.summarize(ctx, state.Messages)
+	// Phase 3: Compact using Compactor.
+	msgs := typedToSchemaMessages(state.Messages)
+	compactCfg := m.cfg.CompactionCfg
+	summarizer := func(ctx context.Context, msgs []*schema.Message) (string, error) {
+		return m.generateSummary(ctx, schemaMessagesToTyped[M](msgs))
+	}
+
+	compacted, err := m.compactor.Compact(msgs, compactCfg, summarizer)
 	if err != nil {
-		return ctx, state, nil // Fall through on error, don't fail the agent
+		return ctx, state, nil
+	}
+
+	// Phase 4: Compress the summary message if enabled.
+	if m.cfg.EnableCompression && len(compacted) > 0 && compacted[0].Role == schema.RoleSystem &&
+		strings.Contains(compacted[0].Content, "<summary>") {
+		compacted[0].Content = compressSummaryContent(compacted[0].Content, m.cfg.SummaryBudget)
 	}
 
 	// Apply finalizer
+	typedCompacted := schemaMessagesToTyped[M](compacted)
 	if m.cfg.Finalize != nil {
-		summaryMsgs, err = m.cfg.Finalize(ctx, state.Messages, summaryMsgs)
-		if err != nil { return ctx, state, nil }
+		var err error
+		typedCompacted, err = m.cfg.Finalize(ctx, state.Messages, typedCompacted)
+		if err != nil {
+			return ctx, state, nil
+		}
 	}
 
 	// Callback
 	if m.cfg.Callback != nil {
 		before := *state
-		state.Messages = summaryMsgs
-		if err := m.cfg.Callback(ctx, before, *state); err != nil { return ctx, state, nil }
+		state.Messages = typedCompacted
+		_ = m.cfg.Callback(ctx, before, *state)
 		return ctx, state, nil
 	}
 
-	state.Messages = summaryMsgs
+	state.Messages = typedCompacted
 	return ctx, state, nil
 }
 
-func (m *middleware[M]) shouldSummarize(ctx context.Context, state *agentcore.TypedReActAgentState[M]) bool {
+func (m *middleware[M]) shouldCompact(ctx context.Context, state *agentcore.TypedReActAgentState[M]) bool {
 	if m.cfg.Trigger.MaxMessages > 0 && len(state.Messages) > m.cfg.Trigger.MaxMessages {
 		return true
 	}
@@ -101,46 +154,19 @@ func (m *middleware[M]) shouldSummarize(ctx context.Context, state *agentcore.Ty
 	return false
 }
 
-func (m *middleware[M]) summarize(ctx context.Context, msgs []M) ([]M, error) {
-	keepLast := 10
-	if len(msgs) <= keepLast+2 { return msgs, nil } // Not enough to summarize
-
-	split := len(msgs) - keepLast
-	summarizeMsgs := msgs[:split]
-	keepMsgs := msgs[split:]
-
-	// Talk to the model
-	summaryText, err := m.generateSummary(ctx, summarizeMsgs)
-	if err != nil { return msgs, err }
-
-	// Build summary message
-	var sysMsg M
-	switch any(sysMsg).(type) {
-	case *schema.Message:
-		content := fmt.Sprintf("[Previous conversation summarized]\n---\n%s\n---", summaryText)
-		sysMsg = any(schema.SystemMessage(content)).(M)
-	case *schema.AgenticMessage:
-		sysMsg = any(&schema.AgenticMessage{Role: schema.AgenticRoleSystem,
-			Content: fmt.Sprintf("[Previous conversation summarized]\n---\n%s\n---", summaryText)}).(M)
+func (m *middleware[M]) generateSummary(ctx context.Context, msgs []M) (string, error) {
+	if m.cfg.Model == nil {
+		return fmt.Sprintf("(%d messages)", len(msgs)), nil
 	}
 
-	// Replace summarized portion
-	result := make([]M, 0, 1+len(keepMsgs))
-	result = append(result, sysMsg)
-	result = append(result, keepMsgs...)
-	return result, nil
-}
-
-func (m *middleware[M]) generateSummary(ctx context.Context, msgs []M) (string, error) {
-	if m.cfg.Model == nil { return fmt.Sprintf("(%d messages)", len(msgs)), nil }
-
-	// Build summary prompt
 	instruction := getSummaryInstruction(m.cfg.SummaryLang)
 	var promptMsgs []M
 	if m.cfg.GenModelInput != nil {
 		var err error
 		promptMsgs, err = m.cfg.GenModelInput(ctx, instruction, msgs)
-		if err != nil { return "", err }
+		if err != nil {
+			return "", err
+		}
 	} else {
 		var builder strings.Builder
 		builder.WriteString(instruction)
@@ -150,12 +176,14 @@ func (m *middleware[M]) generateSummary(ctx context.Context, msgs []M) (string, 
 			if text != "" {
 				builder.WriteString(fmt.Sprintf("[%d]: %s\n", i+1, truncateText(text, 500)))
 			}
-			if i > 200 { builder.WriteString("...[truncated]"); break }
+			if i > 200 {
+				builder.WriteString("...[truncated]")
+				break
+			}
 		}
 		promptMsgs = []M{any(schema.UserMessage(builder.String())).(M)}
 	}
 
-	// Call with retry
 	var lastErr error
 	maxAttempts := m.cfg.MaxRetries
 	if maxAttempts <= 0 {
@@ -183,7 +211,36 @@ func (m *middleware[M]) generateSummary(ctx context.Context, msgs []M) (string, 
 	return fmt.Sprintf("(%d messages)", len(msgs)), lastErr
 }
 
+func compressSummaryContent(content string, budget *SummaryBudget) string {
+	start := strings.Index(content, "<summary>")
+	end := strings.LastIndex(content, "</summary>")
+	if start < 0 || end <= start {
+		return content
+	}
+	inner := content[start+9 : end]
+	compressed := CompressSummary(inner, budget)
+	return content[:start+9] + "\n" + compressed + "\n" + content[end:]
+}
+
 // ---- Helper functions ----
+
+func typedToSchemaMessages[M agentcore.MessageType](msgs []M) []*schema.Message {
+	result := make([]*schema.Message, 0, len(msgs))
+	for _, m := range msgs {
+		if msg, ok := any(m).(*schema.Message); ok {
+			result = append(result, msg)
+		}
+	}
+	return result
+}
+
+func schemaMessagesToTyped[M agentcore.MessageType](msgs []*schema.Message) []M {
+	result := make([]M, len(msgs))
+	for i, m := range msgs {
+		result[i] = any(m).(M)
+	}
+	return result
+}
 
 func getSummaryInstruction(lang string) string {
 	if lang == "zh" {
@@ -204,14 +261,18 @@ Requirements:
 
 func extractText[M agentcore.MessageType](msg M) string {
 	switch v := any(msg).(type) {
-	case *schema.Message: return v.Content
-	case *schema.AgenticMessage: return v.Content
+	case *schema.Message:
+		return v.Content
+	case *schema.AgenticMessage:
+		return v.Content
 	}
 	return ""
 }
 
 func truncateText(s string, maxLen int) string {
-	if len(s) <= maxLen { return s }
+	if len(s) <= maxLen {
+		return s
+	}
 	return s[:maxLen] + "..."
 }
 
@@ -219,12 +280,11 @@ func defaultTokenCounter[M agentcore.MessageType](ctx context.Context, msgs []M)
 	total := 0
 	for _, msg := range msgs {
 		text := extractText(msg)
-		total += len([]rune(text)) * 4 / 3 // ~1.33 chars per token
+		total += len([]rune(text)) * 4 / 3
 	}
 	return total, nil
 }
 
-// isSummaryMessage checks if the message content contains the summary tag.
 func isSummaryMessage[M agentcore.MessageType](msg M) bool {
 	switch v := any(msg).(type) {
 	case *schema.Message:
@@ -238,7 +298,7 @@ func isSummaryMessage[M agentcore.MessageType](msg M) bool {
 // FinalizerBuilder builds a Finalize function for summarization.
 type FinalizerBuilder struct {
 	Lang       string
-	KeepLatest int // Number of recent messages to preserve (default: 10)
+	KeepLatest int
 }
 
 // Build creates a Finalize function that preserves the most recent messages.
@@ -248,7 +308,6 @@ func (b *FinalizerBuilder) Build() func(ctx context.Context, original, summary [
 		keep = DefaultKeepMessages
 	}
 	return func(ctx context.Context, original, summary []*schema.Message) ([]*schema.Message, error) {
-		// Keep the summary and the last N messages from original
 		if len(original) <= keep {
 			return summary, nil
 		}
