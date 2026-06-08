@@ -57,8 +57,8 @@ type deferredCheckpoint struct {
 // NewEngine creates a new Pregel engine bound to a StateGraph.
 // Options configure checkpointer, recursion limit, concurrency, retry, cache, etc.
 //
-// The engine is not reusable across multiple Run calls; create a new engine
-// per execution when isolation is required.
+// The engine is reusable across multiple Run calls. Each call creates its own
+// background executor for isolation.
 func NewEngine(g *graph.StateGraph, opts ...EngineOption) *Engine {
 	eng := &Engine{
 		graph:           g,
@@ -258,11 +258,12 @@ func (e *Engine) Run(ctx context.Context, input interface{}, mode types.StreamMo
 			e.currentCheckpoint = checkpoint.NewCheckpoint(threadID, 0)
 		}
 
-		// Start background executor
-		if e.backgroundExec != nil {
-			e.backgroundExec.Start(ctx)
-			defer e.backgroundExec.Stop()
-		}
+		// Create per-run background executor (not shared, so concurrent calls are safe)
+		backgroundExec := NewBackgroundExecutor(e.maxConcurrency, 100)
+		backgroundExec.Start(ctx)
+		defer backgroundExec.Stop()
+		// Replace engine-level backgroundExec reference for use by async pipeline
+		e.backgroundExec = backgroundExec
 		
 		// Execute Pregel loop
 		step := 0
@@ -482,20 +483,18 @@ func (e *Engine) prepareNextTasksWithMode(
 		// Determine triggers for this node
 		triggers := e.getTriggers(node)
 		
-		// Don't re-execute completed nodes
-		if !completedTasks[nodeName] {
-			var task *Task
-			if forExecution {
-				task = e.createTask(node, currentState, triggers, []string{})
-			} else {
-				task = e.createTaskInfo(node, currentState, triggers, []string{})
-			}
-			tasks = append(tasks, task)
-			
-			// Build trigger to nodes mapping
-			for _, trigger := range triggers {
-				triggerToNodes[trigger] = struct{}{}
-			}
+		// BSP mode: always schedule, even if previously completed (supports loops).
+		var task *Task
+		if forExecution {
+			task = e.createTask(node, currentState, triggers, []string{})
+		} else {
+			task = e.createTaskInfo(node, currentState, triggers, []string{})
+		}
+		tasks = append(tasks, task)
+		
+		// Build trigger to nodes mapping
+		for _, trigger := range triggers {
+			triggerToNodes[trigger] = struct{}{}
 		}
 	}
 	
@@ -529,6 +528,10 @@ func (e *Engine) prepareNextTasksDAG(
 		predecessors := incomingEdges[node.Name]
 		allDone := true
 		for _, pred := range predecessors {
+			// constants.Start and constants.End are always considered completed.
+			if pred == constants.Start || pred == constants.End {
+				continue
+			}
 			if !completedTasks[pred] {
 				allDone = false
 				break
