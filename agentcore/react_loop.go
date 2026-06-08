@@ -92,7 +92,6 @@ func (a *ReActAgent[M]) buildReActRunFunc() typedRunFunc[M] {
 
 		if state.RemainingIterations <= 0 {
 			p.generator.Send(&TypedAgentEvent[M]{Err: fmt.Errorf("exceeded max iterations (%d)", a.config.MaxIterations)})
-			return
 		}
 		if a.config.OutputKey != "" && len(state.Messages) > 0 {
 			if last := state.Messages[len(state.Messages)-1]; !isNilMessage(last) {
@@ -105,6 +104,9 @@ func (a *ReActAgent[M]) buildReActRunFunc() typedRunFunc[M] {
 			}
 		}
 		a.runAfterAgent(&ctx, state, p.generator)
+		if state.RemainingIterations <= 0 {
+			return
+		}
 	}
 }
 

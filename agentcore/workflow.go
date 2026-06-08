@@ -116,6 +116,9 @@ func (a *workflowAgent) runSeq(ctx context.Context, gen *AsyncGenerator[*AgentEv
 		wfCtx = updateRunPathOnly(wfCtx, sa.Name(wfCtx))
 		last := drainEvents(si, gen)
 		if last != nil {
+			if last.Err != nil {
+				gen.Send(last); return nil
+			}
 			if last.Action.internalInterrupted != nil {
 				s := &workflowState{InterruptIdx: i}
 				ev := CompositeInterrupt(ctx, "Seq interrupted", s, last.Action.internalInterrupted)
@@ -157,6 +160,9 @@ func (a *workflowAgent) runLoop(ctx context.Context, gen *AsyncGenerator[*AgentE
 			_ = breakEv
 			last := drainEvents(si, gen)
 			if last != nil {
+				if last.Err != nil {
+					gen.Send(last); return nil
+				}
 				if last.Action.BreakLoop != nil && !last.Action.BreakLoop.Done {
 					last.Action.BreakLoop.Done = true
 					last.Action.BreakLoop.CurrentIterations = i
@@ -260,7 +266,10 @@ func buildPath(ctx context.Context, subs []*flowAgent, idx, iter int) context.Co
 func drainEvents(ai *AsyncIterator[*AgentEvent], gen *AsyncGenerator[*AgentEvent]) *AgentEvent {
 	var last *AgentEvent
 	for { ev, ok := ai.Next(); if !ok { break }
-		if ev.Err != nil { gen.Send(ev); return nil }
+		if ev.Err != nil {
+			// Return error event instead of sending it to gen — caller handles propagation.
+			return ev
+		}
 		if ev.Action != nil { last = ev; continue }
 		gen.Send(ev)
 	}
