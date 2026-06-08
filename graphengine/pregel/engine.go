@@ -453,12 +453,20 @@ func (e *Engine) prepareNextTasksWithMode(
 			return nil, nil, fmt.Errorf("no entry point set")
 		}
 		
+		// Handle direct edge Start → End (empty/trivial graph)
+		if entryPoint == constants.End {
+			return tasks, triggerToNodes, nil
+		}
+		
 		node := e.getNode(entryPoint)
 		if node == nil {
 			return nil, nil, &errors.NodeNotFoundError{NodeName: entryPoint}
 		}
 		
-		task := e.createTask(node, currentState, []string{}, []string{})
+		// Pass node Triggers as task Channels so the first task reads from
+		// registered channels rather than receiving a nil state.
+		triggers := e.getTriggers(node)
+		task := e.createTask(node, currentState, triggers, []string{})
 		tasks = append(tasks, task)
 		triggerToNodes["__start__"] = struct{}{}
 		return tasks, triggerToNodes, nil
@@ -630,6 +638,10 @@ func (e *Engine) applyWrites(
 
 	for _, result := range results {
 		if result.Err != nil {
+			continue
+		}
+		// Skip nil outputs (node returned nil, nil — no state update)
+		if result.Output == nil {
 			continue
 		}
 

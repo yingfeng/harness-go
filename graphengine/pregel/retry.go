@@ -24,13 +24,20 @@ func NewRetryExecutor(policy *types.RetryPolicy) *RetryExecutor {
 }
 
 // Execute executes a function with retry logic.
-func (e *RetryExecutor) Execute(ctx context.Context, name string, fn func(context.Context) (interface{}, error)) (interface{}, error) {
+func (e *RetryExecutor) Execute(ctx context.Context, name string, fn func(context.Context) (interface{}, error)) (output interface{}, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			output = nil
+			err = fmt.Errorf("node %s panicked: %v", name, r)
+		}
+	}()
+	
 	var lastErr error
 	var lastOutput interface{}
 	
 	for attempt := 1; attempt <= e.policy.MaxAttempts; attempt++ {
 		// Execute the function
-		output, err := fn(ctx)
+		output, err = fn(ctx)
 		if err == nil {
 			return output, nil
 		}
