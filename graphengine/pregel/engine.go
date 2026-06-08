@@ -339,13 +339,22 @@ func (e *Engine) Run(ctx context.Context, input interface{}, mode types.StreamMo
 			}
 			
 			// Mark tasks as completed and track last state
+			allFailed := len(results) > 0
 			for _, result := range results {
 				if result.Err == nil {
+					allFailed = false
 					completedTasks[result.Name] = true
 					lastCompletedNode = result.Name
 					// Merge result into lastState
 					lastState = e.mergeStates(lastState, result.Output)
 				}
+			}
+			// If every task in this step failed, the graph cannot make progress.
+			// Terminate immediately rather than infinitely re-scheduling the
+			// same failing nodes (e.g. a panicking node caught by recover()).
+			if allFailed {
+				errCh <- fmt.Errorf("all %d tasks failed in step %d", len(results), step)
+				return
 			}
 			
 			// Apply writes to channels
