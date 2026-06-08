@@ -1,11 +1,17 @@
 package agentcore
 
 import (
+	"bytes"
 	"context"
+	"encoding/gob"
 	"io"
 
 	"github.com/infiniflow/ragflow/harness/agentcore/schema"
 )
+
+func init() {
+	gob.Register(&RunStep{})
+}
 
 // MessageType is the sealed type constraint for agent message types.
 type MessageType interface {
@@ -60,6 +66,23 @@ type RunStep struct {
 func NewRunStep(agentName string) *RunStep { return &RunStep{agentName: agentName} }
 func (r *RunStep) String() string          { return r.agentName }
 func (r *RunStep) Equals(r1 RunStep) bool  { return r.agentName == r1.agentName }
+
+// GobEncode implements gob.GobEncoder for checkpoint serialization.
+func (r *RunStep) GobEncode() ([]byte, error) {
+	var buf bytes.Buffer
+	enc := gob.NewEncoder(&buf)
+	if err := enc.Encode(r.agentName); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+// GobDecode implements gob.GobDecoder for checkpoint deserialization.
+func (r *RunStep) GobDecode(data []byte) error {
+	buf := bytes.NewBuffer(data)
+	dec := gob.NewDecoder(buf)
+	return dec.Decode(&r.agentName)
+}
 
 // ===== Events =====
 
