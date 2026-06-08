@@ -16,6 +16,7 @@ package agentcore
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/infiniflow/ragflow/harness/agentcore/schema"
 	"github.com/infiniflow/ragflow/harness/graphengine/constants"
@@ -36,6 +37,22 @@ type WorkflowGraphState struct {
 	LoopIter      int        // for loop mode
 	MaxLoopIter   int        // for loop mode
 	Done          bool
+
+	mu sync.Mutex // protects Messages from concurrent access in inline execution
+}
+
+// AppendMessage safely appends a message to the Messages slice.
+func (s *WorkflowGraphState) AppendMessage(msg *schema.Message) {
+	s.mu.Lock()
+	s.Messages = append(s.Messages, msg)
+	s.mu.Unlock()
+}
+
+// MessagesLen safely returns the length of Messages.
+func (s *WorkflowGraphState) MessagesLen() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.Messages)
 }
 
 // WorkflowGraph wraps a CompiledGraph that runs sub-agents as graph nodes.
@@ -66,7 +83,10 @@ func NewSequentialGraph(ctx context.Context, cfg *SequentialConfig, cptr graph.C
 		nodeName := fmt.Sprintf("sub_%d", i)
 		sg.AddNode(nodeName, func(ctx context.Context, state interface{}) (interface{}, error) {
 			s := state.(*WorkflowGraphState)
-			iter := ag.Run(ctx, &AgentInput{Messages: s.Messages})
+			// Copy Messages slice so the sub-agent's goroutine doesn't share
+			// the underlying array with the graph's concurrent goroutines.
+			msgCopy := append([]*schema.Message(nil), s.Messages...)
+			iter := ag.Run(ctx, &AgentInput{Messages: msgCopy})
 			for {
 				ev, ok := iter.Next()
 				if !ok {
@@ -78,7 +98,7 @@ func NewSequentialGraph(ctx context.Context, cfg *SequentialConfig, cptr graph.C
 				if ev.Output != nil && ev.Output.MessageOutput != nil &&
 					!ev.Output.MessageOutput.IsStreaming &&
 					ev.Output.MessageOutput.Message != nil {
-					s.Messages = append(s.Messages, ev.Output.MessageOutput.Message)
+					s.AppendMessage(ev.Output.MessageOutput.Message)
 				}
 			}
 			s.CurrentStep = idx + 1
@@ -140,7 +160,10 @@ func NewParallelGraph(ctx context.Context, cfg *ParallelConfig, cptr graph.Check
 		nodeName := fmt.Sprintf("sub_%d", i)
 		sg.AddNode(nodeName, func(ctx context.Context, state interface{}) (interface{}, error) {
 			s := state.(*WorkflowGraphState)
-			iter := ag.Run(ctx, &AgentInput{Messages: s.Messages})
+			// Copy Messages slice so the sub-agent's goroutine doesn't share
+			// the underlying array with the graph's concurrent goroutines.
+			msgCopy := append([]*schema.Message(nil), s.Messages...)
+			iter := ag.Run(ctx, &AgentInput{Messages: msgCopy})
 			for {
 				ev, ok := iter.Next()
 				if !ok {
@@ -152,11 +175,9 @@ func NewParallelGraph(ctx context.Context, cfg *ParallelConfig, cptr graph.Check
 				if ev.Output != nil && ev.Output.MessageOutput != nil &&
 					!ev.Output.MessageOutput.IsStreaming &&
 					ev.Output.MessageOutput.Message != nil {
-					s.Messages = append(s.Messages, ev.Output.MessageOutput.Message)
+					s.AppendMessage(ev.Output.MessageOutput.Message)
 				}
 			}
-			// Return only the Messages field to avoid concurrent writes to
-			// other struct fields (Done, CurrentStep, etc.) from parallel nodes.
 			return map[string]interface{}{
 				"Messages": s.Messages,
 			}, nil
@@ -210,7 +231,10 @@ func NewLoopGraph(ctx context.Context, cfg *LoopConfig, cptr graph.Checkpointer,
 		nodeName := fmt.Sprintf("sub_%d", i)
 		sg.AddNode(nodeName, func(ctx context.Context, state interface{}) (interface{}, error) {
 			s := state.(*WorkflowGraphState)
-			iter := ag.Run(ctx, &AgentInput{Messages: s.Messages})
+			// Copy Messages slice so the sub-agent's goroutine doesn't share
+			// the underlying array with the graph's concurrent goroutines.
+			msgCopy := append([]*schema.Message(nil), s.Messages...)
+			iter := ag.Run(ctx, &AgentInput{Messages: msgCopy})
 			for {
 				ev, ok := iter.Next()
 				if !ok {
@@ -222,7 +246,7 @@ func NewLoopGraph(ctx context.Context, cfg *LoopConfig, cptr graph.Checkpointer,
 				if ev.Output != nil && ev.Output.MessageOutput != nil &&
 					!ev.Output.MessageOutput.IsStreaming &&
 					ev.Output.MessageOutput.Message != nil {
-					s.Messages = append(s.Messages, ev.Output.MessageOutput.Message)
+					s.AppendMessage(ev.Output.MessageOutput.Message)
 				}
 			}
 			s.CurrentStep = idx + 1

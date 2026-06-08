@@ -42,8 +42,9 @@ func (t *workflowNodeToolImpl) Description() string  { return t.desc }
 func (t *workflowNodeToolImpl) Invoke(ctx context.Context, args string, opts ...ToolOption) (string, error) {
 	t.mu.Lock()
 	*t.order = append(*t.order, t.name)
+	orderLen := len(*t.order)
 	t.mu.Unlock()
-	return fmt.Sprintf("%s executed at %d", t.name, len(*t.order)), nil
+	return fmt.Sprintf("%s executed at %d", t.name, orderLen), nil
 }
 func (t *workflowNodeToolImpl) Stream(ctx context.Context, args string, opts ...ToolOption) (*schema.StreamReader[string], error) {
 	return schema.StreamReaderFromArray([]string{"stream: " + t.name}), nil

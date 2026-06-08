@@ -146,7 +146,10 @@ func TestWorkflow_SequentialCancel_ShouldNotTriggerInterruptCheckpoint(t *testin
 			break
 		}
 		_ = ev
-		if len(execOrder) >= 3 {
+		mu.Lock()
+		orderLen := len(execOrder)
+		mu.Unlock()
+		if orderLen >= 3 {
 			cancel()
 			break
 		}
@@ -509,20 +512,18 @@ func TestWorkflow_SequentialCancel_StateConsistency(t *testing.T) {
 	iter := wf.Run(ctx, &AgentInput{Messages: []Message{schema.UserMessage("consistency")}}, opt)
 
 	var lastEvent *AgentEvent
-	for ev := range drainEventsChan(iter) {
-		lastEvent = ev
-		if len(execOrder) >= 4 {
-			cancel()
-			break
-		}
-	}
-	// Drain
 	for {
 		ev, ok := iter.Next()
 		if !ok {
 			break
 		}
 		lastEvent = ev
+		mu.Lock()
+		orderLen := len(execOrder)
+		mu.Unlock()
+		if orderLen >= 4 {
+			cancel()
+		}
 	}
 
 	if lastEvent != nil && lastEvent.Action != nil && lastEvent.Action.Interrupted != nil {

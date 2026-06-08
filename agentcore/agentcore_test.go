@@ -94,15 +94,21 @@ func (s *memStore) Set(ctx context.Context, key string, data []byte) error {
 // ---- forcedToolModel: produces tool calls on first Generate then falls back ----
 
 type forcedToolModel struct {
-	inner      *mockModel
-	toolCalls  []schema.ToolCall
-	finalResp  string
-	firstCall  bool
+	inner     *mockModel
+	toolCalls []schema.ToolCall
+	finalResp string
+	mu        sync.Mutex
+	firstCall bool
 }
 
 func (m *forcedToolModel) Generate(ctx context.Context, msgs []Message, opts ...modelOption) (Message, error) {
-	if m.firstCall {
+	m.mu.Lock()
+	isFirst := m.firstCall
+	if isFirst {
 		m.firstCall = false
+	}
+	m.mu.Unlock()
+	if isFirst {
 		return &schema.Message{
 			Role:      schema.RoleAssistant,
 			Content:   "",

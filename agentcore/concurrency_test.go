@@ -396,19 +396,11 @@ func TestInterrupt_Concurrent(t *testing.T) {
 	runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: agent, CheckPointStore: store})
 	iter := runner.Run(ctx, []*schema.Message{schema.UserMessage("ci test")})
 
-	var wg sync.WaitGroup
-	for i := 0; i < 5; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for {
-				ev, ok := iter.Next()
-				if !ok {
-					return
-				}
-				_ = ev
-			}
-		}()
+	// Single consumer — iter.Next() is not safe for concurrent access.
+	for {
+		_, ok := iter.Next()
+		if !ok {
+			break
+		}
 	}
-	wg.Wait()
 }
