@@ -1,7 +1,3 @@
-// API client — calls relative URLs that Next.js rewrites proxy to Go backend.
-
-const API = ''; // relative, e.g. /api/models
-
 export interface WorkflowNode {
   id: string;
   type: string;
