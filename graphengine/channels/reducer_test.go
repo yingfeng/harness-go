@@ -36,14 +36,14 @@ func TestReducerChannel_IntraStep(t *testing.T) {
 		t.Errorf("expected 8 (5+3), got %v", val)
 	}
 
-	// Another step: single value (no intra-step combine)
+	// Another step: single value combined with current via reducer.
 	updated, err = ch.Update([]interface{}{2})
 	if err != nil {
 		t.Fatalf("Update 2: %v", err)
 	}
 	val, _ = ch.Get()
-	if val != 2 {
-		t.Errorf("expected 2 (LastValue overwrite), got %v", val)
+	if val != 10 {
+		t.Errorf("expected 10 (8+2 via reducer), got %v", val)
 	}
 }
 

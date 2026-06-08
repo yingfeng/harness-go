@@ -130,6 +130,11 @@ func (c *NamedBarrierValue) FromCheckpoint(checkpoint interface{}) Channel {
 
 	newCh := NewNamedBarrierValue(c.Typ, nil)
 	newCh.Key = c.Key
+	// Restore names from original (FromCheckpoint is called on the same channel).
+	newCh.names = make(map[string]bool, len(c.names))
+	for k, v := range c.names {
+		newCh.names[k] = v
+	}
 
 	if checkpoint != nil && !IsMissing(checkpoint) {
 		// Restore seen from checkpoint
@@ -307,6 +312,11 @@ func (c *NamedBarrierValueAfterFinish) FromCheckpoint(checkpoint interface{}) Ch
 
 	newCh := NewNamedBarrierValueAfterFinish(c.Typ, nil)
 	newCh.Key = c.Key
+	// Restore names from original.
+	newCh.names = make(map[string]bool, len(c.names))
+	for k, v := range c.names {
+		newCh.names[k] = v
+	}
 
 	if checkpoint != nil && !IsMissing(checkpoint) {
 		if cp, ok := checkpoint.(map[string]interface{}); ok {

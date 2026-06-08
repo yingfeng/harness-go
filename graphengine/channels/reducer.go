@@ -20,19 +20,21 @@ func NewReducerChannel(channel Channel, reducer types.ReducerFunc) *ReducerChann
 	}
 }
 
-// Update applies the reducer to multiple values before updating the wrapped channel.
+// Update applies the reducer to combine new values with the current value.
 func (rc *ReducerChannel) Update(values []interface{}) (bool, error) {
 	if len(values) == 0 {
 		return false, nil
 	}
 
-	// If there's only one value, apply it directly
-	if len(values) == 1 {
-		return rc.Channel.Update(values)
-	}
+	// Read current value from the wrapped channel.
+	current, err := rc.Channel.Get()
 
-	// Apply reducer to combine all values into one
+	// Combine all values with the current value using the reducer.
+	// If the channel is empty, start from values[0] and combine the rest.
 	combined := values[0]
+	if err == nil {
+		combined = rc.reducer(current, combined)
+	}
 	for i := 1; i < len(values); i++ {
 		combined = rc.reducer(combined, values[i])
 	}
