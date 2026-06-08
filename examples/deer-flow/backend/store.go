@@ -78,6 +78,9 @@ type Skill struct {
 	Description string `json:"description"`
 	Content     string `json:"content"`
 	Path        string `json:"path"`
+	Category    string `json:"category"`    // "public" or "custom"
+	License     string `json:"license,omitempty"`
+	Enabled     bool   `json:"enabled"`     // 前端可切换
 }
 
 // Store holds all in-memory state.
@@ -800,13 +803,16 @@ func (s *Store) executeResearchGraphStreaming(runID, input string, events chan<-
 		return full, nil
 	}
 
+	// 构建 skills 注入段
+	skillsSection := s.buildSkillsPromptSection()
+
 	// Send user message immediately
 	humanID := emitMsg("human", input)
 
 	fmt.Printf("[execute] starting streaming research for run=%s\n", runID)
 
 	// ====== Step 1: Coordinator ======
-	coordMsgs := buildLLMMessages(state, CoordinatorPrompt)
+	coordMsgs := buildLLMMessages(state, CoordinatorPrompt+skillsSection)
 	coordOutput, _, err := llm.GenerateWithTool(ctx, coordMsgs, []MockTool{handToPlannerTool()})
 	if err != nil {
 		s.failRun(runID, fmt.Sprintf("coordinator: %v", err))
@@ -833,7 +839,7 @@ func (s *Store) executeResearchGraphStreaming(runID, input string, events chan<-
 	}
 
 	// ====== Step 2: Planner (streaming) ======
-	planMsgs := buildLLMMessages(state, PlannerPrompt)
+	planMsgs := buildLLMMessages(state, PlannerPrompt+skillsSection)
 	_, err = streamMsg("[Planner] Research Plan:\n", []MockTool{planTool()}, planMsgs)
 	if err != nil {
 		s.failRun(runID, fmt.Sprintf("planner: %v", err))
@@ -855,13 +861,13 @@ func (s *Store) executeResearchGraphStreaming(runID, input string, events chan<-
 		var result string
 		switch step.Type {
 		case "research":
-			resMsgs := buildStepMessages(state, *step, ResearcherPrompt)
-			agentName := "[Researcher] Findings for '" + step.Description + "':\n"
-			result, err = streamMsg(agentName, []MockTool{searchTool()}, resMsgs)
-		case "processing":
-			codMsgs := buildStepMessages(state, *step, CoderPrompt)
-			agentName := "[Coder] Analysis for '" + step.Description + "':\n"
-			result, err = streamMsg(agentName, []MockTool{pythonREPLTool()}, codMsgs)
+				resMsgs := buildStepMessages(state, *step, ResearcherPrompt+skillsSection)
+				agentName := "[Researcher] Findings for '" + step.Description + "':\n"
+				result, err = streamMsg(agentName, []MockTool{searchTool()}, resMsgs)
+			case "processing":
+				codMsgs := buildStepMessages(state, *step, CoderPrompt+skillsSection)
+				agentName := "[Coder] Analysis for '" + step.Description + "':\n"
+				result, err = streamMsg(agentName, []MockTool{pythonREPLTool()}, codMsgs)
 		default:
 			state.CurrentStepIdx++
 			continue
@@ -882,7 +888,7 @@ func (s *Store) executeResearchGraphStreaming(runID, input string, events chan<-
 	}
 
 	// ====== Step 4: Reporter (streaming) ======
-	repMsgs := buildReportMessages(state, ReporterPrompt)
+	repMsgs := buildReportMessages(state, ReporterPrompt+skillsSection)
 	report, err := streamMsg("[Reporter] Final Report:\n", nil, repMsgs)
 	if err != nil {
 		s.failRun(runID, fmt.Sprintf("reporter: %v", err))
@@ -1173,7 +1179,27 @@ func (s *Store) handleUpdateMCPConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Store) handleUpdateSkill(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, 200, map[string]string{"status": "ok"})
+	name := r.PathValue("skill_name")
+	var req struct {
+		Enabled *bool `json:"enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, 400, "invalid request body")
+		return
+	}
+	s.mu.Lock()
+	for _, sk := range s.skills {
+		if sk.Name == name {
+			if req.Enabled != nil {
+				sk.Enabled = *req.Enabled
+			}
+			s.mu.Unlock()
+			writeJSON(w, 200, sk)
+			return
+		}
+	}
+	s.mu.Unlock()
+	writeError(w, 404, "skill not found")
 }
 
 func (s *Store) handleGetMemory(w http.ResponseWriter, r *http.Request) {
@@ -1240,6 +1266,31 @@ func (s *Store) registerAuthRoutes(mux *http.ServeMux) {
 	})
 }
 
+// buildSkillsPromptSection generates an XML block with enabled skills for the LLM system prompt.
+func (s *Store) buildSkillsPromptSection() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var enabled []*Skill
+	for _, sk := range s.skills {
+		if sk.Enabled && sk.Category == "public" {
+			enabled = append(enabled, sk)
+		}
+	}
+	if len(enabled) == 0 {
+		return ""
+	}
+	var sb strings.Builder
+	sb.WriteString("\n\n<skill_system>\nYou have access to skills that provide optimized workflows for specific tasks.\n")
+	sb.WriteString("When a user query matches a skill's use case, load and follow the skill's instructions.\n\n")
+	sb.WriteString("<available_skills>\n")
+	for _, sk := range enabled {
+		escapedDesc := strings.ReplaceAll(sk.Description, "\"", "'")
+		sb.WriteString(fmt.Sprintf("  <skill>\n    <name>%s</name>\n    <description>%s</description>\n    <location>%s</location>\n  </skill>\n", sk.Name, escapedDesc, sk.Path))
+	}
+	sb.WriteString("</available_skills>\n</skill_system>")
+	return sb.String()
+}
+
 // ====================================================================
 // Skills loading
 // ====================================================================
@@ -1253,40 +1304,83 @@ func loadSkillsFrom(dir string) []*Skill {
 		return nil
 	}
 	var skills []*Skill
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return nil
-	}
-	for _, entry := range entries {
-		if !entry.IsDir() {
+
+	// Scan both public/ and custom/ subdirectories
+	categories := []string{"public", "custom"}
+	for _, cat := range categories {
+		catDir := filepath.Join(dir, cat)
+		catInfo, err := os.Stat(catDir)
+		if err != nil || !catInfo.IsDir() {
 			continue
 		}
-		skillPath := filepath.Join(dir, entry.Name(), "SKILL.md")
-		data, err := os.ReadFile(skillPath)
+		entries, err := os.ReadDir(catDir)
 		if err != nil {
 			continue
 		}
-		content := string(data)
-		name := entry.Name()
-		desc := extractDescription(content, name)
-		skills = append(skills, &Skill{
-			Name: name, Description: desc,
-			Content: content, Path: skillPath,
-		})
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				continue
+			}
+			skillPath := filepath.Join(catDir, entry.Name(), "SKILL.md")
+			data, err := os.ReadFile(skillPath)
+			if err != nil {
+				continue
+			}
+			content := string(data)
+
+			// Parse YAML front-matter: ---\nkey: val\n...\n---\n
+			name, desc, license := parseFrontMatter(content)
+			if name == "" {
+				name = entry.Name()
+			}
+			if desc == "" {
+				desc = fmt.Sprintf("Skill: %s", name)
+			}
+
+			skills = append(skills, &Skill{
+				Name:        name,
+				Description: desc,
+				Content:     content,
+				Path:        skillPath,
+				Category:    cat,
+				License:     license,
+				Enabled:     true, // 默认启用
+			})
+		}
 	}
 	return skills
 }
 
-func extractDescription(content, fallbackName string) string {
-	lines := strings.SplitN(content, "\n", 4)
+// parseFrontMatter extracts name, description, license from YAML front-matter.
+func parseFrontMatter(content string) (name, description, license string) {
+	if len(content) < 4 || content[:4] != "---\n" && content[:4] != "---\r" {
+		return "", "", ""
+	}
+	// Find closing ---
+	endIdx := strings.Index(content[4:], "\n---")
+	if endIdx < 0 {
+		return "", "", ""
+	}
+	front := content[4 : 4+endIdx]
+	lines := strings.Split(front, "\n")
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "# ") {
-			continue
+		if strings.HasPrefix(line, "name:") {
+			name = strings.TrimSpace(line[5:])
+			name = strings.Trim(name, "\"'")
+		} else if strings.HasPrefix(line, "description:") {
+			desc := strings.TrimSpace(line[12:])
+			desc = strings.Trim(desc, "\"'")
+			if len(desc) > 200 {
+				desc = desc[:200] + "..."
+			}
+			description = desc
+		} else if strings.HasPrefix(line, "license:") {
+			license = strings.TrimSpace(line[8:])
+			license = strings.Trim(license, "\"'")
 		}
-		return line
 	}
-	return fmt.Sprintf("Skill: %s", fallbackName)
+	return
 }
 
 // ====================================================================
