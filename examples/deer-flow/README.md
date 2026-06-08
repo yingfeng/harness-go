@@ -1,6 +1,6 @@
 # DeerFlow — Multi-Agent Research System
 
-A multi-agent research collaboration system implemented using the **harness-go** framework, ported from the [bytedance/deer-flow](https://github.com/bytedance/deer-flow) design.
+A multi-agent research collaboration system ported from [bytedance/deer-flow](https://github.com/bytedance/deer-flow) to the **harness-go** framework.
 
 ## Architecture
 
@@ -22,35 +22,61 @@ User → Coordinator → Planner → ResearchTeam → [Researcher|Coder] → Res
 | **Coder** | Processes data via code execution | `execute_python` |
 | **Reporter** | Writes the final research report | — |
 
-## Usage
+## Quick Start
 
-### With a real LLM (OpenAI-compatible):
-
-```bash
-export OPENAI_API_KEY="your-api-key"
-export OPENAI_MODEL="gpt-4o"
-export OPENAI_BASE_URL="https://api.openai.com/v1"
-go run ./examples/deer-flow
-```
-
-### With mock model (no API key needed):
+### 1. Start the Backend Server
 
 ```bash
-go run ./examples/deer-flow
+cd examples/deer-flow/backend
+
+# 使用内置 Mock 模型（无需 API key）：
+make server
+
+# 使用真实 LLM：
+# OPENAI_API_KEY="sk-xxx" OPENAI_MODEL="gpt-4o" make server
 ```
 
-### Run tests:
+服务器监听 `http://0.0.0.0:8001`（局域网可访问）。
+
+### 2. Start the Frontend
 
 ```bash
-cd examples/deer-flow && go test -v ./...
+cd examples/deer-flow/frontend
+
+# 安装依赖（需要 pnpm。如未安装：npm install -g pnpm）
+pnpm install
+
+# 启动（无需任何配置，已跳过登录认证，直接进入 workspace）
+#
+#   dev 模式:  pnpm dev                # 自动绑定 0.0.0.0:3000（无 HMR WebSocket 问题）
+#   生产模式:  pnpm build && pnpm start -H 0.0.0.0   # 推荐远程访问方式
+pnpm dev
 ```
 
-## Configuration via Environment
+前端监听 `http://0.0.0.0:3000`，打开浏览器访问即可直接使用。
 
-| Variable | Default | Description |
+> **注意**：使用 `pnpm`，非 `npm`。
+
+### 运行测试
+
+```bash
+cd examples/deer-flow/backend && go test -v ./...
+```
+
+## Configuration
+
+### 后端环境变量
+
+| 变量 | 默认值 | 说明 |
 |----------|---------|-------------|
-| `OPENAI_API_KEY` | — | OpenAI API key |
-| `OPENAI_BASE_URL` | `https://api.openai.com/v1` | API endpoint |
-| `OPENAI_MODEL` | — | Model name (required with API key) |
+| `OPENAI_API_KEY` | — | OpenAI API key（必填，否则使用 mock） |
+| `OPENAI_BASE_URL` | `https://api.openai.com/v1` | API 端点 |
+| `OPENAI_MODEL` | — | 模型名称（使用 real LLM 时必填） |
+| `PORT` | `8001` | 服务器监听端口 |
 
-Without `OPENAI_API_KEY`, the system uses a mock model that simulates agent responses for demonstration.
+### 前端环境变量（`.env` 文件）
+
+| 变量 | 说明 |
+|------|------|
+| `NEXT_PUBLIC_BACKEND_BASE_URL` | 后端 API 地址：`http://localhost:8001` |
+| `NEXT_PUBLIC_LANGGRAPH_BASE_URL` | LangGraph API 地址：`http://localhost:8001/api` |

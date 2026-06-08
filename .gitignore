@@ -18,6 +18,10 @@ coverage.html
 # Go workspace file
 go.work
 
+node_modules/
+jspm_packages/
+web_modules/
+
 # IDE specific files
 .idea/
 .vscode/
@@ -46,3 +50,6 @@ Thumbs.db
 
 # Documentation generated files
 DOCUMENTATION.txt
+
+
+examples/deer-flow/backend/deer-flow-server

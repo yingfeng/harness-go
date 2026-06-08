@@ -1,0 +1,48 @@
+# DeerFlow Go Backend 配置文件
+#
+# 使用方式:
+#   1. 复制本文件为 config.yaml 并修改
+#   2. 后端自动从项目根目录加载
+#   3. 环境变量优先级高于配置文件
+#
+# 环境变量覆盖:
+#   OPENAI_API_KEY         → models[0].api_key
+#   OPENAI_BASE_URL        → models[0].api_base
+#   OPENAI_MODEL           → models[0].model
+#   PORT                   → server.port
+
+# ============================================================================
+# 服务器配置
+# ============================================================================
+server:
+  host: 0.0.0.0            # 监听地址，0.0.0.0 允许外部访问
+  port: 8001              # 监听端口（默认 8001）
+  log_level: info          # 日志级别: debug / info / warn / error
+
+# ============================================================================
+# LLM 模型配置
+# ============================================================================
+# 支持任意 OpenAI-compatible API（OpenAI / Azure / Volcengine / DeepSeek 等）
+models:
+  - name: default
+    display_name: Default Model
+    model: deepseek-chat # 模型名称
+    api_base: https://api.deepseek.com/v1
+    api_key: ""                # 设置 API Key，或通过 OPENAI_API_KEY 环境变量
+    max_tokens: 1000000
+    temperature: 0.7
+    timeout_seconds: 120
+
+# ============================================================================
+# 技能目录
+# ============================================================================
+skills:
+  dir: skills              # skills 目录路径（相对或绝对）
+
+# ============================================================================
+# 记忆配置
+# ============================================================================
+memory:
+  enabled: true
+  max_facts: 1000
+  fact_confidence_threshold: 0.5
