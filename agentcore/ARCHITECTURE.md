@@ -418,7 +418,7 @@ tool, _ := ReflectTool("get_weather", "Get current weather",
 | `session.go` | Run context, session management, BranchEvents for parallel isolation |
 | `react_graph.go` | ReActGraph: graph-level ReAct loop with StateGraph |
 | `utils.go` | Utility functions (AsyncIterator, AsyncGenerator) |
-| `tool.go` | Tool-related helpers |
+| `tool.go` | Tool-related helpers, AgentTool (sub-agent as Tool), recursion depth guard |
 
 **Test files:**
 
@@ -433,6 +433,7 @@ tool, _ := ReflectTool("get_weather", "Get current weather",
 | `agent_loop_ctrl_test.go` | AgentLoop controller tests |
 | `agentic_integration_test.go` | Workflow + agentic integration tests |
 | `agent_tool_test.go` | AgentTool tests |
+| `agent_tool_depth_test.go` | Recursion depth error message test |
 | `cancel_full_test.go` | Cancel system full suite (75 tests) |
 | `chatmodel_retry_test.go` | Chat model retry tests |
 | `concurrency_test.go` | AgentCore concurrency tests |
@@ -448,6 +449,299 @@ tool, _ := ReflectTool("get_weather", "Get current weather",
 |---|---|
 | `backend/` | Filesystem backend abstraction (Backend interface, InMemoryBackend) |
 | `internal/` | Internal helpers (default system prompt) |
-| `middlewares/` | 9 middleware implementations (agentsmd, filesystem, patchtoolcalls, plantask, reduction, skill, summarization, telemetry, dynamictool) |
+| `middlewares/` | 10 middleware implementations (agentsmd, filesystem, patchtoolcalls, plantask, reduction, skill, subagent, summarization, telemetry, dynamictool) |
 | `prebuilt/` | Prebuilt agent components (deep, supervisor, planexecute) |
 | `schema/` | Schema types (Message, ToolCall, ToolResult, StreamReader, etc.) |
+
+---
+
+## SubAgentMiddleware — Dynamic Sub-Agent Invocation
+
+Defined in `middlewares/subagent/subagent.go`, the SubAgentMiddleware injects sub-agents as
+callable Tools that the parent LLM can invoke dynamically via tool calls.
+
+### Architecture
+
+```
+Parent Agent (ReActAgent)
+  ├─ Tools: [..., researcher_AgentTool, coder_AgentTool]  ← injected by SubAgentMiddleware
+  ├─ Middlewares: [SubAgentMiddleware, ...]
+  └─ Tool dispatch: executeInlineTools (ToolsConfig = nil)
+
+  When LLM calls "researcher":
+    └─ researcher_AgentTool.Invoke(ctx, args)
+         └─ Runner.Run(runCtx_with_depth_1)
+              └─ Researcher Agent (independent ReActLoop)
+```
+
+### Key Design Decisions
+
+1. **AgentTool wrapping**: Each sub-agent is wrapped via `NewAgentTool(ctx, agent)` into a
+   standard `Tool`. The sub-agent runs independently with its own Runner.Run().
+
+2. **BindToConfig()**: Adds AgentTool wrappers to `config.Tools` and sets `config.ToolsConfig = nil`,
+   forcing inline tool dispatch (`executeInlineTools` in `react_loop.go`). This is required because
+   middleware-injected tools in `rc.Tools` are only found by `executeInlineTools`, not by `ToolsNode`.
+
+3. **BeforeModelRewrite hook**: Injects sub-agent `ToolInfo` entries so the LLM sees them.
+
+4. **Inheritance filtering**: Uses a marker interface (`subAgentMarker`) to exclude the
+   SubAgentMiddleware itself when copying parent middlewares to the sub-agent's config.
+   Additional exclusions by type name via `ExcludedParentMiddlewareNames`.
+
+### Three Agent Sources
+
+```go
+// 1. Pre-built Agent (backward compatible)
+spec := SubAgentSpec{
+    Name: "researcher", Description: "Research",
+    Agent: agentcore.NewReActAgent(cfg).WithName("researcher"),
+}
+
+// 2. Declarative AgentConfig (recommended)
+spec := SubAgentSpec{
+    Name: "researcher", Description: "Research",
+    AgentConfig: &AgentConfig{
+        Model:        anthropicModel,
+        Tools:        []agentcore.Tool{searchTool},
+        SystemPrompt: "You are a research assistant.",
+    },
+    InheritParentMiddlewares: true,
+    ExcludedParentMiddlewareNames: []string{
+        "*filesystem.middleware[*schema.Message]",
+    },
+}
+
+// 3. AgentFactory (legacy)
+spec := SubAgentSpec{
+    Name: "researcher", Description: "Research",
+    AgentFactory: func(ctx context.Context) (agentcore.Agent, error) {
+        return agentcore.NewReActAgent(cfg).WithName("researcher"), nil
+    },
+}
+```
+
+### Recursion Depth Guard
+
+MaxDepth limits nested sub-agent calls. Depth is tracked via `context.Context` using an
+unexported key (`subAgentDepthKey` in `tool.go`). Every `AgentTool.Invoke` reads the
+current depth from the parent context, checks the limit, and propagates depth+1 to the
+child context.
+
+```go
+mw := subagent.New(specs, &subagent.Config{
+    MaxDepth: 3, // allow parent → child → grandchild, block deeper
+})
+```
+
+**Error handling**: When ToolsNode is used (default), recursion errors are converted to
+tool result strings (not Go errors). The agent continues execution with the error text
+visible to the LLM. For inline dispatch, the error propagates as a Go error to the
+ReAct loop, which converts it to a tool message.
+
+### Implementation Details
+
+- `tool.go`: `subAgentDepthKey{}` context key, `MaxDepth` field in `AgentToolOptions`,
+  `WithMaxDepth()` option. Depth is always propagated regardless of whether MaxDepth > 0,
+  so nested tools from different middleware instances see the real depth.
+- `subagent.go`: Marker interface for self-exclusion during inheritance.
+  `BindToConfig` is idempotent via `m.built` flag.
+
+---
+
+## Sub-Agent Architecture: flowAgent vs SubAgentMiddleware
+
+AgentCore provides two distinct sub-agent mechanisms:
+
+| Aspect | flowAgent (deterministic) | SubAgentMiddleware (LLM-driven) |
+|---|---|---|
+| Invocation | Code-driven via `TransferToAgent` action | LLM-driven via tool call |
+| Control flow | `flowAgent.runLoop` detects TransferToAgent, routes to child | Parent LLM decides when to invoke sub-agent |
+| Sub-agent selection | Pre-registered via `SetSubAgents()` | Declared in `SubAgentSpec`, auto-wrapped as Tool |
+| Execution context | Shares parent session, events accumulated | Independent Runner, no session sharing |
+| Middleware inheritance | N/A | Optional via `InheritParentMiddlewares` |
+| Orchestration patterns | Sequential / Parallel / Loop (workflowAgent) | LLM decides sequencing |
+| Best for | Predictable multi-step pipelines | Dynamic task decomposition by LLM |
+
+Both can be combined: a workflowAgent step can use SubAgentMiddleware to give the LLM
+dynamic sub-agent capabilities within a structured pipeline.
+
+---
+
+## Quick Start — Building an Agent
+
+### Minimal ReAct Agent
+
+```go
+package main
+
+import (
+    "context"
+    "github.com/infiniflow/ragflow/harness/agentcore"
+    "github.com/infiniflow/ragflow/harness/agentcore/schema"
+)
+
+func main() {
+    // 1. Create a chat model (implement agentcore.Model[*schema.Message]).
+    model := myChatModel{}
+
+    // 2. Create tools.
+    tool := &myTool{}
+
+    // 3. Build ReAct agent.
+    agent := agentcore.NewReActAgent(&agentcore.ReActConfig[*schema.Message]{
+        Model:       model,
+        Tools:       []agentcore.Tool{tool},
+        Instruction: "You are a helpful assistant.",
+    }).WithName("my_agent")
+
+    // 4. Run via Runner.
+    runner := agentcore.NewTypedRunner(agentcore.RunnerConfig[*schema.Message]{Agent: agent})
+    iter := runner.Run(context.Background(), []*schema.Message{
+        schema.UserMessage("Hello!"),
+    })
+
+    for {
+        ev, ok := iter.Next()
+        if !ok { break }
+        if ev.Err != nil { /* handle */ }
+        if ev.Output != nil && ev.Output.MessageOutput != nil {
+            // consume output
+        }
+    }
+}
+```
+
+### Agent with Middleware Stack
+
+```go
+import (
+    "github.com/infiniflow/ragflow/harness/agentcore"
+    "github.com/infiniflow/ragflow/harness/agentcore/middlewares/filesystem"
+    "github.com/infiniflow/ragflow/harness/agentcore/middlewares/summarization"
+    "github.com/infiniflow/ragflow/harness/agentcore/middlewares/subagent"
+)
+
+// Middleware chain order:
+// 1. SubAgentMiddleware (injects sub-agent tools)
+// 2. FilesystemMiddleware (injects read/write/edit tools)
+// 3. SummarizationMiddleware (auto-compresses long conversations)
+agent := agentcore.NewReActAgent(&agentcore.ReActConfig[*schema.Message]{
+    Model:       model,
+    Middlewares: []agentcore.ReActMiddleware{
+        subAgentMW,
+        filesystem.New(&filesystem.Config{Backend: fsBackend}),
+        summarization.New(&summarization.Config{
+            TokenLimit: 100000,
+            Model:      summaryModel,
+        }),
+    },
+    Instruction: "You are a coding assistant.",
+})
+```
+
+### With Sub-Agents
+
+```go
+// Declare sub-agents.
+spec := subagent.SubAgentSpec{
+    Name:        "researcher",
+    Description: "Research a topic using web search",
+    AgentConfig: &subagent.AgentConfig{
+        Model:        claudeModel,
+        Tools:        []agentcore.Tool{webSearchTool},
+        SystemPrompt: "You are a research assistant.",
+        Middlewares:  []agentcore.ReActMiddleware{ownMiddleware},
+    },
+    InheritParentMiddlewares: true, // inherit filesystem, summarization, etc.
+}
+
+// Create middleware.
+saMW := subagent.New([]subagent.SubAgentSpec{spec}, &subagent.Config{
+    EmitInternalEvents: true, // forward sub-agent events to parent stream
+    MaxDepth:           5,    // guard against infinite nesting
+})
+
+// Build parent agent.
+cfg := &agentcore.ReActConfig[*schema.Message]{
+    Model:       parentModel,
+    Middlewares: []agentcore.ReActMiddleware{saMW, filesystem.New(...)},
+}
+saMW.BindToConfig(cfg) // mandatory: injects tools, forces inline dispatch
+agent := agentcore.NewReActAgent(cfg)
+```
+
+### Cancellation
+
+```go
+opt, cancel := agentcore.WithCancel()
+defer cancel(agentcore.WithCancelMode(agentcore.CancelAfterChatModel))
+
+iter := runner.Run(ctx, msgs, opt)
+
+// Later, to cancel:
+handle, ok := cancel(agentcore.WithCancelMode(agentcore.CancelImmediate))
+if ok { handle.Wait() }
+```
+
+### Checkpoint / Resume
+
+```go
+store := &myCheckpointStore{}
+
+// Run with checkpoint ID.
+iter := runner.Run(ctx, msgs, agentcore.WithCheckPointID("run-001"))
+
+// Resume from checkpoint.
+iter, err := runner.Resume(ctx, "run-001")
+```
+
+### Custom Middleware
+
+```go
+type LoggingMiddleware struct {
+    agentcore.BaseMiddleware[*schema.Message]
+}
+func (m *LoggingMiddleware) BeforeModelRewrite(
+    ctx context.Context,
+    state *agentcore.ReActAgentState,
+    mc *agentcore.ModelContext,
+) (context.Context, *agentcore.ReActAgentState, error) {
+    log.Printf("model input: %d messages", len(state.Messages))
+    return ctx, state, nil
+}
+func (m *LoggingMiddleware) AfterModelRewrite(
+    ctx context.Context,
+    state *agentcore.ReActAgentState,
+    mc *agentcore.ModelContext,
+) (context.Context, *agentcore.ReActAgentState, error) {
+    log.Printf("model output: %d messages", len(state.Messages))
+    return ctx, state, nil
+}
+```
+
+### Tool Implementation
+
+```go
+type WeatherTool struct{}
+
+func (t *WeatherTool) Name() string { return "get_weather" }
+func (t *WeatherTool) Description() string { return "Get weather for a city. Args: city name." }
+func (t *WeatherTool) Invoke(ctx context.Context, args string, opts ...agentcore.ToolOption) (string, error) {
+    return fmt.Sprintf("Weather in %s: sunny, 25°C", args), nil
+}
+func (t *WeatherTool) Stream(ctx context.Context, args string, opts ...agentcore.ToolOption) (*schema.StreamReader[string], error) {
+    return schema.StreamReaderFromArray([]string{t.Invoke(ctx, args)}), nil
+}
+```
+
+### Key API Patterns
+
+1. **Agent construction**: `NewReActAgent(cfg)` — config is frozen after first Run call.
+2. **Middleware**: Embed `BaseMiddleware[*schema.Message]`, override only needed hooks.
+3. **Tools**: Implement `Tool` interface; for structured results, also implement `EnhancedTool`.
+4. **Runner**: Primary entry point; wraps agent with flowAgent for session/transfer/checkpoint.
+5. **Sub-agents**: Use `SubAgentMiddleware` for LLM-driven delegation or `flowAgent`/`workflowAgent`
+   for deterministic orchestration.
+6. **Event streaming**: `AsyncIterator[*AgentEvent]` — pull-based; events carry output, actions, errors.
+7. **Cancellation**: Three-mode system with timeout escalation; supports recursive cancel for sub-agents.

@@ -7,10 +7,15 @@ import (
 	"github.com/infiniflow/ragflow/harness/agentcore/schema"
 )
 
+// subAgentDepthKey is a context key for tracking sub-agent recursion depth across
+// nested AgentTool invocations. The value is an int representing current depth.
+type subAgentDepthKey struct{}
+
 // AgentToolOptions configures an AgentTool.
 type AgentToolOptions struct {
 	FullChatHistoryAsInput bool
 	EmitInternalEvents     bool // Forward inner agent's events to parent stream
+	MaxDepth               int  // 0 = unlimited sub-agent nesting depth. Set via WithMaxDepth.
 }
 
 // AgentToolOption configures the AgentTool.
@@ -33,6 +38,14 @@ func WithFullChatHistoryAsInput() AgentToolOption {
 // They are only emitted to the end-user and have no effect on the parent agent's state or checkpoint.
 func WithEmitInternalEvents() AgentToolOption {
 	return func(o *AgentToolOptions) { o.EmitInternalEvents = true }
+}
+
+// WithMaxDepth sets the maximum sub-agent nesting depth for recursion protection.
+// When set (>=1), AgentTool checks a depth counter in the context before executing
+// the inner agent. If the current depth >= maxDepth, the call returns an error.
+// Default: 0 (no limit).
+func WithMaxDepth(d int) AgentToolOption {
+	return func(o *AgentToolOptions) { o.MaxDepth = d }
 }
 
 // NewAgentTool wraps an Agent as a Tool for use by other agents.
@@ -65,19 +78,36 @@ func (t *agentTool) Name() string        { return t.name }
 func (t *agentTool) Description() string  { return t.desc }
 
 func (t *agentTool) Invoke(ctx context.Context, args string, opts ...ToolOption) (string, error) {
-	// Merge parent context with base context for agent execution
+	// Base context for the sub-agent's Run (independent from parent by default).
 	runCtx := context.Background()
-	if t.baseCtx != nil { runCtx = t.baseCtx }
-	_ = ctx
+	if t.baseCtx != nil {
+		runCtx = t.baseCtx
+	}
+
+	// Recursion depth guard — always propagate the depth counter so nested
+	// AgentTool invocations see the correct nesting level regardless of which
+	// middleware created them.
+	currentDepth := 0
+	if v := ctx.Value(subAgentDepthKey{}); v != nil {
+		currentDepth = v.(int)
+	}
+	if t.opts.MaxDepth > 0 && currentDepth >= t.opts.MaxDepth {
+		return "", fmt.Errorf("agent tool '%s': recursion limit exceeded (max depth: %d)", t.name, t.opts.MaxDepth)
+	}
+	// Always increment — even when MaxDepth=0 — so nested calls see real depth.
+	runCtx = context.WithValue(runCtx, subAgentDepthKey{}, currentDepth+1)
 
 	runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: t.agent})
 	messages := []Message{schema.UserMessage(args)}
 
 	iter := runner.Run(runCtx, messages)
 
-	// If EmitInternalEvents is set, get the parent's exec ctx to forward events
+	// EmitInternalEvents — read from parent ctx (ctx), not runCtx, because
+	// the runCtx is the sub-agent's independent context and has no parent execCtx.
 	var parentEC *reActExecCtx
-	if t.opts.EmitInternalEvents { parentEC = getChatModelExecCtx(runCtx) }
+	if t.opts.EmitInternalEvents {
+		parentEC = getChatModelExecCtx(ctx)
+	}
 
 	var result string
 	var interrupted bool
