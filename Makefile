@@ -1,4 +1,4 @@
-.PHONY: build test test-race test-graphengine test-agentcore clean fmt lint vet lint-all coverage examples lib bin help all check deps security docs bench bench-vet
+.PHONY: build test test-race test-graphengine test-agentcore clean fmt lint vet lint-all coverage examples lib bin help all check deps security docs bench bench-vet soak-workflow soak-subagent
 
 # Go parameters
 GOCMD     = go
@@ -88,6 +88,36 @@ lint-all:
 	$(GOTEST) -race -count=1 -timeout 180s $(CORE_PACKAGES)
 	$(GOTEST) -count=1 -coverprofile=$(BIN_DIR)/coverage.out $(CORE_PACKAGES)
 	@echo "=== All checks passed ==="
+
+## Soak: build workflow DAG soak binary to bin/
+soak-build-workflow:
+	@mkdir -p $(BIN_DIR)
+	$(GOBUILD) $(BUILD_FLAGS) -tags soak -o $(BIN_DIR)/soak-workflow-dag ./tests/soak/workflow_dag/
+
+## Soak: build subagent soak binary to bin/
+soak-build-subagent:
+	@mkdir -p $(BIN_DIR)
+	$(GOBUILD) $(BUILD_FLAGS) -tags soak -o $(BIN_DIR)/soak-subagent ./tests/soak/subagent/
+
+## Soak: build all soak binaries
+soak-build: soak-build-workflow soak-build-subagent
+
+## Soak: run workflow DAG soak test (build + run)
+soak-workflow: soak-build-workflow
+	@echo "Running Workflow DAG Soak Test..."
+	$(BIN_DIR)/soak-workflow-dag $(SOAK_ARGS)
+
+## Soak: run subagent soak test (build + run)
+soak-subagent: soak-build-subagent
+	@echo "Running SubAgent Soak Test..."
+	$(BIN_DIR)/soak-subagent $(SOAK_ARGS)
+
+## Soak: build and run all soak tests sequentially
+soak-all: soak-build-workflow soak-build-subagent
+	@echo "Running Workflow DAG Soak Test..."
+	$(BIN_DIR)/soak-workflow-dag $(SOAK_ARGS)
+	@echo "Running SubAgent Soak Test..."
+	$(BIN_DIR)/soak-subagent $(SOAK_ARGS)
 
 ## Examples: build all example binaries to bin/
 examples:
