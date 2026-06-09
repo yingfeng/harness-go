@@ -1,5 +1,7 @@
 package engine
 
+import "fmt"
+
 var Templates []Template
 
 type Template struct {
@@ -23,6 +25,12 @@ func init() {
 		webScraper(),                     // 3 nodes (agent chain)
 		stockReport(),                    // 3 nodes (agent chain)
 		advancedCompetitiveAnalysis(),    // 12 nodes (while + if-else + agents)
+		diamondPattern(),                 // 6 nodes (parallel branches + merge)
+		deepConditionalChain(),           // 14 nodes (6-level decision tree)
+		multiStagePipeline(),             // 7 nodes (agent-transform alternating)
+		parallelFanOut(),                 // 7 nodes (5 parallel agents)
+		errorRecovery(),                  // 5 nodes (stress test error retry)
+		whileLoopWithAgent(),             // 7 nodes (while + agent inside loop)
 	}
 }
 
@@ -250,4 +258,187 @@ func advancedCompetitiveAnalysis() Template {
 		},
 	}
 	return Template{ID: "advanced-competitive-analysis", Name: "Advanced Competitive Analysis", Description: "Complete workflow with while loop, if-else branching, quality checks, and human approval. Tests all engine features together.", Category: "Testing", Difficulty: "advanced", NodeCount: 13, Workflow: wf}
+}
+
+// diamondPattern: start → agent → parallel {agent_a, agent_b} → merge → end
+// Tests parallel branch execution and state merge.
+func diamondPattern() Template {
+	wf := WorkflowDef{
+		ID:   "diamond-pattern",
+		Name: "Diamond Pattern (Parallel Merge)",
+		Nodes: []WorkflowNode{
+			{ID: "s", Type: "start", Position: map[string]float64{"x": 250, "y": 0}, Data: NodeData{Label: "Start", NodeName: "Start"}},
+			{ID: "input", Type: "agent", Position: map[string]float64{"x": 250, "y": 120}, Data: NodeData{Label: "Parse Input", NodeName: "Parse Input", SystemPrompt: "You are a data parser. Extract the key topics from the user's question and list them."}},
+			{ID: "branch_a", Type: "agent", Position: map[string]float64{"x": 100, "y": 260}, Data: NodeData{Label: "Analysis A", NodeName: "Analysis A", SystemPrompt: "You are analyst A. Provide a detailed analysis of the first key topic identified."}},
+			{ID: "branch_b", Type: "agent", Position: map[string]float64{"x": 400, "y": 260}, Data: NodeData{Label: "Analysis B", NodeName: "Analysis B", SystemPrompt: "You are analyst B. Provide a detailed analysis of the second key topic identified."}},
+			{ID: "merge", Type: "agent", Position: map[string]float64{"x": 250, "y": 400}, Data: NodeData{Label: "Synthesize", NodeName: "Synthesize", SystemPrompt: "You are an editor. Synthesize both analyses into a single coherent response."}},
+			{ID: "e", Type: "end", Position: map[string]float64{"x": 250, "y": 540}, Data: NodeData{Label: "End", NodeName: "End"}},
+		},
+		Edges: []WorkflowEdge{
+			{ID: "e1", Source: "s", Target: "input"},
+			{ID: "e2", Source: "input", Target: "branch_a"},
+			{ID: "e3", Source: "input", Target: "branch_b"},
+			{ID: "e4", Source: "branch_a", Target: "merge"},
+			{ID: "e5", Source: "branch_b", Target: "merge"},
+			{ID: "e6", Source: "merge", Target: "e"},
+		},
+	}
+	return Template{ID: "diamond-pattern", Name: "Diamond Pattern (Parallel Merge)", Description: "Splits into two parallel analysis branches then merges results. Tests parallel agent execution and state accumulation.", Category: "Testing", Difficulty: "intermediate", NodeCount: 6, Workflow: wf}
+}
+
+// deepConditionalChain: start → if-else → if-else → if-else → ... → end
+// Tests deeply nested conditional routing (decision tree).
+func deepConditionalChain() Template {
+	nodes := []WorkflowNode{
+		{ID: "s", Type: "start", Position: map[string]float64{"x": 250, "y": 0}, Data: NodeData{Label: "Start", NodeName: "Start"}},
+	}
+	edges := []WorkflowEdge{
+		{ID: "e_start", Source: "s", Target: "cond_0"},
+	}
+
+	for i := 0; i < 6; i++ {
+		condID := fmt.Sprintf("cond_%d", i)
+		trueID := fmt.Sprintf("result_true_%d", i)
+		falseID := fmt.Sprintf("cond_%d", i+1)
+
+		nodes = append(nodes,
+			WorkflowNode{ID: condID, Type: "if-else", Position: map[string]float64{"x": float64(250 + i*30), "y": float64(120 + i*80)}, Data: NodeData{Label: fmt.Sprintf("Check %d", i+1), NodeName: fmt.Sprintf("Check %d", i+1), Condition: fmt.Sprintf("step_%d", i)}},
+		)
+		if i < 5 {
+			edges = append(edges,
+				WorkflowEdge{ID: fmt.Sprintf("e_true_%d", i), Source: condID, Target: trueID, SourceHandle: "true"},
+				WorkflowEdge{ID: fmt.Sprintf("e_false_%d", i), Source: condID, Target: falseID, SourceHandle: "false"},
+			)
+			nodes = append(nodes,
+				WorkflowNode{ID: trueID, Type: "transform", Position: map[string]float64{"x": float64(50 + i*30), "y": float64(180 + i*80)}, Data: NodeData{Label: fmt.Sprintf("Path %d True", i+1), NodeName: fmt.Sprintf("Path %d True", i+1), TransformCode: fmt.Sprintf("Taking branch true at step %d", i+1)}},
+			)
+			edges = append(edges,
+				WorkflowEdge{ID: fmt.Sprintf("e_true_to_end_%d", i), Source: trueID, Target: "e"},
+			)
+		} else {
+			edges = append(edges,
+				WorkflowEdge{ID: fmt.Sprintf("e_true_%d", i), Source: condID, Target: "e", SourceHandle: "true"},
+				WorkflowEdge{ID: fmt.Sprintf("e_false_%d", i), Source: condID, Target: "e", SourceHandle: "false"},
+			)
+		}
+	}
+
+	nodes = append(nodes, WorkflowNode{ID: "e", Type: "end", Position: map[string]float64{"x": 250, "y": 700}, Data: NodeData{Label: "End", NodeName: "End"}})
+
+	wf := WorkflowDef{
+		ID: "deep-conditional-chain", Name: "Deep Decision Tree",
+		Nodes: nodes, Edges: edges,
+	}
+	return Template{ID: "deep-conditional-chain", Name: "Deep Decision Tree", Description: "6-level nested if-else chain forming a decision tree. Tests deep conditional routing and branching.", Category: "Testing", Difficulty: "advanced", NodeCount: len(nodes), Workflow: wf}
+}
+
+// multiStagePipeline: start → agent → transform → agent → transform → agent → end
+// Tests alternating LLM and transform nodes.
+func multiStagePipeline() Template {
+	wf := WorkflowDef{
+		ID:   "multi-stage-pipeline",
+		Name: "Multi-Stage Pipeline",
+		Nodes: []WorkflowNode{
+			{ID: "s", Type: "start", Position: map[string]float64{"x": 250, "y": 0}, Data: NodeData{Label: "Start", NodeName: "Start"}},
+			{ID: "collect", Type: "agent", Position: map[string]float64{"x": 250, "y": 110}, Data: NodeData{Label: "Collect Raw Data", NodeName: "Collect Raw Data", SystemPrompt: "You are a data collector. Generate a list of 5 interesting facts about the user's topic. Output each fact on a new line starting with '- '."}},
+			{ID: "format", Type: "transform", Position: map[string]float64{"x": 250, "y": 220}, Data: NodeData{Label: "Format Data", NodeName: "Format Data", TransformCode: "Formatting collected data: {{outputs.collect}}"}},
+			{ID: "analyze", Type: "agent", Position: map[string]float64{"x": 250, "y": 330}, Data: NodeData{Label: "Analyze Data", NodeName: "Analyze Data", SystemPrompt: "You are a data analyst. Analyze the provided facts and identify patterns, trends, and insights. Provide a structured analysis."}},
+			{ID: "summarize", Type: "transform", Position: map[string]float64{"x": 250, "y": 440}, Data: NodeData{Label: "Summarize", NodeName: "Summarize", TransformCode: "Summary: {{outputs.analyze}}"}},
+			{ID: "report", Type: "agent", Position: map[string]float64{"x": 250, "y": 550}, Data: NodeData{Label: "Generate Report", NodeName: "Generate Report", SystemPrompt: "You are a report writer. Based on the analysis and summary, write a concise report with: Executive Summary, Key Findings, and Recommendations."}},
+			{ID: "e", Type: "end", Position: map[string]float64{"x": 250, "y": 680}, Data: NodeData{Label: "End", NodeName: "End"}},
+		},
+		Edges: []WorkflowEdge{
+			{ID: "e1", Source: "s", Target: "collect"},
+			{ID: "e2", Source: "collect", Target: "format"},
+			{ID: "e3", Source: "format", Target: "analyze"},
+			{ID: "e4", Source: "analyze", Target: "summarize"},
+			{ID: "e5", Source: "summarize", Target: "report"},
+			{ID: "e6", Source: "report", Target: "e"},
+		},
+	}
+	return Template{ID: "multi-stage-pipeline", Name: "Multi-Stage Pipeline", Description: "Alternates between agent and transform nodes in a 6-stage pipeline. Tests state preservation across mixed node types and variable substitution via {{outputs.nodeId}}.", Category: "Utilities", Difficulty: "intermediate", NodeCount: 7, Workflow: wf}
+}
+
+// parallelFanOut: start → 5 parallel agents → end
+// Tests wide parallel execution.
+func parallelFanOut() Template {
+	nodes := []WorkflowNode{
+		{ID: "s", Type: "start", Position: map[string]float64{"x": 250, "y": 0}, Data: NodeData{Label: "Start", NodeName: "Start"}},
+		{ID: "e", Type: "end", Position: map[string]float64{"x": 250, "y": 400}, Data: NodeData{Label: "End", NodeName: "End"}},
+	}
+	edges := []WorkflowEdge{
+		{ID: "e_start", Source: "s", Target: "agent_0"},
+		{ID: "e_start_1", Source: "s", Target: "agent_1"},
+		{ID: "e_start_2", Source: "s", Target: "agent_2"},
+		{ID: "e_start_3", Source: "s", Target: "agent_3"},
+		{ID: "e_start_4", Source: "s", Target: "agent_4"},
+	}
+
+	for i := 0; i < 5; i++ {
+		name := fmt.Sprintf("agent_%d", i)
+		nodes = append(nodes, WorkflowNode{
+			ID: name, Type: "agent",
+			Position: map[string]float64{"x": float64(60 + i*90), "y": 150},
+			Data: NodeData{
+				Label:        fmt.Sprintf("Research Topic %d", i+1),
+				NodeName:     fmt.Sprintf("Research Topic %d", i+1),
+				SystemPrompt: fmt.Sprintf("You are a research analyst. Research and summarize one key aspect of the user's topic. Focus on area number %d.", i+1),
+			},
+		})
+		edges = append(edges, WorkflowEdge{ID: fmt.Sprintf("e_%d_end", i), Source: name, Target: "e"})
+	}
+
+	wf := WorkflowDef{ID: "parallel-fan-out", Name: "Parallel Fan-Out (5 Agents)", Nodes: nodes, Edges: edges}
+	return Template{ID: "parallel-fan-out", Name: "Parallel Fan-Out (5 Agents)", Description: "Start node fans out to 5 parallel agent nodes. Tests wide parallel execution and concurrent LLM calls.", Category: "Testing", Difficulty: "advanced", NodeCount: 7, Workflow: wf}
+}
+
+// errorRecovery: start → agent → agent(with error-prone prompt) → transform → end
+// Tests what happens when an agent receives intentionally vague instructions.
+func errorRecovery() Template {
+	wf := WorkflowDef{
+		ID:   "error-recovery",
+		Name: "Error Recovery Test",
+		Nodes: []WorkflowNode{
+			{ID: "s", Type: "start", Position: map[string]float64{"x": 250, "y": 0}, Data: NodeData{Label: "Start", NodeName: "Start"}},
+			{ID: "setup", Type: "agent", Position: map[string]float64{"x": 250, "y": 120}, Data: NodeData{Label: "Setup Context", NodeName: "Setup Context", SystemPrompt: "You are a helpful assistant. Set up the context for analysis."}},
+			{ID: "complex", Type: "agent", Position: map[string]float64{"x": 250, "y": 240}, Data: NodeData{Label: "Complex Analysis", NodeName: "Complex Analysis", SystemPrompt: "You are a world-class expert. Provide a comprehensive multi-dimensional analysis. Cover at least 5 distinct dimensions with specific examples and data points."}},
+			{ID: "fallback", Type: "transform", Position: map[string]float64{"x": 250, "y": 360}, Data: NodeData{Label: "Format Output", NodeName: "Format Output", TransformCode: "Final output based on: {{outputs.complex}}"}},
+			{ID: "e", Type: "end", Position: map[string]float64{"x": 250, "y": 500}, Data: NodeData{Label: "End", NodeName: "End"}},
+		},
+		Edges: []WorkflowEdge{
+			{ID: "e1", Source: "s", Target: "setup"},
+			{ID: "e2", Source: "setup", Target: "complex"},
+			{ID: "e3", Source: "complex", Target: "fallback"},
+			{ID: "e4", Source: "fallback", Target: "e"},
+		},
+	}
+	return Template{ID: "error-recovery", Name: "Error Recovery Test", Description: "Agent with demanding prompt tests the engine's error recovery and retry mechanism. The LLM retry (3 attempts) handles transient failures.", Category: "Testing", Difficulty: "simple", NodeCount: 5, Workflow: wf}
+}
+
+// whileLoopWithAgent: start → while(loop) → agent → loopback → transform → end
+// Tests while loop with actual LLM agent inside the loop body.
+func whileLoopWithAgent() Template {
+	wf := WorkflowDef{
+		ID:   "while-loop-agent",
+		Name: "Iterative Refinement (While + Agent)",
+		Nodes: []WorkflowNode{
+			{ID: "s", Type: "start", Position: map[string]float64{"x": 250, "y": 0}, Data: NodeData{Label: "Start", NodeName: "Start"}},
+			{ID: "init", Type: "transform", Position: map[string]float64{"x": 250, "y": 100}, Data: NodeData{Label: "Initialize", NodeName: "Initialize", TransformCode: "Starting iterative refinement process."}},
+			{ID: "loop", Type: "while", Position: map[string]float64{"x": 250, "y": 200}, Data: NodeData{Label: "Refinement Loop", NodeName: "Refinement Loop"}},
+			{ID: "improve", Type: "agent", Position: map[string]float64{"x": 80, "y": 300}, Data: NodeData{Label: "Improve Output", NodeName: "Improve Output", SystemPrompt: "You are an editor. Review the current output and improve it. Add more detail, clarity, and examples. Make it significantly better than the previous version."}},
+			{ID: "check", Type: "transform", Position: map[string]float64{"x": 80, "y": 400}, Data: NodeData{Label: "Check Quality", NodeName: "Check Quality", TransformCode: "Quality check passed for iteration."}},
+			{ID: "finalize", Type: "transform", Position: map[string]float64{"x": 420, "y": 300}, Data: NodeData{Label: "Finalize", NodeName: "Finalize", TransformCode: "Refinement complete. Generating final output."}},
+			{ID: "e", Type: "end", Position: map[string]float64{"x": 250, "y": 500}, Data: NodeData{Label: "End", NodeName: "End"}},
+		},
+		Edges: []WorkflowEdge{
+			{ID: "e1", Source: "s", Target: "init"},
+			{ID: "e2", Source: "init", Target: "loop"},
+			{ID: "e3", Source: "loop", Target: "improve", SourceHandle: "continue"},
+			{ID: "e4", Source: "improve", Target: "check"},
+			{ID: "e5", Source: "check", Target: "loop"},
+			{ID: "e6", Source: "loop", Target: "finalize", SourceHandle: "break"},
+			{ID: "e7", Source: "finalize", Target: "e"},
+		},
+	}
+	return Template{ID: "while-loop-agent", Name: "Iterative Refinement (While + Agent)", Description: "While loop with an LLM agent inside. Each iteration improves the output. Tests while loop with agent calls, conversation history accumulation across loop iterations.", Category: "Testing", Difficulty: "advanced", NodeCount: 7, Workflow: wf}
 }
