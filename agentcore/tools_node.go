@@ -154,7 +154,15 @@ func (tn *ToolsNode[M]) Execute(ctx context.Context, resp M, state *TypedReActAg
 	return results, action, nil
 }
 
-func (tn *ToolsNode[M]) executeOne(ctx context.Context, tc schema.ToolCall) (M, error) {
+func (tn *ToolsNode[M]) executeOne(ctx context.Context, tc schema.ToolCall) (msg M, err error) {
+	// Panic recovery: tool.Invoke may panic, catch and convert to tool result message.
+	defer func() {
+		if r := recover(); r != nil {
+			msg = tn.makeToolMsg(fmt.Sprintf("Error: tool '%s' panicked: %v", tc.Function.Name, r), tc.ID)
+			err = nil // do not propagate Go error; captured as tool result text
+		}
+	}()
+
 	// LoopGuard: detect repeated calls with identical arguments.
 	if lg := tn.getLoopGuard(); lg != nil {
 		if err := lg.CheckSameArgs(tc.Function.Name, tc.Function.Arguments); err != nil {

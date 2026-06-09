@@ -77,7 +77,15 @@ type agentTool struct {
 func (t *agentTool) Name() string        { return t.name }
 func (t *agentTool) Description() string  { return t.desc }
 
-func (t *agentTool) Invoke(ctx context.Context, args string, opts ...ToolOption) (string, error) {
+func (t *agentTool) Invoke(ctx context.Context, args string, opts ...ToolOption) (result string, err error) {
+	// Panic recovery: runner.Run or iter.Next may panic; catch and convert to Go error.
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("agent tool '%s' panicked: %v", t.name, r)
+			result = ""
+		}
+	}()
+
 	// Base context for the sub-agent's Run (independent from parent by default).
 	runCtx := context.Background()
 	if t.baseCtx != nil {
@@ -109,7 +117,6 @@ func (t *agentTool) Invoke(ctx context.Context, args string, opts ...ToolOption)
 		parentEC = getChatModelExecCtx(ctx)
 	}
 
-	var result string
 	var interrupted bool
 	for {
 		ev, ok := iter.Next()

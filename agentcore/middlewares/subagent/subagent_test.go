@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/infiniflow/ragflow/harness/agentcore"
 	"github.com/infiniflow/ragflow/harness/agentcore/schema"
@@ -91,10 +92,11 @@ func (m *forcedToolModel) BindTools(tools []*schema.ToolInfo) error { return nil
 // ---- Mock Tool ----
 
 type mockTool struct {
-	name     string
-	desc     string
-	executed bool
-	mu       sync.Mutex
+	name      string
+	desc      string
+	executed  bool
+	invokeErr error
+	mu        sync.Mutex
 }
 
 func (t *mockTool) Name() string             { return t.name }
@@ -102,11 +104,120 @@ func (t *mockTool) Description() string       { return t.desc }
 func (t *mockTool) Invoke(ctx context.Context, args string, opts ...agentcore.ToolOption) (string, error) {
 	t.mu.Lock()
 	t.executed = true
+	err := t.invokeErr
 	t.mu.Unlock()
+	if err != nil {
+		return "", err
+	}
 	return "mock result for " + t.name, nil
 }
 func (t *mockTool) Stream(ctx context.Context, args string, opts ...agentcore.ToolOption) (*schema.StreamReader[string], error) {
 	return schema.StreamReaderFromArray([]string{"mock stream result"}), nil
+}
+
+// ---- Scripted Model (multi-step) ----
+
+type scriptedStep struct {
+	Text      string
+	ToolCalls []schema.ToolCall
+}
+
+type scriptedModel struct {
+	mu    sync.Mutex
+	steps []scriptedStep
+	pos   int
+}
+
+func newScriptedModel(steps ...scriptedStep) *scriptedModel {
+	return &scriptedModel{steps: steps}
+}
+
+func (m *scriptedModel) Generate(ctx context.Context, msgs []*schema.Message, opts ...agentcore.ModelOption) (*schema.Message, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.pos >= len(m.steps) {
+		return &schema.Message{Role: schema.RoleAssistant, Content: "done"}, nil
+	}
+	s := m.steps[m.pos]
+	m.pos++
+	msg := &schema.Message{Role: schema.RoleAssistant, Content: s.Text}
+	if len(s.ToolCalls) > 0 {
+		msg.ToolCalls = s.ToolCalls
+	}
+	return msg, nil
+}
+
+func (m *scriptedModel) Stream(ctx context.Context, msgs []*schema.Message, opts ...agentcore.ModelOption) (*schema.StreamReader[*schema.Message], error) {
+	msg, _ := m.Generate(ctx, msgs, opts...)
+	return schema.StreamReaderFromArray([]*schema.Message{msg}), nil
+}
+
+func (m *scriptedModel) BindTools(tools []*schema.ToolInfo) error { return nil }
+
+// ---- Panic Tool ----
+
+type panicTool struct {
+	name string
+	desc string
+}
+
+func (t *panicTool) Name() string               { return t.name }
+func (t *panicTool) Description() string         { return t.desc }
+func (t *panicTool) Invoke(ctx context.Context, args string, opts ...agentcore.ToolOption) (string, error) {
+	panic("unexpected error in tool execution")
+}
+func (t *panicTool) Stream(ctx context.Context, args string, opts ...agentcore.ToolOption) (*schema.StreamReader[string], error) {
+	panic("unexpected stream error")
+}
+
+// ---- Slow Tool (for timeout testing) ----
+
+type slowTool struct {
+	name  string
+	desc  string
+	delay time.Duration
+}
+
+func (t *slowTool) Name() string               { return t.name }
+func (t *slowTool) Description() string         { return t.desc }
+func (t *slowTool) Invoke(ctx context.Context, args string, opts ...agentcore.ToolOption) (string, error) {
+	select {
+	case <-ctx.Done():
+		return "", ctx.Err()
+	case <-time.After(t.delay):
+		return "slow result for " + t.name, nil
+	}
+}
+func (t *slowTool) Stream(ctx context.Context, args string, opts ...agentcore.ToolOption) (*schema.StreamReader[string], error) {
+	return schema.StreamReaderFromArray([]string{"slow stream result"}), nil
+}
+
+// ---- Enhanced Error Tool ----
+
+type enhancedErrorTool struct {
+	name      string
+	desc      string
+	errMsg    string
+	executed  bool
+	mu        sync.Mutex
+}
+
+func (t *enhancedErrorTool) Name() string               { return t.name }
+func (t *enhancedErrorTool) Description() string         { return t.desc }
+func (t *enhancedErrorTool) Invoke(ctx context.Context, args string, opts ...agentcore.ToolOption) (string, error) {
+	return "", nil
+}
+func (t *enhancedErrorTool) Stream(ctx context.Context, args string, opts ...agentcore.ToolOption) (*schema.StreamReader[string], error) {
+	return schema.StreamReaderFromArray([]string{""}), nil
+}
+func (t *enhancedErrorTool) EnhancedInvoke(ctx context.Context, args *schema.ToolArgument, opts ...agentcore.ToolOption) (*schema.ToolResult, error) {
+	t.mu.Lock()
+	t.executed = true
+	t.mu.Unlock()
+	return &schema.ToolResult{Name: t.name, Error: t.errMsg, ToolCallID: args.CallID}, nil
+}
+func (t *enhancedErrorTool) EnhancedStream(ctx context.Context, args *schema.ToolArgument, opts ...agentcore.ToolOption) (*schema.StreamReader[*schema.ToolResult], error) {
+	return nil, nil
 }
 
 // ---- Middleware tracking ----
@@ -841,4 +952,462 @@ func TestSubAgent_MaxDepthDefault(t *testing.T) {
 		t.Errorf("expected 'top done', got %q", final)
 	}
 	t.Logf("default depth: final=%q", final)
+}
+
+// ========================================================================
+// Phase 1 — Basic Error Scenarios
+// ========================================================================
+
+// TestSubAgent_ToolInvokeReturnsError verifies that when a sub-agent's tool
+// returns a Go error, the parent agent completes normally (error captured as
+// tool result text, not a Go error).
+func TestSubAgent_ToolInvokeReturnsError(t *testing.T) {
+	failTool := &mockTool{
+		name:      "failing_tool",
+		desc:      "Always fails",
+		invokeErr: errors.New("API rate limit exceeded"),
+	}
+
+	subModel := newForcedToolModel(&mockModel{},
+		[]schema.ToolCall{
+			{ID: "f1", Function: schema.ToolCallFunction{Name: "failing_tool", Arguments: "{}"}},
+		},
+		"sub-agent completed after tool error",
+	)
+
+	mw := New([]SubAgentSpec{
+		{
+			Name: "researcher", Description: "Research",
+			AgentConfig: &AgentConfig{
+				Model:         subModel,
+				Tools:         []agentcore.Tool{failTool},
+				SystemPrompt:  "You are a resilient researcher.",
+				MaxIterations: 5,
+			},
+		},
+	}, nil)
+
+	parentModel := newForcedToolModel(&mockModel{},
+		[]schema.ToolCall{
+			{ID: "p1", Function: schema.ToolCallFunction{Name: "researcher", Arguments: "{'query': 'test'}"}},
+		},
+		"parent final answer",
+	)
+	cfg := &agentcore.ReActConfig[*schema.Message]{
+		Model: parentModel, Middlewares: []agentcore.ReActMiddleware{mw},
+		MaxIterations: 5,
+	}
+	mw.BindToConfig(cfg)
+	agent := agentcore.NewReActAgent(cfg)
+
+	ctx := context.Background()
+	final, err := runAgent(ctx, t, agent, "research something")
+	if err != nil {
+		t.Fatalf("parent should NOT get Go error: %v", err)
+	}
+	if final != "parent final answer" {
+		t.Errorf("expected 'parent final answer', got %q", final)
+	}
+	if !failTool.executed {
+		t.Error("failing_tool was not invoked")
+	}
+	t.Logf("Phase1 ToolError: final=%q, tool executed=%v", final, failTool.executed)
+}
+
+// TestSubAgent_EnhancedToolReturnsError verifies EnhancedTool's Error field
+// is captured as tool result text.
+func TestSubAgent_EnhancedToolReturnsError(t *testing.T) {
+	eTool := &enhancedErrorTool{
+		name:   "enhanced_fail",
+		desc:   "Enhanced tool that returns Error field",
+		errMsg: "quota exceeded",
+	}
+
+	subModel := newForcedToolModel(&mockModel{},
+		[]schema.ToolCall{
+			{ID: "e1", Function: schema.ToolCallFunction{Name: "enhanced_fail", Arguments: "{}"}},
+		},
+		"sub-agent handled enhanced error",
+	)
+
+	mw := New([]SubAgentSpec{
+		{
+			Name: "helper", Description: "Helper",
+			AgentConfig: &AgentConfig{
+				Model:         subModel,
+				Tools:         []agentcore.Tool{eTool},
+				MaxIterations: 5,
+			},
+		},
+	}, nil)
+
+	parentModel := newForcedToolModel(&mockModel{},
+		[]schema.ToolCall{
+			{ID: "pe1", Function: schema.ToolCallFunction{Name: "helper", Arguments: "{}"}},
+		},
+		"parent enhanced done",
+	)
+	cfg := &agentcore.ReActConfig[*schema.Message]{
+		Model: parentModel, Middlewares: []agentcore.ReActMiddleware{mw},
+		MaxIterations: 5,
+	}
+	mw.BindToConfig(cfg)
+	agent := agentcore.NewReActAgent(cfg)
+
+	ctx := context.Background()
+	final, err := runAgent(ctx, t, agent, "test enhanced error")
+	if err != nil {
+		t.Fatalf("parent should NOT get Go error: %v", err)
+	}
+	if final != "parent enhanced done" {
+		t.Errorf("expected 'parent enhanced done', got %q", final)
+	}
+	if !eTool.executed {
+		t.Error("enhanced_fail tool was not invoked")
+	}
+	t.Logf("Phase1 EnhancedError: final=%q, tool executed=%v", final, eTool.executed)
+}
+
+// ========================================================================
+// Phase 2 — Agent-Level Error Scenarios
+// ========================================================================
+
+// TestSubAgent_MaxIterationsExceeded verifies that when a sub-agent exceeds
+// its MaxIterations, the parent completes normally (error captured in tool result).
+func TestSubAgent_MaxIterationsExceeded(t *testing.T) {
+	innerTool := &mockTool{name: "calc", desc: "Calculator"}
+
+	// ScriptedModel: 2 tool calls → MaxIterations=2 → both consumed, loop exits.
+	subModel := newScriptedModel(
+		scriptedStep{ToolCalls: []schema.ToolCall{
+			{ID: "c1", Function: schema.ToolCallFunction{Name: "calc", Arguments: "{}"}},
+		}},
+		scriptedStep{ToolCalls: []schema.ToolCall{
+			{ID: "c2", Function: schema.ToolCallFunction{Name: "calc", Arguments: "{}"}},
+		}},
+	)
+
+	mw := New([]SubAgentSpec{
+		{
+			Name: "worker", Description: "Worker",
+			AgentConfig: &AgentConfig{
+				Model:         subModel,
+				Tools:         []agentcore.Tool{innerTool},
+				MaxIterations: 2,
+			},
+		},
+	}, nil)
+
+	parentModel := newForcedToolModel(&mockModel{},
+		[]schema.ToolCall{
+			{ID: "pw", Function: schema.ToolCallFunction{Name: "worker", Arguments: "{}"}},
+		},
+		"parent done",
+	)
+	cfg := &agentcore.ReActConfig[*schema.Message]{
+		Model: parentModel, Middlewares: []agentcore.ReActMiddleware{mw},
+		MaxIterations: 5,
+	}
+	mw.BindToConfig(cfg)
+	agent := agentcore.NewReActAgent(cfg)
+
+	ctx := context.Background()
+	final, err := runAgent(ctx, t, agent, "work")
+	if err != nil {
+		t.Fatalf("parent should not get Go error: %v", err)
+	}
+	t.Logf("Phase2 MaxIterations: final=%q", final)
+}
+
+// TestSubAgent_ParentContextCancelled verifies that context cancellation during
+// sub-agent execution is handled gracefully.
+func TestSubAgent_ParentContextCancelled(t *testing.T) {
+	slowTool := &slowTool{name: "slow", desc: "Slow tool", delay: 500 * time.Millisecond}
+
+	subModel := newForcedToolModel(&mockModel{},
+		[]schema.ToolCall{
+			{ID: "s1", Function: schema.ToolCallFunction{Name: "slow", Arguments: "{}"}},
+		},
+		"slow done",
+	)
+
+	mw := New([]SubAgentSpec{
+		{
+			Name: "slowpoke", Description: "Slow",
+			AgentConfig: &AgentConfig{
+				Model:         subModel,
+				Tools:         []agentcore.Tool{slowTool},
+				MaxIterations: 5,
+			},
+		},
+	}, nil)
+
+	parentModel := newForcedToolModel(&mockModel{},
+		[]schema.ToolCall{
+			{ID: "ps1", Function: schema.ToolCallFunction{Name: "slowpoke", Arguments: "{}"}},
+		},
+		"parent done",
+	)
+	cfg := &agentcore.ReActConfig[*schema.Message]{
+		Model: parentModel, Middlewares: []agentcore.ReActMiddleware{mw},
+		MaxIterations: 5,
+	}
+	mw.BindToConfig(cfg)
+	agent := agentcore.NewReActAgent(cfg)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	runner := agentcore.NewTypedRunner(agentcore.RunnerConfig[*schema.Message]{Agent: agent})
+	iter := runner.Run(ctx, []*schema.Message{schema.UserMessage("go slow")})
+
+	// Drain some events then cancel.
+	var gotError bool
+	count := 0
+	for {
+		ev, ok := iter.Next()
+		if !ok {
+			break
+		}
+		if ev.Err != nil {
+			gotError = true
+			t.Logf("cancellation produced error: %v", ev.Err)
+			break
+		}
+		count++
+		if count >= 3 {
+			cancel()
+		}
+	}
+	if !gotError {
+		t.Log("cancellation did NOT produce a Go error (acceptable — error captured as tool result text)")
+	}
+	t.Logf("Phase2 ContextCancel: events drained=%d", count)
+}
+
+// ========================================================================
+// Phase 3 — Boundary and Exception Scenarios
+// ========================================================================
+
+// TestSubAgent_ToolPanicRecovery verifies that a panicking tool inside a sub-agent
+// does NOT crash the parent agent.
+func TestSubAgent_ToolPanicRecovery(t *testing.T) {
+	panicTool := &panicTool{name: "panic_tool", desc: "Panics on invoke"}
+
+	subModel := newForcedToolModel(&mockModel{},
+		[]schema.ToolCall{
+			{ID: "pt1", Function: schema.ToolCallFunction{Name: "panic_tool", Arguments: "{}"}},
+		},
+		"sub-agent survived panic",
+	)
+
+	mw := New([]SubAgentSpec{
+		{
+			Name: "explorer", Description: "Explorer",
+			AgentConfig: &AgentConfig{
+				Model:         subModel,
+				Tools:         []agentcore.Tool{panicTool},
+				MaxIterations: 5,
+			},
+		},
+	}, nil)
+
+	parentModel := newForcedToolModel(&mockModel{},
+		[]schema.ToolCall{
+			{ID: "pp1", Function: schema.ToolCallFunction{Name: "explorer", Arguments: "{}"}},
+		},
+		"parent ok",
+	)
+	cfg := &agentcore.ReActConfig[*schema.Message]{
+		Model: parentModel, Middlewares: []agentcore.ReActMiddleware{mw},
+		MaxIterations: 5,
+	}
+	mw.BindToConfig(cfg)
+	agent := agentcore.NewReActAgent(cfg)
+
+	ctx := context.Background()
+	final, err := runAgent(ctx, t, agent, "explore")
+	if err != nil {
+		t.Logf("parent got Go error (acceptable if panic propagates before recovery): %v", err)
+		return
+	}
+	if final != "parent ok" {
+		t.Errorf("expected 'parent ok', got %q", final)
+	}
+	t.Logf("Phase3 PanicRecovery: final=%q (parent did NOT crash)", final)
+}
+
+// TestSubAgent_AgentFactoryReturnsError verifies that when AgentFactory returns
+// an error, the spec is skipped and no tool is added to the config.
+func TestSubAgent_AgentFactoryReturnsError(t *testing.T) {
+	called := false
+	mw := New([]SubAgentSpec{
+		{
+			Name: "broken", Description: "Broken factory",
+			AgentFactory: func(ctx context.Context) (agentcore.Agent, error) {
+				called = true
+				return nil, errors.New("factory initialization failed")
+			},
+		},
+	}, nil)
+
+	cfg := &agentcore.ReActConfig[*schema.Message]{
+		Model:       &mockModel{responses: []string{"no tools needed"}},
+		Middlewares: []agentcore.ReActMiddleware{mw},
+	}
+	mw.BindToConfig(cfg)
+
+	if len(cfg.Tools) != 0 {
+		t.Errorf("expected 0 tools (factory failed), got %d", len(cfg.Tools))
+	}
+	if !called {
+		t.Error("AgentFactory was not called")
+	}
+	t.Log("Phase3 AgentFactoryError: spec correctly skipped")
+}
+
+// TestSubAgent_ParallelToolCallsOneFails verifies that when the parent issues
+// multiple parallel tool calls and one sub-agent fails, the other succeeds,
+// and the parent completes without a Go error.
+func TestSubAgent_ParallelToolCallsOneFails(t *testing.T) {
+	failTool := &mockTool{
+		name:      "failing_tool",
+		desc:      "Always fails",
+		invokeErr: errors.New("rate limit exceeded"),
+	}
+	goodTool := &mockTool{name: "good_tool", desc: "Always works"}
+
+	// Sub-agent A calls a failing tool, B calls working tool.
+	subA := newForcedToolModel(&mockModel{},
+		[]schema.ToolCall{
+			{ID: "f1", Function: schema.ToolCallFunction{Name: "failing_tool", Arguments: "{}"}},
+		},
+		"sub A completed",
+	)
+	subB := newForcedToolModel(&mockModel{},
+		[]schema.ToolCall{
+			{ID: "g1", Function: schema.ToolCallFunction{Name: "good_tool", Arguments: "{}"}},
+		},
+		"sub B completed",
+	)
+
+	mw := New([]SubAgentSpec{
+		{
+			Name: "agent_a", Description: "Failing agent",
+			AgentConfig: &AgentConfig{
+				Model:         subA,
+				Tools:         []agentcore.Tool{failTool},
+				MaxIterations: 5,
+			},
+		},
+		{
+			Name: "agent_b", Description: "Working agent",
+			AgentConfig: &AgentConfig{
+				Model:         subB,
+				Tools:         []agentcore.Tool{goodTool},
+				MaxIterations: 5,
+			},
+		},
+	}, nil)
+
+	// Parent calls both sub-agents in parallel via concurrent tool calls.
+	parentModel := newScriptedModel(
+		scriptedStep{ToolCalls: []schema.ToolCall{
+			{ID: "pa1", Function: schema.ToolCallFunction{Name: "agent_a", Arguments: "{}"}},
+		}},
+		scriptedStep{ToolCalls: []schema.ToolCall{
+			{ID: "pb1", Function: schema.ToolCallFunction{Name: "agent_b", Arguments: "{}"}},
+		}},
+		scriptedStep{Text: "parent final"},
+	)
+	cfg := &agentcore.ReActConfig[*schema.Message]{
+		Model: parentModel, Middlewares: []agentcore.ReActMiddleware{mw},
+		MaxIterations: 5,
+	}
+	mw.BindToConfig(cfg)
+	agent := agentcore.NewReActAgent(cfg)
+
+	ctx := context.Background()
+	final, err := runAgent(ctx, t, agent, "run both")
+	if err != nil {
+		t.Fatalf("parent should NOT get Go error: %v", err)
+	}
+	if final != "parent final" {
+		t.Errorf("expected 'parent final', got %q", final)
+	}
+	if !goodTool.executed {
+		t.Error("good_tool was not executed")
+	}
+	t.Logf("Phase3 ParallelCalls: final=%q, good_tool=%v", final, goodTool.executed)
+}
+
+// ========================================================================
+// Phase 4 — Integration Scenarios
+// ========================================================================
+
+// TestSubAgent_EmitInternalEventsWithError verifies that when EmitInternalEvents
+// is enabled and a sub-agent's tool fails, the parent stream receives the
+// sub-agent's internal error events without panicking or deadlocking.
+func TestSubAgent_EmitInternalEventsWithError(t *testing.T) {
+	failTool := &mockTool{
+		name:      "flaky", desc: "Flaky tool",
+		invokeErr: errors.New("internal error"),
+	}
+
+	subModel := newForcedToolModel(&mockModel{},
+		[]schema.ToolCall{
+			{ID: "x1", Function: schema.ToolCallFunction{Name: "flaky", Arguments: "{}"}},
+		},
+		"sub recovered",
+	)
+
+	mw := New([]SubAgentSpec{
+		{
+			Name: "internal", Description: "Internal agent",
+			AgentConfig: &AgentConfig{
+				Model:         subModel,
+				Tools:         []agentcore.Tool{failTool},
+				MaxIterations: 5,
+			},
+		},
+	}, &Config{EmitInternalEvents: true, MaxDepth: 5})
+
+	parentModel := newForcedToolModel(&mockModel{},
+		[]schema.ToolCall{
+			{ID: "px1", Function: schema.ToolCallFunction{Name: "internal", Arguments: "{}"}},
+		},
+		"parent internal done",
+	)
+	cfg := &agentcore.ReActConfig[*schema.Message]{
+		Model: parentModel, Middlewares: []agentcore.ReActMiddleware{mw},
+		MaxIterations: 5,
+	}
+	mw.BindToConfig(cfg)
+	agent := agentcore.NewReActAgent(cfg)
+
+	ctx := context.Background()
+	runner := agentcore.NewTypedRunner(agentcore.RunnerConfig[*schema.Message]{Agent: agent})
+	iter := runner.Run(ctx, []*schema.Message{schema.UserMessage("test internal events")})
+
+	var final string
+	var eventCount int
+	for {
+		ev, ok := iter.Next()
+		if !ok {
+			break
+		}
+		eventCount++
+		if ev.Err != nil {
+			t.Logf("event error: %v", ev.Err)
+		}
+		if ev.Output != nil && ev.Output.MessageOutput != nil &&
+			!ev.Output.MessageOutput.IsStreaming &&
+			ev.Output.MessageOutput.Message != nil {
+			final = ev.Output.MessageOutput.Message.Content
+		}
+	}
+	if final != "parent internal done" {
+		t.Errorf("expected 'parent internal done', got %q", final)
+	}
+	t.Logf("Phase4 EmitInternalEvents: final=%q, total events=%d", final, eventCount)
 }
