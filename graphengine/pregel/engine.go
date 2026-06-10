@@ -220,6 +220,15 @@ func (e *Engine) Run(ctx context.Context, input interface{}, mode types.StreamMo
 		pipelineCtx := asyncPipeline.Start(ctx)
 		defer asyncPipeline.Stop()
 		
+		// Reset per-execution engine state.
+		// Without this, reusing the same Engine across multiple RunSync calls
+		// causes checkpoint maps and channel versions to accumulate indefinitely,
+		// leading to unbounded memory growth (soak tests exposed this).
+		e.currentCheckpoint = nil
+		e.channelVersions = make(map[string]int)
+		e.versionsSeen = make(map[string]map[string]int)
+		e.deferredCheckpoints = nil
+
 		// Initialize channels
 		channelRegistry := channels.NewRegistry()
 		graphChannels := e.getGraphChannels()
