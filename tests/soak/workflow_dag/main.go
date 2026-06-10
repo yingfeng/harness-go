@@ -655,7 +655,11 @@ func runTenant(ctx context.Context, id int, wg *sync.WaitGroup, tenantMetricsCha
 			"last_error": "",
 		}
 
-		_, err := tc.Invoke(ctx, input)
+		// Each invocation uses a per-iteration timeout to prevent hanging
+		// forever if NATS operations block (e.g., server unreachable).
+		invokeCtx, invokeCancel := context.WithTimeout(ctx, 30*time.Second)
+		_, err := tc.Invoke(invokeCtx, input)
+		invokeCancel()
 		if err != nil {
 			if gerrors.IsGraphRecursionError(err) {
 				atomic.AddInt64(&globalMetrics.recursionErrors, 1)
@@ -671,7 +675,9 @@ func runTenant(ctx context.Context, id int, wg *sync.WaitGroup, tenantMetricsCha
 				// Interrupt: simulate resume
 				atomic.AddInt64(&globalMetrics.resumes, 1)
 				localMetrics.resumes++
-				_, resumeErr := tc.Invoke(ctx, nil)
+				resumeCtx, resumeCancel := context.WithTimeout(ctx, 30*time.Second)
+				_, resumeErr := tc.Invoke(resumeCtx, nil)
+				resumeCancel()
 				if resumeErr != nil && !gerrors.IsGraphRecursionError(resumeErr) {
 					atomic.AddInt64(&globalMetrics.tenantErrors, 1)
 					localMetrics.errors++

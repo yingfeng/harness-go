@@ -245,8 +245,10 @@ func (e *Engine) Run(ctx context.Context, input interface{}, mode types.StreamMo
 		// Get thread ID for checkpointing
 		threadID := e.getThreadID()
 
-		// Initialize or load checkpoint
-		if e.checkpointer != nil {
+		// Load checkpoint only when resuming (input == nil).
+		// New executions (input != nil) start from scratch — checkpoint is not loaded,
+		// preventing state from bleeding across independent runs on the same Engine.
+		if input == nil && e.checkpointer != nil {
 			cpData, err := e.checkpointer.Get(ctx, map[string]interface{}{
 				constants.ConfigKeyThreadID: threadID,
 			})
