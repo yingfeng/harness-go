@@ -34,16 +34,20 @@ import (
 	"github.com/infiniflow/ragflow/harness/graphengine/graph"
 	"github.com/infiniflow/ragflow/harness/graphengine/pregel"
 	"github.com/infiniflow/ragflow/harness/graphengine/types"
+	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
 )
 
 // ---- Configuration ----
 
 var (
-	flagDuration  = flag.Duration("duration", 30*time.Minute, "Total soak duration")
-	flagTenants   = flag.Int("tenants", 10, "Number of concurrent tenant goroutines")
-	flagVerbose   = flag.Bool("verbose", false, "Verbose per-iteration logging")
-	flagFailRate  = flag.Float64("fail-rate", 0.05, "Probability of random tool/node failure")
-	flagCrashRate = flag.Float64("crash-rate", 0.01, "Probability of random tool/node panic")
+	flagDuration   = flag.Duration("duration", 30*time.Minute, "Total soak duration")
+	flagTenants    = flag.Int("tenants", 10, "Number of concurrent tenant goroutines")
+	flagVerbose    = flag.Bool("verbose", false, "Verbose per-iteration logging")
+	flagFailRate   = flag.Float64("fail-rate", 0.05, "Probability of random tool/node failure")
+	flagCrashRate  = flag.Float64("crash-rate", 0.01, "Probability of random tool/node panic")
+	flagCheckpoint = flag.String("checkpoint", "memory", "Checkpoint backend: memory or nats")
+	flagNatsURL    = flag.String("nats-url", "nats://localhost:4222", "NATS server URL (used when --checkpoint=nats)")
 )
 
 // ---- Global Metrics ----
@@ -604,7 +608,7 @@ type invoker interface {
 
 // ---- Tenant Runner ----
 
-func runTenant(ctx context.Context, id int, wg *sync.WaitGroup, tenantMetricsChan chan<- *tenantMetrics) {
+func runTenant(ctx context.Context, id int, wg *sync.WaitGroup, tenantMetricsChan chan<- *tenantMetrics, cptr graph.Checkpointer) {
 	defer wg.Done()
 
 	localMetrics := &tenantMetrics{
@@ -614,21 +618,18 @@ func runTenant(ctx context.Context, id int, wg *sync.WaitGroup, tenantMetricsCha
 
 	sg := buildStateGraph()
 
-	// Each tenant has its own MemorySaver for isolated checkpoint
-	memSaver := checkpoint.NewMemorySaver()
-
 	// Build engine with or without checkpoint
 	var tc invoker
 	if id%2 == 0 {
 		// Even tenants: checkpoint-enabled graph
 		eng := pregel.NewEngine(sg,
 			pregel.WithRecursionLimit(100),
-			pregel.WithCheckpointer(memSaver),
+			pregel.WithCheckpointer(cptr),
 			pregel.WithInterrupts("node_checkpoint_save"),
 		)
 		tc = &pregelInvoker{engine: eng}
 	} else {
-		// Odd tenants: no checkpoint
+		// Odd tenants: no checkpoint (fast path)
 		tc = buildSimpleGraph()
 	}
 
@@ -762,12 +763,45 @@ func pct(n, total int64) float64 {
 func main() {
 	flag.Parse()
 
+	// Create the shared checkpointer based on --checkpoint flag
+	var cptr graph.Checkpointer
+	var checkpointDesc string
+	switch *flagCheckpoint {
+	case "nats":
+		nc, err := nats.Connect(*flagNatsURL)
+		if err != nil {
+			log.Fatalf("Failed to connect to NATS at %s: %v", *flagNatsURL, err)
+		}
+		defer nc.Close()
+		js, err := jetstream.New(nc)
+		if err != nil {
+			log.Fatalf("Failed to create JetStream context: %v", err)
+		}
+		ns, err := checkpoint.NewNATSSaver(js, &checkpoint.NATSConfig{
+			Bucket:       "checkpoints-soak",
+			History:      3,
+			Replicas:     1,
+			MaxGraphIdle: 5 * time.Minute,
+			GCInterval:   2 * time.Minute,
+		})
+		if err != nil {
+			log.Fatalf("Failed to create NATS checkpointer: %v", err)
+		}
+		defer ns.Close()
+		cptr = ns
+		checkpointDesc = fmt.Sprintf("NATS (%s / bucket=checkpoints-soak)", *flagNatsURL)
+	default:
+		cptr = checkpoint.NewMemorySaver()
+		checkpointDesc = "Memory (no persistence)"
+	}
+
 	fmt.Printf("=== Harness-Go Workflow DAG Soak Test ===\n")
-	fmt.Printf("  Duration:    %s\n", flagDuration)
-	fmt.Printf("  Tenants:     %d\n", *flagTenants)
-	fmt.Printf("  Fail Rate:   %.1f%%\n", *flagFailRate*100)
-	fmt.Printf("  Crash Rate:  %.1f%%\n", *flagCrashRate*100)
-	fmt.Printf("  Graph nodes: %d\n", len(nodeNames))
+	fmt.Printf("  Duration:      %s\n", flagDuration)
+	fmt.Printf("  Tenants:       %d\n", *flagTenants)
+	fmt.Printf("  Fail Rate:     %.1f%%\n", *flagFailRate*100)
+	fmt.Printf("  Crash Rate:    %.1f%%\n", *flagCrashRate*100)
+	fmt.Printf("  Graph nodes:   %d\n", len(nodeNames))
+	fmt.Printf("  Checkpoint:    %s\n", checkpointDesc)
 	fmt.Printf("\n")
 
 	// Validate graph builds before running
@@ -797,7 +831,7 @@ func main() {
 	var wg sync.WaitGroup
 	for i := 0; i < *flagTenants; i++ {
 		wg.Add(1)
-		go runTenant(ctx, i, &wg, tenantMetricsChan)
+		go runTenant(ctx, i, &wg, tenantMetricsChan, cptr)
 		// Stagger start
 		time.Sleep(10 * time.Millisecond)
 	}

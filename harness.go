@@ -100,6 +100,11 @@ type (
 	// PostgresConfig holds configuration for PostgreSQL connection.
 	PostgresConfig = checkpoint.PostgresConfig
 
+	// NATSSaver is a NATS JetStream-based checkpoint saver.
+	NATSSaver = checkpoint.NATSSaver
+	// NATSConfig holds configuration for the NATS checkpoint saver.
+	NATSConfig = checkpoint.NATSConfig
+
 	// Channel is the base interface for all channels.
 	Channel = channels.Channel
 	
