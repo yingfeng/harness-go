@@ -36,6 +36,7 @@ import (
 	"github.com/infiniflow/ragflow/harness/graphengine/types"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
+	nsServer "github.com/nats-io/nats-server/v2/server"
 )
 
 // ---- Configuration ----
@@ -47,7 +48,7 @@ var (
 	flagFailRate   = flag.Float64("fail-rate", 0.05, "Probability of random tool/node failure")
 	flagCrashRate  = flag.Float64("crash-rate", 0.01, "Probability of random tool/node panic")
 	flagCheckpoint = flag.String("checkpoint", "memory", "Checkpoint backend: memory or nats")
-	flagNatsURL    = flag.String("nats-url", "nats://localhost:4222", "NATS server URL (used when --checkpoint=nats)")
+	// flagNatsURL removed: NATS runs embedded when --checkpoint=nats
 )
 
 // ---- Global Metrics ----
@@ -774,11 +775,30 @@ func main() {
 	var checkpointDesc string
 	switch *flagCheckpoint {
 	case "nats":
-		nc, err := nats.Connect(*flagNatsURL)
-		if err != nil {
-			log.Fatalf("Failed to connect to NATS at %s: %v", *flagNatsURL, err)
+		// Start embedded NATS server (no external Docker required).
+		nsOpts := &nsServer.Options{
+			Port:       -1,           // random available port
+			Host:       "127.0.0.1",
+			JetStream:  true,
+			NoLog:      true,
+			NoSigs:     true,
+			MaxPayload: 64 * 1024 * 1024, // 64MB
 		}
-		defer nc.Close()
+		srv := nsServer.New(nsOpts)
+		if srv == nil {
+			log.Fatal("Failed to create embedded NATS server")
+		}
+		srv.Start()
+		if !srv.ReadyForConnections(5 * time.Second) {
+			log.Fatal("Embedded NATS server not ready within 5s")
+		}
+		clientURL := srv.ClientURL()
+		fmt.Printf("  NATS server:   embedded at %s\n", clientURL)
+
+		nc, err := nats.Connect(clientURL)
+		if err != nil {
+			log.Fatalf("Failed to connect to embedded NATS: %v", err)
+		}
 		js, err := jetstream.New(nc)
 		if err != nil {
 			log.Fatalf("Failed to create JetStream context: %v", err)
@@ -793,9 +813,13 @@ func main() {
 		if err != nil {
 			log.Fatalf("Failed to create NATS checkpointer: %v", err)
 		}
-		defer ns.Close()
 		cptr = ns
-		checkpointDesc = fmt.Sprintf("NATS (%s / bucket=checkpoints-soak)", *flagNatsURL)
+		checkpointDesc = fmt.Sprintf("NATS (embedded / %s)", clientURL)
+		defer func() {
+			ns.Close()
+			nc.Close()
+			srv.Shutdown()
+		}()
 	default:
 		cptr = checkpoint.NewMemorySaver()
 		checkpointDesc = "Memory (no persistence)"
